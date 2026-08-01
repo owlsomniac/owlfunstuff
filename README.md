@@ -72,9 +72,12 @@ Predict a litter **two ways**:
 Either way you get each kitten's odds for **coat colour** (standard / watercolor / tortoiseshell / snow, with swatches), **wind**,
 **fur length**, **pattern** (all 15 named combinations — Mackerel, Rosette, Karpati…), **white markings** (named per level &amp;
 type, e.g. *Bib &amp; Boots*), **accent colour** (Ruby, Amber, Teal…), and **species** — plus each parent's decoded phenotype
-(with its name/#ID when picked from your roster). Parents and **every** possible kitten get **composited sprite previews** built
-from the game's own image layers (base coat + trade + pattern + white + eyes), each **cropped to a single pose** — pick
-**standing / sitting / playing / sleeping / upsidedown** from the pose selector (a missing layer falls back to a colour swatch).
+(shown as **labelled facts** — Coat / Pattern / Wind / Fur / White / Accent / Species — with its name/#ID linking to the cat's
+page when picked from your roster). Parents and **every** possible kitten get **composited sprite previews** built from the
+game's own image layers, each **cropped to a single pose** (correct per-species offsets for Not-cats and Mercats) — pick
+**standing / sitting / playing / sleeping / upsidedown** from the pose selector. Kitten previews default to **no white**; a
+**white-marking picker** under the header lets you try each possible level & type on all of them at once. A missing layer
+falls back to a colour swatch.
 The genetics engine follows the Not-Wiki's [Genetics](https://pixelcatsend.miraheze.org/wiki/Genetics) rules (Mendelian
 inheritance, recessive dilute/no-white/longhair, number-range colour density &amp; white level, positional colour by wind) with
 the pattern/accent/white-marking name tables from Apocracy's community *Cat Genetics 6* spreadsheet, and is unit-tested against
