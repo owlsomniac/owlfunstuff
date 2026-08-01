@@ -1515,6 +1515,26 @@ function computeSuggestion(cat){
   return {className:cls?cls.name:"", classPct:cls?cls.pct:0, pcts:classPctMap(classes), jobs, ts:nowTs()};
 }
 function cacheSuggestion(id,cat){ if(!id) return; const c=suggestLoad(); c[id]=computeSuggestion(cat); suggestSave(c); }
+// Reconstruct a scorable {attributes, personality} from a roster cat's stored stat
+// columns (the effective totals) — null if it has no stats captured yet.
+function rosterCatForScoring(rc){
+  const data=(rc&&rc.data)||{}, cat={attributes:{}, personality:{}}; let any=false;
+  ATTRS.forEach(a=>{ const v=parseInt(data[a.label],10); if(!isNaN(v)){ cat.attributes[a.key]=v; any=true; } });
+  PERS.forEach(p=>{ const v=parseInt(data[p.label],10); if(!isNaN(v)){ cat.personality[p.key]=v; any=true; } });
+  return any?cat:null;
+}
+// Ensure every roster cat with stats has an up-to-date suggestion (incl. per-class
+// fit %). Fills in cats whose cache predates the pcts field, with no re-pull needed.
+function ensureSuggestions(r){
+  const c=suggestLoad(); let dirty=false;
+  Object.keys(r.cats||{}).forEach(id=>{
+    const s=c[id]; if(s && s.pcts) return;
+    const cat=rosterCatForScoring(r.cats[id]); if(!cat) return;
+    c[id]=computeSuggestion(cat); dirty=true;
+  });
+  if(dirty) suggestSave(c);
+  return c;
+}
 
 // Flatten a fetched cat page into roster columns: physical traits, current
 // day job & adventuring class, every job/class level, and the raw stats.
@@ -1631,7 +1651,8 @@ const ROSTER_GROUP_DEFS=[
    test:h=>/^trinkets$/i.test(h)||ATTRS.some(a=>a.label.toLowerCase()===h.toLowerCase())},
   {key:"pers",  label:"Personality",       short:"Personality", pref:PERS.map(p=>p.label),
    test:h=>PERS.some(p=>p.label.toLowerCase()===h.toLowerCase())},
-  {key:"class", label:"Adventure Classes", short:"Classes",     pref:["Class"], extra:[{key:"sugclass",label:"Suggested class"}],
+  {key:"class", label:"Adventure Classes", short:"Classes",     pref:["Class"],
+   extra:[{label:"Suggested class", dual:true, chips:[["sugclass","Class"],["sugclasspct","Fit"]], lines:[["","sugclass","sug"],["Fit:","sugclasspct","sug"]]}],
    test:h=>/^class$/i.test(h)},
   {key:"jobs",  label:"Jobs",              short:"Jobs",        pref:["Occupation"], extra:[{key:"sugjobs",label:"Suggested jobs"}],
    test:h=>/^occupation$/i.test(h)},
@@ -1669,13 +1690,17 @@ function rosterColumnModel(r){
   const groups=[];
   ROSTER_GROUP_ORDER.forEach(gk=>{
     const g=def(gk);
-    const cols=sortByPref(bucket[gk], g.pref).map(h=>({key:"data:"+h,label:h}));
+    const extrasFirst = (gk==="jobs"||gk==="class");   // Suggested job/class leads its category
+    const cols=[];
+    if(extrasFirst) (g.extra||[]).forEach(x=>cols.push(x));
+    sortByPref(bucket[gk], g.pref).forEach(h=>cols.push({key:"data:"+h,label:h}));
     if(gk==="appear"){ if(hasWhite) cols.push({key:"white",label:"White"});
       if(cols.length) cols.push({key:"accent",label:"Accent"}); }   // Accent after White
     if(gk==="jobs" && hasJobData) JOB_SKILLS.forEach(js=>cols.push({key:"job:"+js.job, label:js.job}));
     // Adventure Classes: one dual (Lv + Fit%) column per class, in class order.
-    if(gk==="class" && hasClassData) CLASSES.forEach(C=>cols.push({key:"cls:"+C.name, label:C.name, cls:C.name, dual:true}));
-    (g.extra||[]).forEach(x=>cols.push(x));
+    if(gk==="class" && hasClassData) CLASSES.forEach(C=>cols.push({label:C.name, dual:true,
+      chips:[["clslv:"+C.name,"Lv"],["clsfit:"+C.name,"Fit"]], lines:[["Lv:","clslv:"+C.name,""],["Fit:","clsfit:"+C.name,"sug"]]}));
+    if(!extrasFirst) (g.extra||[]).forEach(x=>cols.push(x));
     if(cols.length) groups.push({key:gk,label:g.label,short:g.short,cols});
   });
   return groups;
@@ -1705,7 +1730,7 @@ function rosterRender(){
     el.disabled=!has; if(!has&&rosterFilter===k) rosterFilter="all";
   });
   ["all","active","travel"].forEach(k=>{ const el=$("#rf-"+k); if(el) el.setAttribute("aria-pressed", rosterFilter===k?"true":"false"); });
-  const ids=rosterVisibleIds(r), cache=suggestLoad();
+  const ids=rosterVisibleIds(r), cache=ensureSuggestions(r);
   const meta=$("#rosterMeta"); if(meta) meta.textContent = all.length? (ids.length+" of "+all.length+" cats") : "";
   updateEnrichBtn(r, ids);
   const T=$("#rosterTable");
@@ -1714,17 +1739,17 @@ function rosterRender(){
   const quickOpen=!rosterCollapsed.has("quick");
   const groups=rosterColumnModel(r);
   const sortable=new Set(["name","id"]);
-  groups.forEach(g=>g.cols.forEach(c=>{ if(c.dual){ sortable.add("clslv:"+c.cls); sortable.add("clsfit:"+c.cls); } else sortable.add(c.key); }));
+  groups.forEach(g=>g.cols.forEach(c=>{ if(c.dual){ (c.chips||[]).forEach(ch=>sortable.add(ch[0])); } else sortable.add(c.key); }));
   let tids=ids;
   if(rosterSort && sortable.has(rosterSort.key)) tids=[...ids].sort(rosterCompare(r,cache,rosterSort.key,rosterSort.dir));
   const sortMeta=key=>{ const on=rosterSort&&rosterSort.key===key;
     return {aria:on?(rosterSort.dir>0?"ascending":"descending"):"none", arr:on?(rosterSort.dir>0?"▲":"▼"):"↕"}; };
   const pinTh=(key,label)=>{ const m=sortMeta(key);
     return `<th class="${key}" data-key="${key}" rowspan="2" aria-sort="${m.aria}" tabindex="0" role="button" title="Sort by ${label}">${label}<span class="arr" aria-hidden="true">${m.arr}</span></th>`; };
-  const chip=(key,label,cls)=>{ const m=sortMeta(key);
-    return `<span class="cc-sort" data-key="${esc(key)}" role="button" tabindex="0" aria-sort="${m.aria}" title="Sort by ${esc(cls)} ${esc(label==='Lv'?'level':'fit %')}">${label}<span class="arr" aria-hidden="true">${m.arr}</span></span>`; };
+  const chip=(key,label,ctx)=>{ const m=sortMeta(key);
+    return `<span class="cc-sort" data-key="${esc(key)}" role="button" tabindex="0" aria-sort="${m.aria}" title="Sort by ${esc(ctx)} — ${esc(label)}">${esc(label)}<span class="arr" aria-hidden="true">${m.arr}</span></span>`; };
   const subTh=(leaf,first)=>{ const fc=first?" grp-start":"";
-    if(leaf.dual) return `<th class="classcol${fc}"><div class="cc-name">${esc(leaf.label)}</div><div class="cc-sorts">${chip("clslv:"+leaf.cls,"Lv",leaf.cls)}${chip("clsfit:"+leaf.cls,"Fit",leaf.cls)}</div></th>`;
+    if(leaf.dual) return `<th class="classcol${fc}"><div class="cc-name">${esc(leaf.label)}</div><div class="cc-sorts">${leaf.chips.map(ch=>chip(ch[0],ch[1],leaf.label)).join("")}</div></th>`;
     const m=sortMeta(leaf.key);
     return `<th class="${first?'grp-start':''}" data-key="${esc(leaf.key)}" aria-sort="${m.aria}" tabindex="0" role="button" title="Sort by ${esc(leaf.label)}">${esc(leaf.label)}<span class="arr" aria-hidden="true">${m.arr}</span></th>`; };
   const grpTh=(key,label,short,cols)=> rosterCollapsed.has(key)
@@ -1759,14 +1784,14 @@ function rosterRender(){
     groups.forEach(g=>{
       if(rosterCollapsed.has(g.key)){ cells.push(`<td class="strip grp-start" data-grp="${esc(g.key)}" title="Show ${esc(g.label)}">⋯</td>`); return; }
       g.cols.forEach((leaf,ci)=>{
-        const v=rosterCellValue(r,cache,id,leaf.key);
-        const isData = leaf.key.indexOf("data:")===0;
+        const v=leaf.key?rosterCellValue(r,cache,id,leaf.key):"";
+        const isData = !!leaf.key && leaf.key.indexOf("data:")===0;
         let cell, tdcls=ci===0?"grp-start":"", tdtitle="";
         const addcls=x=>{ tdcls=tdcls?(tdcls+" "+x):x; };
         if(leaf.dual){
           addcls("classcell");
-          const lvl=rosterCellValue(r,cache,id,"clslv:"+leaf.cls), fit=rosterCellValue(r,cache,id,"clsfit:"+leaf.cls);
-          cell = `<div><span class="qv-k">Lv:</span> ${lvl?esc(lvl):"—"}</div><div><span class="qv-k">Fit:</span> ${fit?`<span class="sug">${esc(fit)}</span>`:"—"}</div>`;
+          cell = leaf.lines.map(ln=>{ const val=rosterCellValue(r,cache,id,ln[1]);
+            return `<div>${ln[0]?`<span class="qv-k">${esc(ln[0])}</span> `:""}${val?`<span class="${ln[2]||''}">${esc(val)}</span>`:"—"}</div>`; }).join("");
         }
         else if(leaf.key==="sugclass"||leaf.key==="sugjobs"||leaf.key==="sugclasspct"){ cell = v?`<span class="sug">${esc(v)}</span>`:"—"; }
         else if(g.key==="stats" && isData && attrLabels.has(leaf.key.slice(5))){

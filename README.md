@@ -42,11 +42,12 @@ job/class). **Click any column sub-header to sort.** Highlights:
 - **Stats** — each total is tinted by its game **grade** (ROYGBP pastels: Poor · Average · Good · Very Good ·
   Excellent · Exceptional) and shows its **dice pool** (1d6–9d6). A trinket-adjusted stat **splits** the cell — the
   adjusted total on top, the base value below — and sorts by the (higher) adjusted number.
-- **Jobs** — one column per day job (alphabetized) reading **`Lv. N (+M)`**: its level plus its governing
-  attribute's modifier.
-- **Adventure Classes** — one column per class (Fighter … Bard) reading **`Lv: N`** / **`Fit: X%`** (level defaults
-  to 1 when the page doesn't list it; Fit % is how well the cat matches that class's ideal, `0.55 × attributes +
-  0.45 × personality`). Each header has separate **Lv** and **Fit** sort buttons.
+- **Jobs** — **Suggested jobs** leads the group, then one column per day job (alphabetized) reading **`Lv. N (+M)`**:
+  its level plus its governing attribute's modifier.
+- **Adventure Classes** — **Suggested class** leads (its class name over a sortable **Fit %**), then one column per
+  class (Fighter … Bard) reading **`Lv: N`** / **`Fit: X%`** (level defaults to 1 when the page doesn't list it;
+  Fit % is how well the cat matches that class's ideal, `0.55 × attributes + 0.45 × personality`, computed from the
+  cat's stats). Each of these headers has separate sort buttons for its two values.
 
 **Suggest for shown cats** computes recommendations in bulk.
 
