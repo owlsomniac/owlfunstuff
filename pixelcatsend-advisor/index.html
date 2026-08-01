@@ -235,6 +235,29 @@
   footer a{color:var(--muted)}
   .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
   .hide{display:none !important}
+
+  /* ---- roster (my cats) ---- */
+  .rfilters{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .rf{border:1px solid var(--line);background:var(--panel2);color:var(--ink-soft);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer}
+  .rf.sm{padding:5px 11px;font-size:12.5px}
+  .rf[aria-pressed="true"]{background:var(--cool);border-color:var(--cool);color:#fff}
+  .rf:disabled{opacity:.4;cursor:not-allowed}
+  .rmeta{color:var(--muted);font-size:12px;margin-left:auto}
+  .rosterlist{margin-top:10px;max-height:360px;overflow-y:auto;border:1px solid var(--line-soft);border-radius:var(--radius-sm);background:var(--panel2)}
+  .rostercat{display:flex;gap:10px;align-items:baseline;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line-soft);background:transparent;color:var(--ink);padding:10px 12px;cursor:pointer;font-family:inherit}
+  .rostercat:last-child{border-bottom:0}
+  .rostercat:hover{background:var(--brand-soft)}
+  .rostercat .rc-name{font-weight:700;font-size:14px}
+  .rostercat .rc-id{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+  .rostercat .rc-meta{color:var(--ink-soft);font-size:12px;margin-left:auto;text-align:right;flex:1 1 auto}
+  .rostercat .rc-sug{color:var(--good-ink);font-weight:700}
+  .rosterempty{padding:16px;color:var(--muted);font-size:13px;text-align:center}
+  #rosterTable table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  #rosterTable th,#rosterTable td{border:1px solid var(--line-soft);padding:6px 9px;text-align:left;white-space:nowrap}
+  #rosterTable th{background:var(--panel2);position:sticky;top:0}
+  #rosterTable tr{cursor:pointer}
+  #rosterTable tbody tr:hover{background:var(--brand-soft)}
+  #rosterTable .sug{color:var(--good-ink);font-weight:700}
 </style>
 </head>
 <body>
@@ -257,9 +280,41 @@
     <h2 id="in-h"><span class="em">🔎</span> Load a cat</h2>
 
     <div class="tabs" role="tablist" aria-label="Input method">
+      <button class="tab" id="tab-mycats" role="tab" aria-selected="false" aria-controls="pane-mycats">🐈 My cats</button>
       <button class="tab" id="tab-id"     role="tab" aria-selected="true"  aria-controls="pane-id">By cat ID</button>
       <button class="tab" id="tab-paste"  role="tab" aria-selected="false" aria-controls="pane-paste">Paste page HTML</button>
       <button class="tab" id="tab-manual" role="tab" aria-selected="false" aria-controls="pane-manual">Enter manually</button>
+    </div>
+
+    <!-- My cats (roster) -->
+    <div class="panelbody" id="pane-mycats" role="tabpanel" aria-labelledby="tab-mycats" hidden>
+      <p class="sub">Your Village Manager is a private page, so it can't be auto-loaded — paste it once and I'll remember your roster <b>on this device</b>. Paste each view you want captured: the <b>Basic</b> view gives names/occupation/current class, and the <b>Adventuring Levels</b> / <b>Day Job Bonuses</b> views add class &amp; job levels. Filters (All / Active / Traveling) light up as you paste those views.</p>
+      <label class="fld" for="rosterPaste" style="margin-top:10px">Paste a Village Manager page (village/cats/manager…)</label>
+      <textarea id="rosterPaste" placeholder="Paste the Village Manager page HTML here…" spellcheck="false"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="loadRosterBtn" type="button">Load / merge roster</button>
+        <button class="btn ghost sm" id="clearRosterBtn" type="button">Clear roster</button>
+      </div>
+      <div class="status" id="rosterStatus" role="status" aria-live="polite"></div>
+
+      <div id="rosterUI" class="hide" style="margin-top:14px">
+        <div class="rfilters" role="group" aria-label="Filter roster">
+          <button class="rf" id="rf-all"    type="button" aria-pressed="true">All</button>
+          <button class="rf" id="rf-active" type="button" aria-pressed="false">Active</button>
+          <button class="rf" id="rf-travel" type="button" aria-pressed="false">Traveling</button>
+          <span class="rmeta" id="rosterMeta"></span>
+        </div>
+        <input type="text" id="rosterSearch" placeholder="Search your cats by name or ID…" autocomplete="off" style="margin-top:10px">
+        <div class="rfilters" style="margin-top:10px">
+          <button class="rf sm" id="viewList"  type="button" aria-pressed="true">List</button>
+          <button class="rf sm" id="viewTable" type="button" aria-pressed="false">Table</button>
+          <button class="btn ghost sm" id="suggestAllBtn" type="button" title="Fetches each shown cat's page to compute a suggestion; may take a while">✨ Suggest for shown cats</button>
+          <button class="btn ghost sm hide" id="suggestStopBtn" type="button">Stop</button>
+        </div>
+        <div class="status" id="suggestStatus" role="status" aria-live="polite"></div>
+        <div id="rosterList" class="rosterlist"></div>
+        <div id="rosterTable" class="scrollx hide"></div>
+      </div>
     </div>
 
     <!-- By ID -->
@@ -734,6 +789,8 @@ function breakdownLine(d){
 function renderResults(cat){
   const classes = scoreClasses(cat);
   const jobsData = recommendJobs(cat);
+  // remember this cat's suggestion so the roster list/table can show it
+  if(cat.id){ try{ const c=suggestLoad(); c[cat.id]={className:classes[0]?classes[0].name:"", classPct:classes[0]?classes[0].pct:0, jobs:jobsData.jobs.flatMap(j=>j.jobs).slice(0,4), ts:nowTs()}; suggestSave(c); rosterRender(); }catch(e){} }
   const arch = archetype(cat.personality);
   const bb = braveryBonus(cat.personality.bravery);
   const bo = benevolenceOutcome(cat.personality.benevolence);
@@ -992,6 +1049,114 @@ let currentDetails = {};
 let currentEquips = {};
 
 /* =========================================================================
+   5b. ROSTER — parse the Village Manager into a searchable/filterable list
+   ========================================================================= */
+const ROSTER_KEY="pce-roster-v1", SUGGEST_KEY="pce-suggest-v1";
+function nowTs(){ try{ return Date.now(); }catch(e){ return 0; } }
+function lsGet(k,def){ try{ const v=JSON.parse(localStorage.getItem(k)||"null"); return v==null?def:v; }catch(e){ return def; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+function rosterLoad(){ const r=lsGet(ROSTER_KEY,null); return (r&&r.cats)?r:{cats:{},sets:{all:[],active:[],travel:[]},headers:[],ts:0}; }
+function rosterSave(r){ lsSet(ROSTER_KEY,r); }
+function suggestLoad(){ return lsGet(SUGGEST_KEY,{}); }
+function suggestSave(c){ lsSet(SUGGEST_KEY,c); }
+
+function parseRoster(html){
+  const out={view:"all", headers:[], rows:[]};
+  let doc; try{ doc=new DOMParser().parseFromString(html,"text/html"); }catch(e){ return out; }
+  const chosen=doc.querySelector(".crafting-category.chosen a[href*='filter=']");
+  if(chosen){ const h=chosen.getAttribute("href")||""; out.view=/filter=active/i.test(h)?"active":/filter=travel/i.test(h)?"travel":"all"; }
+  const table=doc.querySelector("#cat-table")||doc.querySelector("table.basictable")||doc.querySelector("table");
+  if(!table) return out;
+  const heads=[...table.querySelectorAll("tr th")].map(th=>(th.textContent||"").replace(/\s+/g," ").trim());
+  out.headers=heads.filter(Boolean);
+  const iName=heads.findIndex(h=>/name/i.test(h));
+  const iId  =heads.findIndex(h=>/^id$/i.test(h));
+  const txt=td=>(td.textContent||"").replace(/\s+/g," ").trim();
+  [...table.querySelectorAll("tr")].forEach(tr=>{
+    const tds=[...tr.querySelectorAll("td")]; if(!tds.length) return;
+    const name=(iName>=0&&tds[iName])?txt(tds[iName]):txt(tds[0]);
+    let id=(iId>=0&&tds[iId])?txt(tds[iId]).replace(/\D/g,""):"";
+    if(!id){ const d=tds.map(txt).find(t=>/^\d{2,}$/.test(t)); id=d||""; }
+    if(!id||!name) return;
+    const data={};
+    heads.forEach((h,i)=>{ if(h && tds[i]) data[h]=txt(tds[i]); });
+    out.rows.push({id,name,data});
+  });
+  return out;
+}
+function rosterMerge(parsed){
+  const r=rosterLoad();
+  const set=new Set(r.sets[parsed.view]||[]);
+  parsed.rows.forEach(row=>{
+    const cur=r.cats[row.id]||{id:row.id,name:row.name,data:{}};
+    if(row.name) cur.name=row.name;
+    Object.assign(cur.data,row.data);
+    r.cats[row.id]=cur; set.add(row.id);
+  });
+  r.sets[parsed.view]=[...set];
+  const hs=new Set(r.headers||[]); parsed.headers.forEach(h=>hs.add(h)); r.headers=[...hs];
+  r.ts=nowTs(); rosterSave(r); return r;
+}
+function col(cat,re){ const k=Object.keys(cat.data||{}).find(h=>re.test(h)); return k?cat.data[k]:""; }
+const notNA = v => (v && String(v).toLowerCase()!=="n/a") ? v : "";
+function computeSuggestion(cat){
+  const cls=scoreClasses(cat)[0];
+  const jobs=recommendJobs(cat).jobs.flatMap(j=>j.jobs).slice(0,4);
+  return {className:cls?cls.name:"", classPct:cls?cls.pct:0, jobs, ts:nowTs()};
+}
+function cacheSuggestion(id,cat){ if(!id) return; const c=suggestLoad(); c[id]=computeSuggestion(cat); suggestSave(c); }
+
+let rosterFilter="all", rosterView="list", bulkStop=false, bulkRunning=false;
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function rosterVisibleIds(r){
+  let ids=Object.keys(r.cats);
+  if(rosterFilter!=="all"){ const s=new Set(r.sets[rosterFilter]||[]); ids=ids.filter(id=>s.has(id)); }
+  const q=(($("#rosterSearch")||{}).value||"").trim().toLowerCase();
+  if(q) ids=ids.filter(id=> (r.cats[id].name||"").toLowerCase().includes(q) || id.includes(q));
+  return ids.sort((a,b)=>(r.cats[a].name||"").localeCompare(r.cats[b].name||""));
+}
+function rosterRender(){
+  const r=rosterLoad(), all=Object.keys(r.cats);
+  [["all",all.length],["active",(r.sets.active||[]).length],["travel",(r.sets.travel||[]).length]].forEach(([k,n])=>{
+    const el=$("#rf-"+k); if(!el) return;
+    const has = k==="all"?all.length>0:n>0;
+    el.disabled=!has; if(!has&&rosterFilter===k) rosterFilter="all";
+  });
+  ["all","active","travel"].forEach(k=>{ const el=$("#rf-"+k); if(el) el.setAttribute("aria-pressed", rosterFilter===k?"true":"false"); });
+  const vl=$("#viewList"), vt=$("#viewTable");
+  if(vl) vl.setAttribute("aria-pressed", rosterView==="list"?"true":"false");
+  if(vt) vt.setAttribute("aria-pressed", rosterView==="table"?"true":"false");
+  const ids=rosterVisibleIds(r), cache=suggestLoad();
+  const meta=$("#rosterMeta"); if(meta) meta.textContent = all.length? (ids.length+" of "+all.length+" cats") : "";
+  if(rosterView==="list"){
+    $("#rosterList").classList.remove("hide"); $("#rosterTable").classList.add("hide");
+    if(!all.length){ $("#rosterList").innerHTML=`<div class="rosterempty">No roster yet — paste your Village Manager page above.</div>`; return; }
+    if(!ids.length){ $("#rosterList").innerHTML=`<div class="rosterempty">No cats match.</div>`; return; }
+    $("#rosterList").innerHTML = ids.slice(0,400).map(id=>{
+      const c=r.cats[id];
+      const meta2=[notNA(col(c,/occupation/i)), notNA(col(c,/adventuring|class/i)), notNA(col(c,/personality/i))].filter(Boolean).join(" · ");
+      const s=cache[id]; const sug = (s&&s.className)?`<span class="rc-sug">→ ${esc(s.className)}</span>`:"";
+      return `<button class="rostercat" type="button" data-id="${esc(id)}">
+        <span class="rc-name">${esc(c.name)}</span> <span class="rc-id">#${esc(id)}</span>
+        <span class="rc-meta">${esc(meta2)} ${sug}</span></button>`;
+    }).join("");
+  }else{
+    $("#rosterList").classList.add("hide"); $("#rosterTable").classList.remove("hide");
+    if(!ids.length){ $("#rosterTable").innerHTML=`<div class="rosterempty">No cats match.</div>`; return; }
+    const cols=(r.headers||[]).filter(h=>!/^(name|id)$/i.test(h));
+    const head=`<tr><th>Name</th><th>ID</th>${cols.map(h=>`<th>${esc(h)}</th>`).join("")}<th>Suggested class</th><th>Suggested jobs</th></tr>`;
+    const body=ids.slice(0,400).map(id=>{
+      const c=r.cats[id], s=cache[id]||{};
+      const tds=cols.map(h=>`<td>${esc(c.data[h]||"")}</td>`).join("");
+      const sc=s.className?`<span class="sug">${esc(s.className)}${s.classPct?(" "+s.classPct+"%"):""}</span>`:"—";
+      const sj=(s.jobs&&s.jobs.length)?esc(s.jobs.join(", ")):"—";
+      return `<tr data-id="${esc(id)}"><td><b>${esc(c.name)}</b></td><td>${esc(id)}</td>${tds}<td>${sc}</td><td>${sj}</td></tr>`;
+    }).join("");
+    $("#rosterTable").innerHTML=`<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+  }
+}
+
+/* =========================================================================
    6. UI WIRING
    ========================================================================= */
 function setStatus(el, msg, cls){
@@ -1004,9 +1169,10 @@ function parseIdInput(raw){
 }
 
 function switchTab(which){
-  ["id","paste","manual"].forEach(k=>{
+  ["id","paste","manual","mycats"].forEach(k=>{
     const sel = k===which;
     const tab=$("#tab-"+k), pane=$("#pane-"+k);
+    if(!tab||!pane) return;
     tab.setAttribute("aria-selected", sel?"true":"false");
     pane.classList.toggle("active", sel);
     pane.hidden = !sel;
@@ -1040,13 +1206,13 @@ document.addEventListener("DOMContentLoaded", ()=>{
     syncThemeBtn();
   });
 
+  $("#tab-mycats").addEventListener("click", ()=>switchTab("mycats"));
   $("#tab-id").addEventListener("click", ()=>switchTab("id"));
   $("#tab-paste").addEventListener("click", ()=>switchTab("paste"));
   $("#tab-manual").addEventListener("click", ()=>{ switchTab("manual"); $("#sheetCard").classList.remove("hide"); });
 
-  // Fetch by ID
-  async function doFetch(){
-    const id = parseIdInput($("#catId").value);
+  // Fetch a single cat by ID (used by the By-ID tab and by roster clicks)
+  async function loadCatById(id){
     if(!id){ setStatus($("#fetchStatus"),"Enter a numeric cat ID or a profile URL.","err"); return; }
     currentId = id;
     const btn=$("#fetchBtn"); btn.disabled=true;
@@ -1062,8 +1228,60 @@ document.addEventListener("DOMContentLoaded", ()=>{
       $("#sheetCard").classList.remove("hide");
     }finally{ btn.disabled=false; }
   }
+  const doFetch = ()=>loadCatById(parseIdInput($("#catId").value));
   $("#fetchBtn").addEventListener("click", doFetch);
   $("#catId").addEventListener("keydown", e=>{ if(e.key==="Enter") doFetch(); });
+
+  // ----- My cats roster -----
+  $("#loadRosterBtn").addEventListener("click", ()=>{
+    const html=$("#rosterPaste").value;
+    if(html.trim().length<50){ setStatus($("#rosterStatus"),"Paste your Village Manager page first.","err"); return; }
+    const parsed=parseRoster(html);
+    if(!parsed.rows.length){ setStatus($("#rosterStatus"),"Couldn't find a cat table there. Make sure it's the Village Manager page (village/cats/manager…).","err"); return; }
+    rosterMerge(parsed);
+    $("#rosterUI").classList.remove("hide");
+    $("#rosterPaste").value="";
+    setStatus($("#rosterStatus"),"Loaded "+parsed.rows.length+" cats from the “"+parsed.view+"” view. Paste other views to add more columns/filters.","ok");
+    rosterRender();
+  });
+  $("#clearRosterBtn").addEventListener("click", ()=>{
+    try{ localStorage.removeItem(ROSTER_KEY); }catch(e){}
+    rosterFilter="all"; $("#rosterUI").classList.add("hide");
+    setStatus($("#rosterStatus"),"Roster cleared from this device.","ok"); rosterRender();
+  });
+  ["all","active","travel"].forEach(k=>$("#rf-"+k).addEventListener("click", ()=>{ if($("#rf-"+k).disabled) return; rosterFilter=k; rosterRender(); }));
+  $("#viewList").addEventListener("click", ()=>{ rosterView="list"; rosterRender(); });
+  $("#viewTable").addEventListener("click", ()=>{ rosterView="table"; rosterRender(); });
+  $("#rosterSearch").addEventListener("input", rosterRender);
+  function pickFromRoster(id){ if(!id) return; $("#catId").value=id; switchTab("id"); loadCatById(id); }
+  $("#rosterList").addEventListener("click", e=>{ const b=e.target.closest(".rostercat"); if(b) pickFromRoster(b.getAttribute("data-id")); });
+  $("#rosterTable").addEventListener("click", e=>{ const tr=e.target.closest("tr[data-id]"); if(tr) pickFromRoster(tr.getAttribute("data-id")); });
+
+  // bulk-suggest across the shown cats (fetches each page, throttled)
+  $("#suggestStopBtn").addEventListener("click", ()=>{ bulkStop=true; });
+  $("#suggestAllBtn").addEventListener("click", async ()=>{
+    if(bulkRunning) return;
+    const r=rosterLoad(), ids=rosterVisibleIds(r), cache=suggestLoad();
+    const todo=ids.filter(id=>!(cache[id]&&cache[id].className));
+    if(!todo.length){ setStatus($("#suggestStatus"),"All shown cats already have suggestions.","ok"); return; }
+    bulkRunning=true; bulkStop=false;
+    $("#suggestStopBtn").classList.remove("hide"); $("#suggestAllBtn").disabled=true;
+    let done=0, ok=0, fail=0;
+    for(const id of todo){
+      if(bulkStop) break;
+      setStatus($("#suggestStatus"),"Fetching "+(++done)+"/"+todo.length+"… (#"+id+")","busy");
+      try{ const html=await fetchCatById(id); cacheSuggestion(id, parseCatHTML(html)); ok++; }
+      catch(e){ fail++; }
+      rosterRender();
+      await sleep(900);
+    }
+    bulkRunning=false; $("#suggestStopBtn").classList.add("hide"); $("#suggestAllBtn").disabled=false;
+    setStatus($("#suggestStatus"), "Done — "+ok+" suggested"+(fail?(", "+fail+" couldn't be fetched (relay limit — click those individually)"):"")+(bulkStop?" (stopped)":"")+".", fail?"":"ok");
+    rosterRender();
+  });
+
+  // restore a saved roster on load
+  if(Object.keys(rosterLoad().cats).length){ $("#rosterUI").classList.remove("hide"); rosterRender(); }
 
   // Paste HTML
   $("#parsePasteBtn").addEventListener("click", ()=>{

@@ -13,14 +13,20 @@ combined profile. All analysis runs in your browser; nothing leaves the page.
 
 ### Using it
 
-Load a cat one of three ways — they all land on an editable sheet, so you can fix anything before analyzing:
+Load a cat one of four ways — they all land on an editable sheet, so you can fix anything before analyzing:
 
-1. **By cat ID** — paste an ID (e.g. `430432`) or a profile URL, press **Fetch cat**. Routed through public
+1. **My cats (roster)** — paste your **Village Manager** page once (it's a private page, so it can't be
+   auto-loaded). The tool parses the whole table into a **searchable, filterable** list saved on your device;
+   click a cat to fetch and analyze it. Paste more manager views (Basic, Adventuring Levels, Day Job Bonuses,
+   Active/Traveling) and their columns/filters merge into the same roster. A **Table** view shows every cat with
+   all captured columns plus suggested class/jobs, and **Suggest for shown cats** computes suggestions in bulk.
+2. **By cat ID** — paste an ID (e.g. `430432`) or a profile URL, press **Fetch cat**. Routed through public
    CORS relays because the game blocks direct cross-site reads; relays can be flaky, so:
-2. **Paste page HTML** — open the profile, view source (Ctrl/Cmd+U), copy all, paste. Always works.
-3. **Enter manually** — type the numbers.
+3. **Paste page HTML** — open the profile, view source (Ctrl/Cmd+U), copy all, paste. Always works.
+4. **Enter manually** — type the numbers.
 
-Press **Try a demo cat** to see the full output instantly.
+Press **Try a demo cat** to see the full output instantly. Attributes read the **effective total** (base +
+equipped trinkets) from the cat's stat boxes, and equipped stats show a `base X · +N Item` breakdown.
 
 ### What it computes
 
