@@ -405,7 +405,7 @@
         <div class="rfilters" style="margin-top:10px">
           <button class="rf sm" id="viewList"  type="button" aria-pressed="true">List</button>
           <button class="rf sm" id="viewTable" type="button" aria-pressed="false">Table</button>
-          <button class="btn ghost sm" id="suggestAllBtn" type="button" title="Fetches each shown cat's page for its stats, day-job &amp; adventuring-class levels and a class suggestion; may take a while">✨ Fetch stats &amp; levels for shown cats</button>
+          <button class="btn ghost sm hide" id="suggestAllBtn" type="button" title="Opens each remaining cat's page for its stats, day-job &amp; adventuring-class levels. Pull my cats already does this; this only appears when some cats still need it (e.g. a relay hiccup or a pasted roster).">↻ Fetch stats &amp; levels</button>
           <button class="btn ghost sm hide" id="suggestStopBtn" type="button">Stop</button>
         </div>
         <div class="status" id="suggestStatus" role="status" aria-live="polite"></div>
@@ -1507,6 +1507,16 @@ function rosterVisibleIds(r){
   if(q) ids=ids.filter(id=> (r.cats[id].name||"").toLowerCase().includes(q) || id.includes(q));
   return ids.sort((a,b)=>(r.cats[a].name||"").localeCompare(r.cats[b].name||""));
 }
+// The stats/levels fetch is a self-hiding retry: "Pull my cats" already runs it,
+// so this only shows when some visible cats still lack stats (relay hiccup, or a
+// pasted roster that hasn't been enriched yet).
+function updateEnrichBtn(r, ids){
+  const btn=$("#suggestAllBtn"); if(!btn) return;
+  if(bulkRunning) return;  // leave the button alone mid-run
+  const missing = (ids||[]).filter(id=>!((r.cats[id].data||{})["Strength"]));
+  if(missing.length){ btn.classList.remove("hide"); btn.textContent="↻ Fetch stats & levels ("+missing.length+" left)"; }
+  else btn.classList.add("hide");
+}
 function rosterRender(){
   const r=rosterLoad(), all=Object.keys(r.cats);
   [["all",all.length],["active",(r.sets.active||[]).length],["travel",(r.sets.travel||[]).length]].forEach(([k,n])=>{
@@ -1520,6 +1530,7 @@ function rosterRender(){
   if(vt) vt.setAttribute("aria-pressed", rosterView==="table"?"true":"false");
   const ids=rosterVisibleIds(r), cache=suggestLoad();
   const meta=$("#rosterMeta"); if(meta) meta.textContent = all.length? (ids.length+" of "+all.length+" cats") : "";
+  updateEnrichBtn(r, ids);
   if(rosterView==="list"){
     $("#rosterList").classList.remove("hide"); $("#rosterTable").classList.add("hide");
     if(!all.length){ $("#rosterList").innerHTML=`<div class="rosterempty">No roster yet — paste your Village Manager page above.</div>`; return; }
@@ -2417,8 +2428,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
       // Second pass (same click): open each cat's page for attributes, jobs & class levels.
       bulkRunning=true; bulkStop=false; $("#suggestStopBtn").classList.remove("hide");
       const res=await enrichCats(uniq.map(c=>c.id), (m,c)=>setStatus($("#profileStatus"), tabNote+m, "busy"));
-      bulkRunning=false; $("#suggestStopBtn").classList.add("hide"); fillBreedRosterDatalist();
-      setStatus($("#profileStatus"), tabNote+"Fetched stats, jobs &amp; class levels for "+res.ok+" of them"+(res.fail?(", "+res.fail+" need a retry (relay limit — press Pull again or “✨ Fetch stats &amp; levels”)"):"")+(res.stopped?" (stopped)":"")+". Sort them in the Table view; try the Breeding tab.", (res.fail||res.stopped)?"":"ok");
+      bulkRunning=false; $("#suggestStopBtn").classList.add("hide"); fillBreedRosterDatalist(); rosterRender();
+      setStatus($("#profileStatus"), tabNote+"Fetched stats, jobs &amp; class levels for "+res.ok+" of them"+(res.fail?(", "+res.fail+" still need it — click the “↻ Fetch stats &amp; levels” button to retry those"):"")+(res.stopped?" (stopped)":"")+". Sort them in the Table view; try the Breeding tab.", (res.fail||res.stopped)?"":"ok");
     }catch(e){
       setStatus($("#profileStatus"),"Couldn't fetch through a relay ("+(e.message||e)+"). Open your in-game Cats page, view source (Ctrl/⌘+U), copy all, and paste it into the box below — I'll read the cats from that.","err");
     }finally{ btn.disabled=false; bulkRunning=false; $("#suggestStopBtn").classList.add("hide"); }
@@ -2494,16 +2505,15 @@ document.addEventListener("DOMContentLoaded", ()=>{
   }
   $("#suggestAllBtn").addEventListener("click", async ()=>{
     if(bulkRunning) return;
-    const r=rosterLoad(), ids=rosterVisibleIds(r), cache=suggestLoad();
-    const enriched=id=>{ const c=r.cats[id]; return c&&c.data&&c.data["Strength"]; };
-    const todo=ids.filter(id=>!(cache[id]&&cache[id].className) || !enriched(id));
+    const r=rosterLoad(), ids=rosterVisibleIds(r);
+    const todo=ids.filter(id=>!((r.cats[id].data||{})["Strength"]));
     if(!todo.length){ setStatus($("#suggestStatus"),"All shown cats already have their stats, jobs &amp; class levels.","ok"); return; }
     bulkRunning=true; bulkStop=false;
     $("#suggestStopBtn").classList.remove("hide"); $("#suggestAllBtn").disabled=true;
     const res=await enrichCats(todo, (m,c)=>setStatus($("#suggestStatus"),m,c));
     bulkRunning=false; $("#suggestStopBtn").classList.add("hide"); $("#suggestAllBtn").disabled=false;
     fillBreedRosterDatalist();
-    setStatus($("#suggestStatus"), "Done — "+res.ok+" cat"+(res.ok===1?"":"s")+" fetched (stats, jobs, class levels &amp; genetics)"+(res.fail?(", "+res.fail+" couldn't be fetched (relay limit — run again to retry)"):"")+(res.stopped?" (stopped)":"")+". Switch to the Table view to sort by any of them.", res.fail?"":"ok");
+    setStatus($("#suggestStatus"), "Done — "+res.ok+" cat"+(res.ok===1?"":"s")+" fetched (stats, jobs, class levels &amp; genetics)"+(res.fail?(", "+res.fail+" couldn't be fetched (relay limit — click again to retry)"):"")+(res.stopped?" (stopped)":"")+". Switch to the Table view to sort by any of them.", res.fail?"":"ok");
     rosterRender();
   });
 
