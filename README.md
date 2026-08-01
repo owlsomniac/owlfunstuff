@@ -44,6 +44,16 @@ Diplomat/Spite Bard, Adventurous Mayor).
 Fan-made; not affiliated with Pixel Cat's End. Bonus rules follow the supplied Adventuring Guide; attribute/job/class
 data cross-checked against the community [Not-Wiki](https://pixelcatsend.miraheze.org/wiki/Attributes).
 
+### Breeding predictor (🧬 Breeding tab)
+
+Enter two parents' **genetic strings** (e.g. `[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]`; old dash/pipe strings work too)
+and get each kitten's odds for **coat colour** (incl. tortoiseshell / watercolor / snow, with swatches), **wind**, **fur length**,
+**pattern**, **white markings** (level &amp; type), and **species** — plus each parent's decoded phenotype. The genetics engine
+follows the Not-Wiki's [Genetics](https://pixelcatsend.miraheze.org/wiki/Genetics) rules (Mendelian inheritance, recessive
+dilute/no-white/longhair, number-range colour density &amp; white level, positional colour by wind) and is unit-tested against
+the wiki's own worked Punnett examples. Percentages are exact per kitten; colour swatches approximate the coat (the game
+renders the real layered sprite).
+
 ## Hosting
 
 GitHub **Settings → Pages → Deploy from a branch → `main` / `/ (root)`**. The hub is then at
