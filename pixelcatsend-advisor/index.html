@@ -374,7 +374,7 @@
         <div class="rfilters" style="margin-top:10px">
           <button class="rf sm" id="viewList"  type="button" aria-pressed="true">List</button>
           <button class="rf sm" id="viewTable" type="button" aria-pressed="false">Table</button>
-          <button class="btn ghost sm" id="suggestAllBtn" type="button" title="Fetches each shown cat's page to compute a suggestion; may take a while">✨ Suggest for shown cats</button>
+          <button class="btn ghost sm" id="suggestAllBtn" type="button" title="Fetches each shown cat's page for its stats, day-job &amp; adventuring-class levels and a class suggestion; may take a while">✨ Fetch stats &amp; levels for shown cats</button>
           <button class="btn ghost sm hide" id="suggestStopBtn" type="button">Stop</button>
         </div>
         <div class="status" id="suggestStatus" role="status" aria-live="polite"></div>
@@ -606,6 +606,9 @@ function parseStatboxes(doc, out){
   // equipped item's "+N Luck" badge that appears elsewhere on the page first.
   const boxes = doc.querySelectorAll('.statbox, div[id$="-box"]');
   boxes.forEach(box=>{
+    // A cat page renders BOTH total and base stat sets (with duplicate ids); the
+    // base set is hidden. Skip it so the effective TOTAL wins (e.g. Luck 27, not 24).
+    if(box.closest('#base-stats, #base-personality, .hidden-from-view')) return;
     const nameEl = box.querySelector('.stat-name');
     const mainEl = box.querySelector('.stat-main');
     if(!nameEl || !mainEl) return;
@@ -648,6 +651,44 @@ function parseTrinkets(doc, out){
   });
 }
 
+// Extract the cat page's bio: labelled traits, the genetic string, day-job &
+// adventuring-class blocks (each with current + per-name levels), and the cat's
+// own layered portrait. All of this is fetchable, so a per-cat fetch can enrich
+// the roster with stats, jobs, class levels and accurate genetics.
+function parseCatBio(doc, out){
+  const bio={};
+  doc.querySelectorAll('.bio-group-column').forEach(coldiv=>{
+    const lab=coldiv.querySelector('.bio-group-label'), end=coldiv.querySelector('.bio-group-end');
+    if(!lab||!end) return;
+    const k=(lab.textContent||"").replace(/\s+/g," ").replace(/:\s*$/,"").trim().toLowerCase();
+    const v=(end.textContent||"").replace(/\s+/g," ").trim();
+    if(k&&v&&!(k in bio)) bio[k]=v;              // first wins: visible total before hidden base
+  });
+  out.bio=bio;
+  // fill personality from the bio if the stat boxes didn't (cat page shows it here)
+  PERS.forEach(p=>{ if(out.personality[p.key]==null && bio[p.label.toLowerCase()]!=null){ const n=parseInt(bio[p.label.toLowerCase()],10); if(!isNaN(n)) out.personality[p.key]=n; } });
+  // genetic string (may be "[ Unknown Genetic String ]")
+  const gc=doc.querySelector('.genes-code');
+  if(gc){ const g=(gc.textContent||"").replace(/\s+/g," ").trim(); if(g && !/unknown/i.test(g)) out.geneString=g; }
+  // day job / adventuring class loops
+  const levelLine=s=>{ const m=String(s).match(/^(.+?)\s+Level\s+(\d+)/i); return m?{name:m[1].trim(), level:parseInt(m[2],10), raw:String(s).trim()}:null; };
+  doc.querySelectorAll('.cat-title-loop').forEach(loop=>{
+    const b=loop.querySelector('b'); if(!b) return;
+    const head=(b.textContent||"").replace(/\s+/g," ").trim().toLowerCase();
+    if(!/day job|adventuring class/.test(head)) return;
+    const cur=[...loop.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join(" ").replace(/\s+/g," ").trim();
+    const inner=loop.querySelector('.bio-group-column');
+    const lines=inner?[...inner.childNodes].filter(n=>n.nodeType===3).map(n=>(n.textContent||"").replace(/\s+/g," ").trim()).filter(Boolean):[];
+    const list=lines.map(levelLine).filter(Boolean);
+    if(/day job/.test(head)) out.dayJob={current:cur.replace(/\s*\(.*$/,"").trim(), skill:cur, jobs:list};
+    else out.advClass={current:cur.trim(), classes:list};
+  });
+  // the cat's own layered portrait (its catjail links to cat&id=, unlike the header avatar)
+  const own=[...doc.querySelectorAll('.catjail')].find(j=>j.querySelector("a[href*='cat&id=']"));
+  if(own){ const layers=[...own.querySelectorAll('img')].map(i=>i.getAttribute('src')).filter(u=>u&&/\/images\/cats\//.test(u)); if(layers.length) out.imgLayers=layers; }
+  return out;
+}
+
 function parseCatHTML(html){
   const out = {name:"", image:"", id:"", attributes:{}, personality:{}, details:{}, equips:{}, warnings:[]};
   let doc;
@@ -660,6 +701,7 @@ function parseCatHTML(html){
   // Preferred path: structured stat boxes (gives the effective total + dice/mod/rating).
   parseStatboxes(doc, out);
   parseTrinkets(doc, out);
+  parseCatBio(doc, out);
 
   // --- name ---
   const og = doc.querySelector('meta[property="og:title"],meta[name="og:title"]');
@@ -1322,6 +1364,43 @@ function computeSuggestion(cat){
   return {className:cls?cls.name:"", classPct:cls?cls.pct:0, jobs, ts:nowTs()};
 }
 function cacheSuggestion(id,cat){ if(!id) return; const c=suggestLoad(); c[id]=computeSuggestion(cat); suggestSave(c); }
+
+// Flatten a fetched cat page into roster columns: physical traits, current
+// day job & adventuring class, every job/class level, and the raw stats.
+function catRosterColumns(cat){
+  const d={}, bio=cat.bio||{};
+  const put=(k,v)=>{ if(v!=null&&v!=="") d[k]=String(v); };
+  put("Species", bio["species"]); put("Fur", bio["fur"]); put("Color", bio["color"]);
+  put("Pattern", bio["pattern"]); put("Wind", bio["wind"]); put("Size", bio["size"]);
+  put("Eye Color", bio["eye color"]); put("Age", bio["age"]);
+  if(bio["white marks"]){ put("White Marks", bio["white marks"]);
+    const m=bio["white marks"].match(/\b([CPLRIT])(\d+)\b/);
+    if(m){ put("White Type", WHITE_TYPE[m[1]]||m[1]); put("White Level", m[2]); }
+    else if(/^\s*no\b|none/i.test(bio["white marks"])){ put("White Level","0"); } }
+  if(cat.dayJob){ put("Occupation", cat.dayJob.current);
+    if(cat.dayJob.jobs&&cat.dayJob.jobs.length) put("Job Levels", cat.dayJob.jobs.map(j=>j.name+" "+j.level).join(", ")); }
+  if(cat.advClass){ put("Class", cat.advClass.current);
+    (cat.advClass.classes||[]).forEach(c=>put(c.name+" Lv", c.level)); }
+  ATTRS.forEach(a=>{ if(cat.attributes[a.key]!=null) put(a.label, cat.attributes[a.key]); });
+  PERS.forEach(p=>{ if(cat.personality[p.key]!=null) put(p.label, cat.personality[p.key]); });
+  return d;
+}
+// Merge a fetched cat page into the roster: columns, real portrait, upgraded genotype.
+function rosterEnrichFromCat(id, cat){
+  if(!id) return;
+  const r=rosterLoad();
+  const cur=r.cats[id]||{id, name:cat.name||"", data:{}};
+  if(cat.name && !cur.name) cur.name=cat.name;
+  Object.assign(cur.data, catRosterColumns(cat));
+  if(cat.imgLayers && cat.imgLayers.length) cur.img=cat.imgLayers;
+  const gs=(cat.geneString||"").trim();
+  if(gs && !parseGeneString(gs).error){ cur.genes=gs; cur.geneInfo={resolved:["revealed genetic string"], guessed:[]}; }
+  else { const res=rosterCatToGeneString(Object.assign({}, cur, {genes:null})); if(res && res.str){ cur.genes=res.str; cur.geneInfo={resolved:res.resolved, guessed:res.guessed}; } }
+  r.cats[id]=cur;
+  r.sets.all=r.sets.all||[]; if(r.sets.all.indexOf(id)<0) r.sets.all.push(id);
+  const hs=new Set(r.headers||[]); Object.keys(cur.data).forEach(h=>hs.add(h)); r.headers=[...hs];
+  r.ts=nowTs(); rosterSave(r);
+}
 
 let rosterFilter="all", rosterView="list", rosterSort=null, bulkStop=false, bulkRunning=false;
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
@@ -2077,6 +2156,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
       if(!cat.id) cat.id=id;
       setStatus($("#fetchStatus"),"Loaded — review the values below.","ok");
       fillSheet(cat);
+      // if this cat is in the roster, fold in its fresh stats/jobs/classes/genetics
+      if(rosterLoad().cats[id]){ rosterEnrichFromCat(id, cat); rosterRender(); fillBreedRosterDatalist(); }
     }catch(e){
       setStatus($("#fetchStatus"),"Couldn't fetch automatically ("+(e.message||e)+"). Try “Paste page HTML”, or enter values manually.","err");
       $("#sheetCard").classList.remove("hide");
@@ -2133,7 +2214,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
       const uniq=dedupeCats(all);
       if(!uniq.length){ setStatus($("#profileStatus"),"Fetched the page but found no cats on it. Open your in-game Cats page, view source, and paste it into the box below instead.","err"); return; }
       mergeCatsPageCats(uniq); afterRosterChange();
-      const tail=" Colours, patterns &amp; genetics are loaded — try the Breeding tab. Attributes for class/job picks: use “✨ Suggest for shown cats”. Current adventure-class &amp; day-job levels live only in your Village Manager — paste those views below to add them.";
+      const tail=" Colours, patterns &amp; genetics are loaded — try the Breeding tab. To also pull each cat's <b>attributes, day-job levels and adventuring-class levels</b>, hit “✨ Fetch stats &amp; levels for shown cats” (it opens each cat's page).";
       setStatus($("#profileStatus"),"Pulled "+uniq.length+" cats across "+(n+1)+" tab"+(n?"s":"")+(failed?(" ("+failed+" tab"+(failed>1?"s":"")+" failed — click again to retry those)"):"")+"."+tail, failed?"":"ok");
     }catch(e){
       setStatus($("#profileStatus"),"Couldn't fetch through a relay ("+(e.message||e)+"). Open your in-game Cats page, view source (Ctrl/⌘+U), copy all, and paste it into the box below — I'll read the cats from that.","err");
@@ -2197,21 +2278,23 @@ document.addEventListener("DOMContentLoaded", ()=>{
   $("#suggestAllBtn").addEventListener("click", async ()=>{
     if(bulkRunning) return;
     const r=rosterLoad(), ids=rosterVisibleIds(r), cache=suggestLoad();
-    const todo=ids.filter(id=>!(cache[id]&&cache[id].className));
-    if(!todo.length){ setStatus($("#suggestStatus"),"All shown cats already have suggestions.","ok"); return; }
+    const enriched=id=>{ const c=r.cats[id]; return c&&c.data&&c.data["Strength"]; };
+    const todo=ids.filter(id=>!(cache[id]&&cache[id].className) || !enriched(id));
+    if(!todo.length){ setStatus($("#suggestStatus"),"All shown cats already have their stats, jobs &amp; class levels.","ok"); return; }
     bulkRunning=true; bulkStop=false;
     $("#suggestStopBtn").classList.remove("hide"); $("#suggestAllBtn").disabled=true;
     let done=0, ok=0, fail=0;
     for(const id of todo){
       if(bulkStop) break;
-      setStatus($("#suggestStatus"),"Fetching "+(++done)+"/"+todo.length+"… (#"+id+")","busy");
-      try{ const html=await fetchCatById(id); cacheSuggestion(id, parseCatHTML(html)); ok++; }
+      setStatus($("#suggestStatus"),"Fetching "+(++done)+"/"+todo.length+"… (#"+id+") — stats, jobs &amp; class levels","busy");
+      try{ const html=await fetchCatById(id); const cat=parseCatHTML(html); cacheSuggestion(id, cat); rosterEnrichFromCat(id, cat); ok++; }
       catch(e){ fail++; }
       rosterRender();
       await sleep(900);
     }
     bulkRunning=false; $("#suggestStopBtn").classList.add("hide"); $("#suggestAllBtn").disabled=false;
-    setStatus($("#suggestStatus"), "Done — "+ok+" suggested"+(fail?(", "+fail+" couldn't be fetched (relay limit — click those individually)"):"")+(bulkStop?" (stopped)":"")+".", fail?"":"ok");
+    fillBreedRosterDatalist();
+    setStatus($("#suggestStatus"), "Done — "+ok+" cat"+(ok===1?"":"s")+" fetched (stats, jobs, class levels &amp; genetics)"+(fail?(", "+fail+" couldn't be fetched (relay limit — click those individually)"):"")+(bulkStop?" (stopped)":"")+". Switch to the Table view to sort by any of them.", fail?"":"ok");
     rosterRender();
   });
 
