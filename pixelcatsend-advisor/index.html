@@ -370,10 +370,12 @@
   .pheno-facts>div>span:last-child{min-width:0;overflow-wrap:anywhere}
   .pf-k{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px;flex:0 0 50px;padding-top:1px}
   .pf-sub{color:var(--muted);font-size:11px}
+  .pf-unknown{color:var(--muted);font-style:italic}
   /* keep the breeding boxes inside the viewport on narrow screens */
   .parent-card,.pheno-head,.pheno-line{min-width:0}
   .pheno-line code{overflow-wrap:anywhere;word-break:break-word;white-space:normal}
   .grid2>*{min-width:0}
+  .grid2>.dist-block{margin-top:0}
   @media (max-width:560px){
     .pheno-head{flex-direction:column;gap:8px}
     .dist-row{grid-template-columns:minmax(96px,130px) 1fr 40px;gap:8px}
@@ -390,6 +392,8 @@
   .gene-copy{display:block;width:100%;margin-top:5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:9.5px;line-height:1.35;color:var(--muted);background:var(--panel2);border:1px solid var(--line-soft);border-radius:6px;padding:3px 5px;cursor:pointer;white-space:normal;word-break:break-word;overflow-wrap:anywhere;text-align:center}
   .gene-copy:hover{border-color:var(--brand);color:var(--ink-soft)}
   .gene-copy.copied{border-color:var(--brand);color:var(--brand-ink);font-weight:700}
+  .gene-accent{margin-top:3px;font-size:10px;color:var(--muted);line-height:1.4}
+  .gene-accent .geno-a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.5px}
   .finder{margin:12px 0 4px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel2);padding:0 12px}
   .finder>summary{cursor:pointer;font-weight:700;color:var(--brand-ink);padding:11px 0;font-size:14px}
   .finder[open]{padding-bottom:12px}
@@ -2182,6 +2186,23 @@ function offspringAccentAlleles(A,B){
   donate(A.accent).forEach(([x])=>donate(B.accent).forEach(([y])=>set.add([x,y].sort().join(""))));
   return set.size===1 ? [...set][0] : "??";
 }
+// Normalise an allele pair for display: a known allele always comes first, an
+// unknown parent contributes "?". e.g. ("?","B") → "B?", ("R","B") → "BR", both ? → "??".
+function orderAccentPair(x,y){
+  if(x==="?"&&y==="?") return "??";
+  if(x==="?") return y+"?";
+  if(y==="?") return x+"?";
+  return [x,y].sort().join("");
+}
+// Every accent genotype a kitten could inherit. A parent with a hidden accent
+// contributes "?", so a Not-cat pair with one hidden accent yields partials like
+// ["B?","R?"]; two known accents (e.g. both Mercats) yield full genotypes.
+function offspringAccentGenotypes(A,B){
+  const al=g=> accentKnown(g) ? [...new Set(g.accent)] : ["?"];
+  const a=al(A), b=al(B), set=new Set();
+  a.forEach(x=>b.forEach(y=>set.add(orderAccentPair(x,y))));
+  return [...set];
+}
 
 // which parent contributes the north(slot1) / south(slot2) colour allele, from winds
 function colorRoles(wa,wb){
@@ -2678,7 +2699,7 @@ function parentCard(title, g, meta){
     ${fact("Wind", esc(ph.wind))}
     ${fact("Fur", esc(ph.fur))}
     ${fact("White", whiteVal)}
-    ${ph.accent?fact("Accent", esc(ph.accent)):""}
+    ${fact("Accent", ph.accent?esc(ph.accent):`<span class="pf-unknown">Unknown</span>`)}
     ${fact("Species", esc(ph.species))}
   </div>`;
   return `<div class="statset parent-card"><h3>${who}</h3>
@@ -2688,7 +2709,8 @@ function parentCard(title, g, meta){
 // Build a kitten's genetic string from its VISIBLE traits, marking every allele the
 // game keeps hidden with "?" (see the Quick Genetics Overview). A trait shown as
 // dominant is "[D?]" (the second copy could be a hidden recessive); a recessive
-// trait is "[rr]" (both copies known); a fully-hidden gene is "[??]".
+// trait is "[rr]" (both copies known). Accent is handled separately (it can be more
+// than one possible genotype), so the string is 7 sections — no accent slot.
 function offspringGeneString(o){
   const sp = o.species==="Mercat" ? "M" : "C";
   const windSec = o.wind==="North"?"N?" : o.wind==="South"?"S?" : o.wind==="Trade"?"NS" : "OO";
@@ -2710,8 +2732,7 @@ function offspringGeneString(o){
   if(o.patterned){ const pr=PATTERN_REV[String(o.patName||"").toLowerCase()]; patSec="Y?"+(pr?pr.join(""):"??"); }
   else patSec="NN??";
   const whiteSec = (o.wLevel>0) ? ("Y?"+o.wLevel+(o.wType||"C")) : "NN0?";
-  const accSec = (o.accAlleles && o.accAlleles!=="??") ? o.accAlleles : "??";
-  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [AB] [${accSec}]`;
+  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [AB]`;
 }
 // A gallery of every possible kitten coat, with a row of Wind / Pattern / White
 // dropdowns (each listing only outcomes this pairing can produce). Picking any of
@@ -2747,7 +2768,11 @@ function kittenGallery(R,A,B){
   let wLevel=0, wType="C";
   if(previewSel.white!=="any" && previewSel.white!=="none"){ const m=String(previewSel.white).match(/^w:(\d+):([CPLRIT])$/); if(m){ wLevel=parseInt(m[1],10); wType=m[2]; } }
 
-  const accAlleles = offspringAccentAlleles(A,B);   // "RL" when fixed, else "??"
+  // A kitten's accent is coat-independent: list every genotype it could inherit
+  // (partials like [B?] when a Not-cat parent's accent is hidden; full genotypes
+  // when both parents' accents are known, e.g. Mercats whose tails reveal them).
+  const accGenos = offspringAccentGenotypes(A,B);
+  const accLine = `<div class="gene-accent">Accent: ${accGenos.map(gn=>`<span class="geno-a">[${esc(gn)}]</span>`).join(" or ")}</div>`;
 
   const cells=colors.map(([label,p])=>{
     const windP = previewSel.wind==="any" ? p : ((cc.windJoint.get(label)||new Map()).get(previewSel.wind)||0);
@@ -2760,10 +2785,11 @@ function kittenGallery(R,A,B){
       patternName:patName, patterned, species, whiteType:wType, whiteLevel:wLevel, hex, fur, size:96, title:label});
     const windForStr = previewSel.wind!=="any" ? previewSel.wind
       : coatType==="tortoiseshell"||coatType==="watercolor" ? "Trade" : coatType==="snow" ? "Null" : "North";
-    const gstr=offspringGeneString({species, wind:windForStr, coatType, label, patterned, patName, fur, wLevel, wType, accAlleles});
+    const gstr=offspringGeneString({species, wind:windForStr, coatType, label, patterned, patName, fur, wLevel, wType});
     return `<figure class="kitten">${img}
       <figcaption><span class="knm">${esc(label)}</span><span class="kpct">${pct<9.95?pct.toFixed(1):Math.round(pct)}%</span></figcaption>
       <button type="button" class="gene-copy" data-gene="${esc(gstr)}" title="Copy this genetic string">${esc(gstr)}</button>
+      ${accLine}
     </figure>`;
   }).join("");
 
@@ -2838,7 +2864,6 @@ function renderBreeding(strA, strB){
   const warn = R.compatible ? "" :
     `<div class="breed-warn">These two can't have biological kittens — ${esc(phenotype(A).wind)} × ${esc(phenotype(B).wind)} winds are incompatible (same North/North, same South/South, or a Null-wind cat). The odds below assume they could.</div>`;
   const cc = R.color;
-  const DENSITY_MAP = {1:"1 – palest",2:"2",3:"3",4:"4 – deepest"};
   const colorBlock = cc.error ? `<div class="breed-warn">${esc(cc.error)}</div>`
     : `<div class="dist-block"><h3>Coat colour</h3>${distRows(cc.dist,{hex:cc.hex, genos:cc.genos})}</div>`;
   // allele-pair possibilities for each simple two-allele locus (shown beneath every outcome)
@@ -2848,26 +2873,24 @@ function renderBreeding(strA, strB){
   const gPattern = genoPairsSym(A.pat,B.pat, patternName);
   const gWhiteV  = genoPairsSym(A.whiteVis,B.whiteVis, (x,y)=>(x==="N"&&y==="N")?"No-white":"White");
   const gAccent  = (accentKnown(A)&&accentKnown(B)) ? genoPairsSym(A.accent,B.accent, accentName) : null;
+  // Result blocks are ordered to mirror the finder's search inputs (Species first).
   out.innerHTML = `<div class="card">
     ${posePicker()}
     <div class="breed-parents">${parentCard("Parent A",A,breedMeta.A)}${parentCard("Parent B",B,breedMeta.B)}</div>
     ${warn}
     ${kittenGallery(R,A,B)}
     <div class="grid2" style="margin-top:6px">
-      <div>${colorBlock}
-        <div class="dist-block"><h3>Colour density</h3>${distRows(rangeDist(A.density,B.density),{map:DENSITY_MAP, note:"Colour density (dilution level) — lands on any value between the parents'."})}</div>
-        <div class="dist-block"><h3>Wind</h3>${distRows(R.wind,{genos:gWind})}</div>
-        <div class="dist-block"><h3>Fur length</h3>${distRows(R.fur,{genos:gFur})}</div>
-        <div class="dist-block"><h3>Species</h3>${distRows(R.species,{map:{C:"Not-cat",M:"Mercat"}, note:"Inherited whole from one parent (50/50)."})}</div>
-      </div>
-      <div>
-        <div class="dist-block"><h3>Pattern shown?</h3>${distRows(R.patternVisible,{genos:gPatVis})}</div>
-        <div class="dist-block"><h3>Pattern type</h3>${distRows(R.pattern,{genos:gPattern})}</div>
-        <div class="dist-block"><h3>White shown?</h3>${distRows(R.whiteVisible,{genos:gWhiteV})}</div>
-        <div class="dist-block"><h3>White level</h3>${distRows(R.whiteLevel,{note:"Lands on any level between the parents'."})}</div>
-        <div class="dist-block"><h3>White type</h3>${distRows(R.whiteType,{map:WHITE_TYPE, note:"Inherited whole from one parent (50/50)."})}</div>
-        ${R.accent?`<div class="dist-block"><h3>Accent colour</h3>${distRows(R.accent,{genos:gAccent})}</div>`:""}
-      </div>
+      <div class="dist-block"><h3>Species</h3>${distRows(R.species,{map:{C:"Not-cat",M:"Mercat"}, note:"Inherited whole from one parent (50/50)."})}</div>
+      <div class="dist-block"><h3>Wind</h3>${distRows(R.wind,{genos:gWind})}</div>
+      <div class="dist-block"><h3>Fur length</h3>${distRows(R.fur,{genos:gFur})}</div>
+      ${colorBlock}
+      <div class="dist-block"><h3>Colour density</h3>${distRows(rangeDist(A.density,B.density),{note:"Colour density (dilution level) — lands on any value between the parents'."})}</div>
+      <div class="dist-block"><h3>Pattern shown?</h3>${distRows(R.patternVisible,{genos:gPatVis})}</div>
+      <div class="dist-block"><h3>Pattern type</h3>${distRows(R.pattern,{genos:gPattern})}</div>
+      <div class="dist-block"><h3>White shown?</h3>${distRows(R.whiteVisible,{genos:gWhiteV})}</div>
+      <div class="dist-block"><h3>White type</h3>${distRows(R.whiteType,{map:WHITE_TYPE, note:"Inherited whole from one parent (50/50)."})}</div>
+      <div class="dist-block"><h3>White level</h3>${distRows(R.whiteLevel,{note:"Lands on any level between the parents'."})}</div>
+      ${R.accent?`<div class="dist-block"><h3>Accent colour</h3>${distRows(R.accent,{genos:gAccent})}</div>`:""}
     </div>
     <p class="sub" style="margin-top:12px">Exact Mendelian odds per kitten, with the possible <b>allele pairs</b> under each outcome (colour alleles honour each parent's wind). Colour density &amp; white level land anywhere between the parents' numbers; species &amp; white type are a 50/50 pick from either parent. Swatches approximate the coat — the game renders the real layered sprite.</p>
   </div>`;
