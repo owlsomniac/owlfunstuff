@@ -286,6 +286,7 @@
   #rosterTable td.qv .qv-k{color:var(--muted)}
   #rosterTable td.qv .qv-rec{color:var(--good-ink);font-weight:700}
   #rosterTable .sug{color:var(--good-ink);font-weight:700}
+  #rosterTable .trink{color:var(--good-ink);font-weight:800}   /* stat total boosted by a trinket */
   #rosterTable .rosterempty{border-bottom:0}
   /* ---- roster input helpers ---- */
   .profilebox{margin-top:12px;border:1px solid var(--line);background:var(--panel2);border-radius:var(--radius-sm);padding:12px 14px}
@@ -1470,11 +1471,12 @@ function catRosterColumns(cat){
     if(cat.dayJob.jobs&&cat.dayJob.jobs.length) put("Job Levels", cat.dayJob.jobs.map(j=>j.name+" "+j.level).join(", ")); }
   if(cat.advClass){ put("Class", cat.advClass.current);
     (cat.advClass.classes||[]).forEach(c=>put(c.name+" Lv", c.level)); }
-  // attributes: total (effective) is the primary column; base shown when a trinket boosts it
+  // attributes: total (effective) is the primary column; the Base stats group lists
+  // every attribute's base value (base == total when no trinket boosts that stat).
   const nameOf=k=>(ATTRS.concat(PERS).find(x=>x.key===k)||{}).label||k;
   ATTRS.forEach(a=>{ if(cat.attributes[a.key]!=null) put(a.label, cat.attributes[a.key]); });
   PERS.forEach(p=>{ if(cat.personality[p.key]!=null) put(p.label, cat.personality[p.key]); });
-  ATTRS.forEach(a=>{ const dd=(cat.details||{})[a.key]; if(dd && dd.equipSum) put(a.label+" base", dd.base); });
+  ATTRS.forEach(a=>{ const dd=(cat.details||{})[a.key]; const base=(dd && dd.equipSum) ? dd.base : cat.attributes[a.key]; if(base!=null) put(a.label+" base", base); });
   // trinkets: one column listing each equipped item and the stat(s) it grants
   const byItem={};
   Object.keys(cat.equips||{}).forEach(k=>{ (cat.equips[k]||[]).forEach(e=>{ (byItem[e.item]=byItem[e.item]||[]).push((e.bonus>=0?"+":"")+e.bonus+" "+nameOf(k)); }); });
@@ -1642,6 +1644,7 @@ function rosterRender(){
     const line=(k,v,vc)=> v?`<div><span class="qv-k">${k}</span> <span class="${vc||""}">${esc(v)}</span></div>`:"";
     return `<div class="qv-appr">${esc(appr||"—")}</div>`+line("Job:",job)+line("Class:",cls)+line("Rec Job:",recJob,"qv-rec")+line("Rec Class:",recCls,"qv-rec");
   };
+  const attrLabels=new Set(ATTRS.map(a=>a.label));   // to flag trinket-boosted stat totals
   const body=tids.slice(0,400).map(id=>{
     const c=r.cats[id];
     const thumb=(c.img&&c.img.length)?catImgFromLayers(c.img,100,{fur:rosterCatFur(c), title:c.name}):`<span class="rc-noimg" aria-hidden="true">🐾</span>`;
@@ -1653,7 +1656,14 @@ function rosterRender(){
       if(rosterCollapsed.has(g.key)){ cells.push(`<td class="strip" data-grp="${esc(g.key)}" title="Show ${esc(g.label)}">⋯</td>`); return; }
       g.cols.forEach(leaf=>{
         const v=rosterCellValue(r,cache,id,leaf.key);
-        const cell=(leaf.key==="sugclass"||leaf.key==="sugjobs"||leaf.key==="sugclasspct") ? (v?`<span class="sug">${esc(v)}</span>`:"—") : esc(v);
+        let cell;
+        if(leaf.key==="sugclass"||leaf.key==="sugjobs"||leaf.key==="sugclasspct"){ cell = v?`<span class="sug">${esc(v)}</span>`:"—"; }
+        else if(g.key==="stats" && leaf.key.indexOf("data:")===0 && attrLabels.has(leaf.key.slice(5))){
+          const label=leaf.key.slice(5), base=(c.data||{})[label+" base"];
+          const boosted = v!=="" && base!=null && base!=="" && String(base)!==String(v);
+          cell = boosted ? `<span class="trink" title="Boosted by a trinket (base ${esc(String(base))})">${esc(v)}</span>` : esc(v);
+        }
+        else cell = esc(v);
         cells.push(`<td>${cell}</td>`);
       });
     });
