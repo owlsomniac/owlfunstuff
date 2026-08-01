@@ -15,11 +15,13 @@ combined profile. All analysis runs in your browser; nothing leaves the page.
 
 Load a cat one of four ways — they all land on an editable sheet, so you can fix anything before analyzing:
 
-1. **My cats (roster)** — paste your **Village Manager** page once (it's a private page, so it can't be
-   auto-loaded). The tool parses the whole table into a **searchable, filterable** list saved on your device;
-   click a cat to fetch and analyze it. Paste more manager views (Basic, Adventuring Levels, Day Job Bonuses,
-   Active/Traveling) and their columns/filters merge into the same roster. A **Table** view shows every cat with
-   all captured columns plus suggested class/jobs, and **Suggest for shown cats** computes suggestions in bulk.
+1. **My cats (roster)** — paste your **Village Manager** page's **HTML** once (it's a private, logged-in page, so
+   it can't be auto-loaded, and pasting the *address* won't work — you need the page **source**). Grab it with
+   **Ctrl+U → Ctrl+A → Ctrl+C** (⌘+⌥+U on Mac), or use the one-click **bookmarklet** in that tab. The tool parses
+   the whole table into a **searchable, filterable** list saved on your device; click a cat to fetch and analyze
+   it. Paste more manager views (Basic, Adventuring Levels, Day Job Bonuses, Appearances, Active/Traveling) and
+   their columns/filters merge into the same roster. A **Table** view shows every cat with all captured columns
+   plus suggested class/jobs, and **Suggest for shown cats** computes suggestions in bulk.
 2. **By cat ID** — paste an ID (e.g. `430432`) or a profile URL, press **Fetch cat**. Routed through public
    CORS relays because the game blocks direct cross-site reads; relays can be flaky, so:
 3. **Paste page HTML** — open the profile, view source (Ctrl/Cmd+U), copy all, paste. Always works.
@@ -46,11 +48,21 @@ data cross-checked against the community [Not-Wiki](https://pixelcatsend.mirahez
 
 ### Breeding predictor (🧬 Breeding tab)
 
-Enter two parents' **genetic strings** (e.g. `[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]`; old dash/pipe strings work too)
-and get each kitten's odds for **coat colour** (incl. tortoiseshell / watercolor / snow, with swatches), **wind**, **fur length**,
-**pattern**, **white markings** (level &amp; type), and **species** — plus each parent's decoded phenotype. The genetics engine
-follows the Not-Wiki's [Genetics](https://pixelcatsend.miraheze.org/wiki/Genetics) rules (Mendelian inheritance, recessive
-dilute/no-white/longhair, number-range colour density &amp; white level, positional colour by wind) and is unit-tested against
+Predict a litter **two ways**:
+
+- **Pick each parent from your cats** by name or `#ID` (autocompletes from your roster). Most cats never reveal their
+  genetic string, so the tool **derives a best-effort genotype from their visible traits** — colour, pattern, wind, fur,
+  white markings, accent — filling the editable string box and telling you which hidden recessives it had to assume.
+  Load cats in **🐈 My cats** first (the **Appearances** manager view carries the richest data).
+- **Paste a genetic string** directly (e.g. `[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]`; old dash/pipe strings work too)
+  when you have one revealed.
+
+Either way you get each kitten's odds for **coat colour** (incl. tortoiseshell / watercolor / snow, with swatches), **wind**,
+**fur length**, **pattern** (all 15 named combinations — Mackerel, Rosette, Karpati…), **white markings** (named per level &amp;
+type, e.g. *Bib &amp; Boots*), **accent colour** (Ruby, Amber, Teal…), and **species** — plus each parent's decoded phenotype.
+The genetics engine follows the Not-Wiki's [Genetics](https://pixelcatsend.miraheze.org/wiki/Genetics) rules (Mendelian
+inheritance, recessive dilute/no-white/longhair, number-range colour density &amp; white level, positional colour by wind) with
+the pattern/accent/white-marking name tables from Apocracy's community *Cat Genetics 6* spreadsheet, and is unit-tested against
 the wiki's own worked Punnett examples. Percentages are exact per kitten; colour swatches approximate the coat (the game
 renders the real layered sprite).
 

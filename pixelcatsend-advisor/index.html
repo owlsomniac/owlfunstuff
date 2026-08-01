@@ -275,6 +275,14 @@
   .dist-bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--violet),var(--violet-ink))}
   .dist-row .pctv{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:12.5px}
   .breed-warn{color:var(--warn-ink);font-size:13px;margin-top:8px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:var(--radius-sm);padding:8px 11px}
+  .breed-note{font-size:12px;line-height:1.45;color:var(--muted);margin-top:6px;min-height:1px}
+  .breed-note.ok{color:var(--ink-soft)}
+  .breed-note.warn{color:var(--warn-ink)}
+  .pick-or{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 4px}
+  .bm{margin-top:14px;font-size:12.5px;color:var(--muted)}
+  .bm summary{cursor:pointer;color:var(--brand-ink);font-weight:600;font-size:13px}
+  .bm p{margin:8px 0}
+  .bmlink{display:inline-block;padding:3px 10px;border:1px dashed var(--brand);border-radius:7px;text-decoration:none;font-weight:700;color:var(--brand-ink);background:var(--panel2)}
 </style>
 </head>
 <body>
@@ -306,14 +314,21 @@
 
     <!-- My cats (roster) -->
     <div class="panelbody" id="pane-mycats" role="tabpanel" aria-labelledby="tab-mycats" hidden>
-      <p class="sub">Your Village Manager is a private page, so it can't be auto-loaded — paste it once and I'll remember your roster <b>on this device</b>. Paste each view you want captured: the <b>Basic</b> view gives names/occupation/current class, and the <b>Adventuring Levels</b> / <b>Day Job Bonuses</b> views add class &amp; job levels. Filters (All / Active / Traveling) light up as you paste those views.</p>
-      <label class="fld" for="rosterPaste" style="margin-top:10px">Paste a Village Manager page (village/cats/manager…)</label>
-      <textarea id="rosterPaste" placeholder="Paste the Village Manager page HTML here…" spellcheck="false"></textarea>
+      <p class="sub">Your Village Manager (<code>pixelcatsend.com/village/cats/manager</code>) is a private, logged-in page, so I can't open it — you paste its <b>HTML</b> once and I remember the roster <b>on this device</b>. <b>Paste the page's source, not its web address.</b> Paste each view to capture more: the <b>Basic</b> view gives names/occupation/current class; <b>Adventuring Levels</b> / <b>Day Job Bonuses</b> add class &amp; job levels; the <b>Appearances</b> view adds colour/pattern/wind so the Breeding tab can look these cats up by name.</p>
+      <p class="sub" style="margin-top:6px">How to grab it: open the Manager while logged in, then <b>Ctrl+U</b> (<b>⌘+⌥+U</b> on Mac) to view the page source → <b>Ctrl/⌘+A</b> to select all → <b>Ctrl/⌘+C</b> to copy → paste below. (Or use the one-click bookmarklet.)</p>
+      <label class="fld" for="rosterPaste" style="margin-top:10px">Paste the Village Manager page's HTML (not the URL)</label>
+      <textarea id="rosterPaste" placeholder="Paste the page source here — starts with &lt;!doctype html&gt; or &lt;html…&gt;" spellcheck="false"></textarea>
       <div class="row" style="margin-top:10px">
         <button class="btn" id="loadRosterBtn" type="button">Load / merge roster</button>
         <button class="btn ghost sm" id="clearRosterBtn" type="button">Clear roster</button>
       </div>
       <div class="status" id="rosterStatus" role="status" aria-live="polite"></div>
+
+      <details class="bm">
+        <summary>⭐ One-click bookmarklet (optional)</summary>
+        <p>Drag this to your bookmarks bar → <a class="bmlink" id="bmLink" href="#">🐈 Copy PCE roster</a> ← then open your Village Manager and click it; it copies the page and you just paste it above.</p>
+        <p>No bookmarks bar? Click <button class="btn ghost sm" id="copyBmBtn" type="button">Copy bookmarklet code</button>, make a new bookmark, and paste it into the bookmark's <b>URL</b> field.</p>
+      </details>
 
       <div id="rosterUI" class="hide" style="margin-top:14px">
         <div class="rfilters" role="group" aria-label="Filter roster">
@@ -337,17 +352,24 @@
 
     <!-- Breeding -->
     <div class="panelbody" id="pane-breed" role="tabpanel" aria-labelledby="tab-breed" hidden>
-      <p class="sub">Predict a litter from two parents' <b>genetic strings</b>. Strings are hidden on most profiles — reveal one with a Family Tree item, or work it out in the Bean Sandbox. Format: <code>[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]</code> (old dash/pipe strings work too).</p>
+      <p class="sub">Predict a litter two ways: <b>pick each parent from your cats</b> by name/ID (I build the genetics from their visible colour, pattern, wind, etc.), or paste a full <b>genetic string</b> if you have one revealed. Format: <code>[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]</code> (old dash/pipe strings work too). The roster picker needs cats loaded in <b>🐈 My cats</b> — paste the <b>Appearances</b> view there for the richest data.</p>
       <div class="breed-parents" style="margin-top:12px">
         <div>
-          <label class="fld" for="pA">Parent A · genetic string</label>
+          <label class="fld" for="pickA">Parent A</label>
+          <input type="text" id="pickA" list="rosterDL" placeholder="🐈 Find one of your cats by name or #ID…" autocomplete="off">
+          <div class="pick-or">or paste a genetic string</div>
           <input type="text" id="pA" placeholder="[C] [NN] [SS] [BBFF4] …" autocomplete="off" spellcheck="false">
+          <div class="breed-note" id="noteA"></div>
         </div>
         <div>
-          <label class="fld" for="pB">Parent B · genetic string</label>
+          <label class="fld" for="pickB">Parent B</label>
+          <input type="text" id="pickB" list="rosterDL" placeholder="🐈 Find one of your cats by name or #ID…" autocomplete="off">
+          <div class="pick-or">or paste a genetic string</div>
           <input type="text" id="pB" placeholder="[C] [SS] [SL] [OOFD3] …" autocomplete="off" spellcheck="false">
+          <div class="breed-note" id="noteB"></div>
         </div>
       </div>
+      <datalist id="rosterDL"></datalist>
       <div class="row" style="margin-top:12px">
         <button class="btn" id="breedBtn" type="button">🧬 Predict litter</button>
         <button class="btn ghost sm" id="breedDemoBtn" type="button">Try an example pair</button>
@@ -1138,6 +1160,33 @@ function rosterMerge(parsed){
 }
 function col(cat,re){ const k=Object.keys(cat.data||{}).find(h=>re.test(h)); return k?cat.data[k]:""; }
 const notNA = v => (v && String(v).toLowerCase()!=="n/a") ? v : "";
+
+// Resolve a roster cat to a genetic string for the Breeding tab.
+// Prefers a revealed "Genetic String" column; otherwise derives a best-effort
+// genotype from the cat's visible appearance columns (Appearances view).
+function rosterCatToGeneString(cat){
+  const gs=(col(cat,/genetic\s*string/i)||"").trim();
+  if(gs){ const p=parseGeneString(gs); if(!p.error) return {str:gs, source:"string", resolved:["revealed genetic string"], guessed:[]}; }
+  const t={
+    species:    notNA(col(cat,/species/i)),
+    wind:       notNA(col(cat,/wind/i)),
+    fur:        notNA(col(cat,/fur|hair.?length/i)),
+    color:      notNA(col(cat,/^colou?r$/i)),
+    colortype:  notNA(col(cat,/colou?r\s*type/i)),
+    pattern:    notNA(col(cat,/pattern/i)),
+    whiteLevel: notNA(col(cat,/white\s*(level|amount)/i)),
+    whiteType:  notNA(col(cat,/white\s*type/i)),
+    white:      notNA(col(cat,/^white$/i)) || notNA(col(cat,/white\s*mark/i)),
+    accent:     notNA(col(cat,/accent/i))
+  };
+  const any=Object.keys(t).some(k=>t[k] && String(t[k]).trim());
+  if(!any) return {error:"No appearance columns saved for this cat. In 🐈 My cats, paste the Village Manager's Appearances view (it lists Colour / Pattern / Wind…), or paste a genetic string below."};
+  const d=phenotypeToGeneString(t);
+  return {str:d.str, source:"derived", resolved:d.resolved, guessed:d.guessed};
+}
+
+// Bookmarklet that copies the (private) Village Manager page's HTML to the clipboard.
+const ROSTER_BOOKMARKLET = "javascript:(function(){try{var h=document.documentElement.outerHTML;function done(){alert('Village roster copied \\u2014 paste it into the Pixel Cat\\u2019s End advisor.');}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(h).then(done,function(){window.prompt('Copy this HTML, then paste into the advisor:',h);});}else{window.prompt('Copy this HTML, then paste into the advisor:',h);}}catch(e){alert('Could not copy: '+e);}})();";
 function computeSuggestion(cat){
   const cls=scoreClasses(cat)[0];
   const jobs=recommendJobs(cat).jobs.flatMap(j=>j.jobs).slice(0,4);
@@ -1213,14 +1262,46 @@ function colorInfo(group, dilute, density){
   const c=g[d]; return {name:c[0], hex:c[1]};
 }
 const ALLELE_NAME = {T:"Stripe",S:"Spot",M:"Marble",P:"Point",A:"Agouti"};
-// confirmed pattern-combo names (order-agnostic; keys are the two alleles sorted)
-const PATTERN_NAME = { TT:"Mackerel", PT:"Lynxpoint", AT:"Ticked", AP:"Karpati" };
+// full pattern-combo names (order-agnostic; keys are the two alleles sorted).
+// Source: Apocracy's Cat Genetics 6 sheet, "Genetic Breakdown" tab.
+const PATTERN_NAME = {
+  TT:"Mackerel", MT:"Classic",   ST:"Broken",  PT:"Lynxpoint",
+  MM:"Clouded",  MS:"Rosette",   MP:"Cloudpoint",
+  SS:"Spotted",  PS:"Mink",      PP:"Colorpoint",
+  AT:"Ticked",   AM:"Ripple",    AS:"Agouti",  AP:"Karpati", AA:"Freckle"
+};
 function patternName(x,y){
   const key=[x,y].sort().join("");
   if(PATTERN_NAME[key]) return PATTERN_NAME[key];
-  return ALLELE_NAME[x]+"×"+ALLELE_NAME[y];   // fallback until the full table is filled in
+  return ALLELE_NAME[x]+"×"+ALLELE_NAME[y];   // fallback (unknown/blank allele)
 }
 const WHITE_TYPE = {C:"Classic",P:"Piebald",L:"Left",R:"Right",I:"Inverse",T:"Tabby"};
+
+// Accent colour (eye-shine) — order-agnostic pair of {R,B,Y,L}. From "Genetic Breakdown".
+const ACCENT_NAME = {
+  RR:"Ruby", BR:"Violet", RY:"Amber", LR:"Pink",
+  BB:"Blue", BY:"Green",  BL:"Indigo",
+  YY:"Gold", LY:"Teal",   LL:"Black"
+};
+function accentName(x,y){
+  if(!x||!y) return "Hidden";
+  const k=[x,y].sort().join("");
+  return ACCENT_NAME[k] || (x+"/"+y);
+}
+
+// White-marking descriptive name for each (type, level 0-10). From "Genetic Breakdown".
+const WHITE_MARK = {
+  C:["None","Locket","Locket & Toes","Bib & Boots","Bib, Boots, & Belly","Classic Bicolor","Piebald","Spotted Piebald","Freckled Piebald","Van","Albino"],
+  P:["None","Nose","Nose & Toes","Nose, Bib, & Boots","Bib, Ears, & Belly","True Piebald","Scattered Piebald","Painted Spots","Confetti","Speckled Van","Albino"],
+  L:["None","Toes","Tie & Toes","Tie, Toes, & Chin","Chin, Boots, & Belly","Left Bicolor","Left Piebald","Left Patches","Left Spots","Left Van","Albino"],
+  R:["None","Tail Tip","Tail Tip & Toes","Tail Tip, Toes, & Tie","Tail, Boots, & Belly","Right Bicolor","Right Piebald","Right Patches","Right Spots","Right Van","Albino"],
+  I:["None","Ear Tips","Ear & Tail Tips","Ears, Tail, & Toes","Snowspots","Snowmelt","Ghost","Owl Mantle","Heart Mantle","Heart","Albino"],
+  T:["None","Tail Bands","Tail & Ear Bands","Small Stripes","Small Ribbons","Fishspine","Full Stripes","Full Ribbons","Birch","Scratch","Albino"]
+};
+function whiteMarkName(type,level){
+  const a=WHITE_MARK[type]; if(!a) return "";
+  return a[Math.max(0,Math.min(10, level|0))] || "";
+}
 
 function windName(a,b){
   const hasN=(a==="N"||b==="N"), hasS=(a==="S"||b==="S");
@@ -1283,7 +1364,8 @@ function phenotype(g){
     color: color.label, colorHex: color.hex, coatType: color.coatType,
     pattern: patterned ? patternName(g.pat[0],g.pat[1]) : "Solid ("+patternName(g.pat[0],g.pat[1])+" hidden)",
     patterned,
-    white: showsWhite ? ("White "+g.whiteLevel+" · "+(WHITE_TYPE[g.whiteType]||g.whiteType)) : "No-white",
+    white: showsWhite ? ("White "+g.whiteLevel+" · "+(whiteMarkName(g.whiteType,g.whiteLevel)||WHITE_TYPE[g.whiteType]||g.whiteType)) : "No-white",
+    accent: (g.accent&&g.accent.length===2) ? accentName(g.accent[0],g.accent[1]) : "",
     species: g.species==="M"?"Mercat":"Not-cat"
   };
 }
@@ -1340,6 +1422,12 @@ function whiteTypeDist(A,B){
   const m=new Map(); mapAdd(m,A.whiteType,0.5); mapAdd(m,B.whiteType,0.5); return m;
 }
 function speciesDist(A,B){ const m=new Map(); mapAdd(m,A.species,0.5); mapAdd(m,B.species,0.5); return m; }
+function accentDist(A,B){
+  if(!(A.accent&&A.accent.length===2&&B.accent&&B.accent.length===2)) return null;
+  const m=new Map();
+  donate(A.accent).forEach(([x,px])=>donate(B.accent).forEach(([y,py])=>mapAdd(m,accentName(x,y),px*py)));
+  return m;
+}
 
 // which parent contributes the north(slot1) / south(slot2) colour allele, from winds
 function colorRoles(wa,wb){
@@ -1407,8 +1495,122 @@ function predictLitter(A,B){
     whiteVisible: whiteVisDist(A,B),
     whiteLevel: rangeDist(A.whiteLevel,B.whiteLevel),
     whiteType: whiteTypeDist(A,B),
+    accent: accentDist(A,B),
     species: speciesDist(A,B)
   };
+}
+
+/* =========================================================================
+   Reverse inference: a cat's DISPLAYED traits -> a best-effort genetic string.
+   Powers the Breeding tab's "pick a cat by name/ID". Most cats never reveal
+   their real string, but visible colour/pattern/white/wind/fur/accent pin down
+   the dominant alleles exactly; hidden recessives are assumed homozygous and
+   reported so the user can correct the editable string.
+   ========================================================================= */
+const COLOR_REV = (function(){
+  const m={};
+  for(const grp of ["B","O"]) for(const dil of [false,true]) for(let d=1;d<=4;d++){
+    const c=CGROUPS[grp][dil?"dilute":"full"][d];
+    m[c[0].toLowerCase()]={group:grp, dilute:dil, density:d};
+  }
+  return m;
+})();
+const PATTERN_REV = (function(){ const m={}; for(const k in PATTERN_NAME) m[PATTERN_NAME[k].toLowerCase()]=[k[0],k[1]]; return m; })();
+const ACCENT_REV  = (function(){ const m={}; for(const k in ACCENT_NAME)  m[ACCENT_NAME[k].toLowerCase()]=[k[0],k[1]]; return m; })();
+const WHITE_TYPE_REV = (function(){ const m={}; for(const k in WHITE_TYPE) m[WHITE_TYPE[k].toLowerCase()]=k; return m; })();
+const WHITE_MARK_REV = (function(){
+  const m={};
+  for(const t in WHITE_MARK) WHITE_MARK[t].forEach((nm,lvl)=>{
+    if(nm && nm!=="None" && nm!=="Albino") m[nm.toLowerCase()]={type:t, level:lvl};
+  });
+  return m;
+})();
+function windAlleles(w){
+  w=String(w||"").toLowerCase();
+  if(/trade/.test(w)) return {alleles:["N","S"], exact:true};
+  if(/null/.test(w))  return {alleles:["O","O"], exact:true};
+  if(/north/.test(w)) return {alleles:["N","N"], exact:false};
+  if(/south/.test(w)) return {alleles:["S","S"], exact:false};
+  return null;
+}
+function phenotypeToGeneString(t){
+  t=t||{};
+  const norm=s=>String(s==null?"":s).trim();
+  const resolved=[], guessed=[];
+  const revColor=nm=>COLOR_REV[norm(nm).toLowerCase()];
+
+  const sp = /mer/i.test(norm(t.species)) ? "M" : "C";
+  if(norm(t.species)) resolved.push("species");
+
+  let wind=["N","N"];
+  const wa=windAlleles(t.wind);
+  if(wa){ wind=wa.alleles; resolved.push("wind"); if(!wa.exact) guessed.push("wind (may carry Null)"); }
+  else guessed.push("wind");
+
+  let fur=["S","S"];
+  const furS=norm(t.fur).toLowerCase();
+  if(/long/.test(furS)){ fur=["L","L"]; resolved.push("fur"); }
+  else if(/short/.test(furS)){ fur=["S","S"]; resolved.push("fur"); guessed.push("longhair carrier?"); }
+  else guessed.push("fur");
+
+  let color=["B","B"], dil=["F","F"], density=1;
+  const cName=norm(t.color);
+  const setColor=a=>{ dil=[a.dilute?"D":"F", a.dilute?"D":"F"]; density=a.density; };
+  if(!cName){ guessed.push("colour"); }
+  else if(/snow/i.test(cName)){ wind=["O","O"]; guessed.push("colour (snow hides it)"); }
+  else if(/tortoiseshell/i.test(cName)){
+    const parts=cName.replace(/tortoiseshell/i,"").trim().split(/[-–—]/).map(s=>s.trim());
+    const a=revColor(parts[0]), b=revColor(parts[1]);
+    if(a&&b){ color=[a.group,b.group]; setColor(a); resolved.push("colour"); }
+    else guessed.push("colour");
+  }
+  else if(/watercolou?r/i.test(cName)){
+    const a=revColor(cName.replace(/watercolou?r/i,"").trim());
+    if(a){ color=[a.group,a.group]; setColor(a); resolved.push("colour"); }
+    else guessed.push("colour");
+  }
+  else {
+    const a=revColor(cName);
+    if(a){ color=[a.group,a.group]; setColor(a); resolved.push("colour"); if(!a.dilute) guessed.push("dilute carrier?"); }
+    else guessed.push("colour");
+  }
+
+  let patVis=["N","N"], pat=["T","T"];
+  const pName=norm(t.pattern).toLowerCase();
+  if(!pName) guessed.push("pattern");
+  else if(pName==="solid"||pName==="none"){ patVis=["N","N"]; resolved.push("pattern"); }
+  else {
+    const pr=PATTERN_REV[pName];
+    if(pr){ pat=pr; patVis=["Y","Y"]; resolved.push("pattern"); guessed.push("pattern carrier?"); }
+    else guessed.push("pattern");
+  }
+
+  let whiteVis=["N","N"], whiteLevel=0, whiteType="C";
+  const wl=norm(t.whiteLevel), wt=norm(t.whiteType), wmark=norm(t.white);
+  const lvlNum = wl!=="" ? parseInt(wl,10) : NaN;
+  if(!isNaN(lvlNum)){
+    whiteLevel=Math.max(0,Math.min(10,lvlNum));
+    whiteType = WHITE_TYPE_REV[wt.toLowerCase()] || (WHITE_TYPE[wt.toUpperCase()] ? wt.toUpperCase() : "C");
+    whiteVis = whiteLevel>0 ? ["Y","Y"] : ["N","N"];
+    resolved.push("white");
+    if(whiteLevel>0) guessed.push("white carrier?");
+  } else if(wmark){
+    const rm=WHITE_MARK_REV[wmark.toLowerCase()];
+    if(rm){ whiteType=rm.type; whiteLevel=rm.level; whiteVis=["Y","Y"]; resolved.push("white"); guessed.push("white carrier?"); }
+    else if(/^(none|no.?white|solid)$/i.test(wmark)){ whiteVis=["N","N"]; resolved.push("white"); }
+    else guessed.push("white");
+  } else guessed.push("white");
+
+  let accent=["R","R"];
+  const aName=norm(t.accent).toLowerCase();
+  if(aName && aName!=="hidden"){ const ar=ACCENT_REV[aName]; if(ar){ accent=ar; resolved.push("accent"); } else guessed.push("accent"); }
+  else guessed.push("accent");
+
+  const coat=color[0]+color[1]+dil[0]+dil[1]+density;
+  const pattern=patVis[0]+patVis[1]+pat[0]+pat[1];
+  const white=whiteVis[0]+whiteVis[1]+whiteLevel+whiteType;
+  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB] [${accent.join("")}]`;
+  return { str, resolved, guessed };
 }
 
 
@@ -1431,7 +1633,7 @@ function parentCard(title, g){
   const ph = phenotype(g);
   return `<div class="statset parent-card"><h3>${esc(title)}</h3>
     <div class="pheno-line"><span class="swatch lg" style="background:${esc(ph.colorHex)}"></span><b>${esc(ph.color)}</b> · ${esc(ph.pattern)}</div>
-    <div class="pheno-line">${esc(ph.wind)} wind · ${esc(ph.fur)} · ${esc(ph.white)} · ${esc(ph.species)}</div>
+    <div class="pheno-line">${esc(ph.wind)} wind · ${esc(ph.fur)} · ${esc(ph.white)}${ph.accent?(" · "+esc(ph.accent)+" accent"):""} · ${esc(ph.species)}</div>
     <div class="pheno-line"><code style="font-size:11px;color:var(--muted)">${esc(g.raw||"")}</code></div></div>`;
 }
 function renderBreeding(strA, strB){
@@ -1463,6 +1665,7 @@ function renderBreeding(strA, strB){
         <div class="dist-block"><h3>White shown?</h3>${distRows(R.whiteVisible)}</div>
         <div class="dist-block"><h3>White level</h3>${distRows(R.whiteLevel)}</div>
         <div class="dist-block"><h3>White type</h3>${distRows(R.whiteType,{map:WHITE_TYPE})}</div>
+        ${R.accent?`<div class="dist-block"><h3>Accent colour</h3>${distRows(R.accent)}</div>`:""}
       </div>
     </div>
     <p class="sub" style="margin-top:12px">Exact Mendelian odds per kitten. Colour density &amp; white level land anywhere between the parents' numbers; species &amp; white type are a 50/50 pick from either parent. Swatches approximate the coat — the game renders the real layered sprite. Pattern names shown for confirmed allele combos; others are labelled by their alleles.</p>
@@ -1521,7 +1724,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
   });
 
   $("#tab-mycats").addEventListener("click", ()=>switchTab("mycats"));
-  $("#tab-breed").addEventListener("click", ()=>switchTab("breed"));
+  $("#tab-breed").addEventListener("click", ()=>{ switchTab("breed"); fillBreedRosterDatalist(); });
   $("#tab-id").addEventListener("click", ()=>switchTab("id"));
   $("#tab-paste").addEventListener("click", ()=>switchTab("paste"));
   $("#tab-manual").addEventListener("click", ()=>{ switchTab("manual"); $("#sheetCard").classList.remove("hide"); });
@@ -1548,20 +1751,32 @@ document.addEventListener("DOMContentLoaded", ()=>{
   $("#catId").addEventListener("keydown", e=>{ if(e.key==="Enter") doFetch(); });
 
   // ----- My cats roster -----
+  // Bookmarklet helper (private page can't be fetched, so we copy its HTML).
+  const bmLink=$("#bmLink"); if(bmLink) bmLink.setAttribute("href", ROSTER_BOOKMARKLET);
+  const copyBmBtn=$("#copyBmBtn");
+  if(copyBmBtn) copyBmBtn.addEventListener("click", async ()=>{
+    try{ await navigator.clipboard.writeText(ROSTER_BOOKMARKLET); copyBmBtn.textContent="Copied ✓"; setTimeout(()=>copyBmBtn.textContent="Copy bookmarklet code",1500); }
+    catch(e){ window.prompt("Copy this, then paste it as a new bookmark's URL:", ROSTER_BOOKMARKLET); }
+  });
+
   $("#loadRosterBtn").addEventListener("click", ()=>{
-    const html=$("#rosterPaste").value;
-    if(html.trim().length<50){ setStatus($("#rosterStatus"),"Paste your Village Manager page first.","err"); return; }
-    const parsed=parseRoster(html);
-    if(!parsed.rows.length){ setStatus($("#rosterStatus"),"Couldn't find a cat table there. Make sure it's the Village Manager page (village/cats/manager…).","err"); return; }
+    const raw=$("#rosterPaste").value, t=raw.trim();
+    if(/^https?:\/\/\S+$/i.test(t) || t.length<50){
+      setStatus($("#rosterStatus"),"That looks like the page's address, not its HTML. I can't open your private Manager page — I need the page source. On the Village Manager, press Ctrl+U (⌘+⌥+U on Mac), select all, copy, and paste it here — or use the ⭐ bookmarklet above.","err"); return;
+    }
+    const parsed=parseRoster(raw);
+    if(!parsed.rows.length){ setStatus($("#rosterStatus"),"Couldn't find a cat table in that. Make sure you copied the whole Village Manager page source (village/cats/manager…), not just part of it.","err"); return; }
     rosterMerge(parsed);
     $("#rosterUI").classList.remove("hide");
     $("#rosterPaste").value="";
-    setStatus($("#rosterStatus"),"Loaded "+parsed.rows.length+" cats from the “"+parsed.view+"” view. Paste other views to add more columns/filters.","ok");
+    fillBreedRosterDatalist();
+    setStatus($("#rosterStatus"),"Loaded "+parsed.rows.length+" cats from the “"+parsed.view+"” view. Paste other views (Basic / Appearances / Adventuring…) to add more columns &amp; filters.","ok");
     rosterRender();
   });
   $("#clearRosterBtn").addEventListener("click", ()=>{
     try{ localStorage.removeItem(ROSTER_KEY); }catch(e){}
     rosterFilter="all"; $("#rosterUI").classList.add("hide");
+    fillBreedRosterDatalist();
     setStatus($("#rosterStatus"),"Roster cleared from this device.","ok"); rosterRender();
   });
   ["all","active","travel"].forEach(k=>$("#rf-"+k).addEventListener("click", ()=>{ if($("#rf-"+k).disabled) return; rosterFilter=k; rosterRender(); }));
@@ -1599,15 +1814,55 @@ document.addEventListener("DOMContentLoaded", ()=>{
   if(Object.keys(rosterLoad().cats).length){ $("#rosterUI").classList.remove("hide"); rosterRender(); }
 
   // ----- Breeding -----
+  // Populate the shared name/ID autofill list from the saved roster.
+  function fillBreedRosterDatalist(){
+    const dl=$("#rosterDL"); if(!dl) return;
+    const r=rosterLoad();
+    const ids=Object.keys(r.cats).sort((a,b)=>(r.cats[a].name||"").localeCompare(r.cats[b].name||""));
+    dl.innerHTML = ids.map(id=>`<option value="${esc((r.cats[id].name||"Cat")+" #"+id)}"></option>`).join("");
+  }
+  // Resolve a picker's value to a roster cat and fill the genetic-string box.
+  function resolvePick(pickSel, targetSel, noteSel){
+    const note=$(noteSel), raw=($(pickSel).value||"").trim();
+    if(!raw){ note.className="breed-note"; note.textContent=""; return; }
+    const r=rosterLoad();
+    let id=""; const m=raw.match(/#(\d+)/);
+    if(m && r.cats[m[1]]) id=m[1];
+    if(!id){ const hit=Object.keys(r.cats).find(k=>(r.cats[k].name||"").toLowerCase()===raw.toLowerCase()); if(hit) id=hit; }
+    if(!id){ const hits=Object.keys(r.cats).filter(k=>(r.cats[k].name||"").toLowerCase().startsWith(raw.toLowerCase())); if(hits.length===1) id=hits[0]; }
+    if(!id||!r.cats[id]){ note.className="breed-note warn"; note.textContent="No cat matches “"+raw+"”. Pick from the list, or paste a genetic string below."; return; }
+    const res=rosterCatToGeneString(r.cats[id]);
+    if(res.error){ note.className="breed-note warn"; note.textContent=res.error; return; }
+    $(targetSel).value=res.str;
+    const nm=r.cats[id].name||("#"+id);
+    if(res.source==="string"){ note.className="breed-note ok"; note.textContent="Loaded "+nm+"’s revealed genetic string."; }
+    else{
+      const g=res.guessed && res.guessed.length ? " Hidden genes assumed: "+res.guessed.join(", ")+"." : "";
+      note.className="breed-note ok";
+      note.textContent="Built "+nm+"’s string from visible traits ("+(res.resolved.join(", ")||"none")+")."+g+" Edit below if needed.";
+    }
+    maybeAutoBreed();
+  }
+  // Auto-render once both parents hold a valid string (nice after picking two cats).
+  function maybeAutoBreed(){
+    const a=$("#pA").value.trim(), b=$("#pB").value.trim();
+    if(a&&b && !parseGeneString(a).error && !parseGeneString(b).error){ setStatus($("#breedStatus"),"",""); renderBreeding(a,b); }
+  }
+  $("#pickA").addEventListener("change", ()=>resolvePick("#pickA","#pA","#noteA"));
+  $("#pickB").addEventListener("change", ()=>resolvePick("#pickB","#pB","#noteB"));
+  fillBreedRosterDatalist();
+
   $("#breedBtn").addEventListener("click", ()=>{
     const a=$("#pA").value.trim(), b=$("#pB").value.trim();
-    if(!a||!b){ setStatus($("#breedStatus"),"Enter both parents' genetic strings.","err"); return; }
+    if(!a||!b){ setStatus($("#breedStatus"),"Pick both parents from your cats, or paste both genetic strings.","err"); return; }
     setStatus($("#breedStatus"),"","");
     renderBreeding(a,b);
   });
   $("#breedDemoBtn").addEventListener("click", ()=>{
     $("#pA").value="[C] [NO] [SL] [BBFF3] [YYTT] [NN0C] [AB] [YR]";
     $("#pB").value="[C] [SO] [LL] [OOFF3] [YYSS] [YY4P] [BA] [YR]";
+    $("#pickA").value=""; $("#pickB").value="";
+    $("#noteA").textContent=""; $("#noteB").textContent="";
     setStatus($("#breedStatus"),"Loaded an example pair — a North chocolate Mackerel × a South longhair Ginger Spotted.","ok");
     renderBreeding($("#pA").value, $("#pB").value);
   });
