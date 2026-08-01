@@ -286,11 +286,14 @@
   .dist-row .pctv{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:12.5px}
   .breed-warn{color:var(--warn-ink);font-size:13px;margin-top:8px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:var(--radius-sm);padding:8px 11px}
   .pheno-head{display:flex;gap:12px;align-items:flex-start;margin-top:6px}
-  .catprev{position:relative;flex:0 0 auto;border-radius:10px;overflow:hidden;border:1px solid var(--line);image-rendering:pixelated;background-size:cover}
-  .catprev .cpl{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
+  .catprev{position:relative;flex:0 0 auto;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--panel2)}
+  .catprev .catstage{position:absolute;top:0;left:0;width:100px;height:100px;overflow:hidden;transform-origin:top left}
+  .catprev .cpl{position:absolute;image-rendering:pixelated}
+  .pose-bar{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);margin:2px 0 10px}
+  .pose-bar select{font-family:inherit;font-size:12.5px;padding:3px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel2);color:var(--ink)}
   .kitten-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:12px;margin-top:6px}
   .kitten{margin:0;text-align:center}
-  .kitten .catprev{width:100%;aspect-ratio:1/1;height:auto}
+  .kitten .catprev{margin:0 auto}
   .kitten figcaption{margin-top:5px;display:flex;flex-direction:column;gap:1px}
   .kitten .knm{font-size:11px;color:var(--ink-soft);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .kitten .kpct{font-size:12px;font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums}
@@ -1338,6 +1341,14 @@ function mergeCatsPageCats(cats){
 }
 function col(cat,re){ const k=Object.keys(cat.data||{}).find(h=>re.test(h)); return k?cat.data[k]:""; }
 const notNA = v => (v && String(v).toLowerCase()!=="n/a") ? v : "";
+// A roster cat's fur (for sprite-cell selection): the Fur column, else the genotype.
+function rosterCatFur(c){
+  const f=(c&&c.data&&c.data["Fur"])||"";
+  if(/long/i.test(f)) return "Longhair";
+  if(/short/i.test(f)) return "Shorthair";
+  if(c&&c.genes){ const g=parseGeneString(c.genes); if(!g.error) return phenotype(g).fur; }
+  return "Shorthair";
+}
 
 // Resolve a roster cat to a genetic string for the Breeding tab.
 // Prefers a revealed "Genetic String" column; otherwise derives a best-effort
@@ -1475,7 +1486,7 @@ function rosterRender(){
       const c=r.cats[id];
       const meta2=[notNA(col(c,/occupation/i)), notNA(col(c,/^colou?r$/i)), notNA(col(c,/pattern/i)), notNA(col(c,/adventuring|class/i))].filter(Boolean).join(" · ");
       const s=cache[id]; const sug = (s&&s.className)?`<span class="rc-sug">→ ${esc(s.className)}</span>`:"";
-      const thumb = (c.img&&c.img.length)?catImgFromLayers(c.img,40,c.name):"";
+      const thumb = (c.img&&c.img.length)?catImgFromLayers(c.img,40,{fur:rosterCatFur(c), title:c.name}):"";
       return `<button class="rostercat" type="button" data-id="${esc(id)}">
         ${thumb}
         <span class="rc-body"><span class="rc-top"><span class="rc-name">${esc(c.name)}</span> <span class="rc-id">#${esc(id)}</span></span>
@@ -1975,11 +1986,27 @@ function secondaryColorWord(label){
   const parts=s.split(/[-–—/&]|,/).map(x=>x.trim()).filter(Boolean);
   return parts[1]||parts[0]||"";
 }
-function _layerTag(src,z){ return src?`<img class="cpl" style="z-index:${z}" src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:""; }
-function catImgFromLayers(layers, size, title){
-  size=size||72;
-  const html=(layers||[]).map((u,i)=>_layerTag(u,i+2)).join("");
-  return `<div class="catprev" title="${esc(title||"")}" style="width:${size}px;height:${size}px">${html}</div>`;
+// The sprite files are 100x100-cell grids: columns are poses, rows are fur
+// (shorthair top, longhair below). The game crops with a 100x100 overflow-hidden
+// .catjail and a per-pose left/top offset on each layer. We replicate that here
+// and scale the 100x100 stage down to the requested preview size.
+const PREVIEW_POSES = ["standing","sitting","playing","sleeping","upsidedown"];
+const POSE_X = {sitting:0, standing:-100, playing:-200, sleeping:-300, upsidedown:-400};
+let previewPose = "standing";
+function poseOffset(fur, pose){
+  const x = POSE_X[pose]!=null ? POSE_X[pose] : POSE_X.standing;
+  const y = (/long/i.test(fur||"") ? -100 : 0) + (pose==="playing" ? -2 : 0);
+  return {x, y};
+}
+function _catStage(urls, size, fur, pose){
+  const {x,y}=poseOffset(fur, pose||previewPose);
+  const scale=size/100;
+  const imgs=(urls||[]).map((u,i)=> u?`<img class="cpl" style="left:${x}px;top:${y}px;z-index:${i+2}" src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:"").join("");
+  return `<div class="catstage" style="transform:scale(${scale})">${imgs}</div>`;
+}
+function catImgFromLayers(layers, size, opts){
+  opts=opts||{}; size=size||72;
+  return `<div class="catprev" title="${esc(opts.title||"")}" style="width:${size}px;height:${size}px">${_catStage(layers, size, opts.fur, opts.pose)}</div>`;
 }
 // Build sprite layer URLs from a phenotype description.
 function spritePhenoLayers(opts){
@@ -2002,13 +2029,17 @@ function spriteColorTokenPat(name){ return String(name||"").toLowerCase().replac
 function catPreview(opts){
   const size=opts.size||88;
   const layers=spritePhenoLayers(opts);
-  const html=layers.map((u,i)=>_layerTag(u,i+2)).join("");
-  return `<div class="catprev" title="${esc(opts.title||"")}" style="width:${size}px;height:${size}px;background:${esc(opts.hex||"var(--panel2)")}">${html}</div>`;
+  return `<div class="catprev" title="${esc(opts.title||"")}" style="width:${size}px;height:${size}px;background:${esc(opts.hex||"var(--panel2)")}">${_catStage(layers, size, opts.fur, opts.pose)}</div>`;
 }
 function catPreviewFor(ph, size){
   return catPreview({colorName:ph.colorPrimary, colorName2:(ph.colors&&ph.colors[1])||null, coatType:ph.coatType,
     patternName:ph.patternBase, patterned:ph.patterned, species:ph.species,
-    whiteType:ph.whiteType, whiteLevel:ph.showsWhite?ph.whiteLevel:0, hex:ph.colorHex, size, title:ph.color+" · "+ph.pattern});
+    whiteType:ph.whiteType, whiteLevel:ph.showsWhite?ph.whiteLevel:0, hex:ph.colorHex, fur:ph.fur, size, title:ph.color+" · "+ph.pattern});
+}
+// pose selector control (rendered into the breeding results)
+function posePicker(){
+  return `<label class="pose-bar">Preview pose:
+    <select class="pose-pick">${PREVIEW_POSES.map(p=>`<option value="${p}"${p===previewPose?" selected":""}>${p[0].toUpperCase()+p.slice(1)}</option>`).join("")}</select></label>`;
 }
 
 /* ---------- breeding render ---------- */
@@ -2029,7 +2060,7 @@ function parentCard(title, g, meta){
   const who = (meta&&meta.name) ? `${esc(title)} · ${esc(meta.name)} <span class="rc-id">#${esc(meta.id||"")}</span>` : esc(title);
   if(g.error) return `<div class="statset parent-card"><h3>${who}</h3><div class="breed-warn">${esc(g.error)}</div></div>`;
   const ph = phenotype(g);
-  const portrait = (meta&&meta.img&&meta.img.length) ? catImgFromLayers(meta.img, 84, ph.color) : catPreviewFor(ph, 84);
+  const portrait = (meta&&meta.img&&meta.img.length) ? catImgFromLayers(meta.img, 84, {fur:ph.fur, title:ph.color}) : catPreviewFor(ph, 84);
   return `<div class="statset parent-card"><h3>${who}</h3>
     <div class="pheno-head">
       ${portrait}
@@ -2055,11 +2086,12 @@ function kittenGallery(R){
   const topWhiteShown = ([...R.whiteVisible.entries()].sort((a,b)=>b[1]-a[1])[0]||["No-white"])[0]==="White";
   const topLevel = topWhiteShown ? (([...R.whiteLevel.entries()].sort((a,b)=>b[1]-a[1])[0]||[0])[0]) : 0;
   const topWType = ([...R.whiteType.entries()].sort((a,b)=>b[1]-a[1])[0]||["C"])[0];
+  const fur = ([...R.fur.entries()].sort((a,b)=>b[1]-a[1])[0]||["Shorthair"])[0];
   const cells=colors.map(([label,p])=>{
     const hex=cc.hex.get(label);
     const coatType=/tortoiseshell/i.test(label)?"tortoiseshell":/watercolou?r/i.test(label)?"watercolor":/snow/i.test(label)?"snow":"standard";
     const img=catPreview({colorName:primaryColorWord(label), colorName2:secondaryColorWord(label), coatType,
-      patternName:topPat, patterned, species, whiteType:topWType, whiteLevel:topLevel, hex, size:84, title:label});
+      patternName:topPat, patterned, species, whiteType:topWType, whiteLevel:topLevel, hex, fur, size:96, title:label});
     const pct=p*100;
     return `<figure class="kitten">${img}<figcaption><span class="knm">${esc(label)}</span><span class="kpct">${pct<9.95?pct.toFixed(1):Math.round(pct)}%</span></figcaption></figure>`;
   }).join("");
@@ -2067,7 +2099,9 @@ function kittenGallery(R){
     <p class="hint">Coat previews composited from the game's own sprite layers — base colour${patterned?(" + "+esc(topPat)+" pattern"):""}${topLevel>0?(" + "+esc((whiteMarkName(topWType,topLevel)||"white"))):""} + eyes — showing the most-likely pattern &amp; white for the litter. A missing layer falls back to a colour swatch.</p></div>`;
 }
 let breedMeta = {A:null, B:null};
+let lastBreed = null;
 function renderBreeding(strA, strB){
+  lastBreed = {a:strA, b:strB};
   const A = parseGeneString(strA), B = parseGeneString(strB);
   const out = $("#breedResults");
   if(A.error || B.error){
@@ -2082,6 +2116,7 @@ function renderBreeding(strA, strB){
   const colorBlock = cc.error ? `<div class="breed-warn">${esc(cc.error)}</div>`
     : `<div class="dist-block"><h3>Coat colour</h3>${distRows(cc.dist,{hex:cc.hex})}</div>`;
   out.innerHTML = `<div class="card">
+    ${posePicker()}
     <div class="breed-parents">${parentCard("Parent A",A,breedMeta.A)}${parentCard("Parent B",B,breedMeta.B)}</div>
     ${warn}
     ${kittenGallery(R)}
@@ -2368,6 +2403,14 @@ document.addEventListener("DOMContentLoaded", ()=>{
   // Editing a string box by hand detaches it from the picked cat.
   $("#pA").addEventListener("input", ()=>{ breedMeta.A=null; });
   $("#pB").addEventListener("input", ()=>{ breedMeta.B=null; });
+  // Pose selector (delegated): re-pose every preview, incl. roster thumbnails.
+  $("#breedResults").addEventListener("change", e=>{
+    if(e.target && e.target.classList && e.target.classList.contains("pose-pick")){
+      previewPose=e.target.value;
+      if(lastBreed) renderBreeding(lastBreed.a, lastBreed.b);
+      rosterRender();
+    }
+  });
   fillBreedRosterDatalist();
 
   $("#breedBtn").addEventListener("click", ()=>{
