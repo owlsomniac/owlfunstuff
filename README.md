@@ -16,10 +16,11 @@ combined profile. All analysis runs in your browser; nothing leaves the page.
 Load a cat one of four ways — they all land on an editable sheet, so you can fix anything before analyzing:
 
 1. **My cats (roster)** — two ways to build it:
-   - **Fastest — from your Cats page:** type your **profile ID or link** and hit **Pull my cats**. It reads your
-     public **Cats** page through a relay and pulls each cat's **name, colour, pattern, white markings, genetics and
-     real portrait** straight from the page — no per-cat fetching. Each Cats page is one tab of active cats; paste
-     more tabs (or the Manager) to add the rest.
+   - **Fastest — pull your whole roster:** type your **village/profile ID** (or any link with it) and hit **Pull my
+     cats**. It fetches your public **Cats** page and **crawls every tab** (Adventurers, Trainees, … + Traveling),
+     pulling each cat's **name, colour, pattern, white markings, genetics and real portrait** — no per-cat fetching.
+     *Not* included: attributes (run **Suggest for shown cats** after) and current class/job **levels** (those live
+     only in the private Village Manager — paste those views).
    - **Most complete — Village Manager:** paste that page's **HTML** once (it's a private, logged-in page, so it
      can't be auto-loaded, and pasting the *address* won't work — you need the page **source**). Grab it with
      **Ctrl+U → Ctrl+A → Ctrl+C** (⌘+⌥+U on Mac), or use the one-click **bookmarklet** in that tab. This is the only

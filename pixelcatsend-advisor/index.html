@@ -336,13 +336,13 @@
       <p class="sub">Two ways to build your roster. <b>Fastest:</b> just give your <b>profile</b> ID or link and I'll pull every cat it lists — no pasting. Or paste your <b>Village Manager</b> page for the most complete list (it's the only place traveling cats and class/job levels live).</p>
 
       <div class="profilebox">
-        <label class="fld" for="profileId">🪄 Pull my cats from my profile</label>
+        <label class="fld" for="profileId">🪄 Pull my whole roster</label>
         <div class="row">
-          <div class="grow"><input type="text" id="profileId" placeholder="Profile ID or link — e.g. 16075  or  pixelcatsend.com/profile&amp;id=16075" autocomplete="off"></div>
+          <div class="grow"><input type="text" id="profileId" placeholder="Your village/profile ID or any link with it — e.g. 16075" autocomplete="off"></div>
           <button class="btn" id="pullProfileBtn" type="button">Pull my cats</button>
         </div>
         <div class="status" id="profileStatus" role="status" aria-live="polite"></div>
-        <p class="hint">Reads your public <b>Cats</b> page through a relay and pulls each cat's <b>name, colour, pattern, white markings, genetics and real portrait</b> straight from the page — ready for the Breeding tab, no per-cat fetching. Relays can be flaky; if it fails, open your in-game <b>Cats</b> page, view source (Ctrl/⌘+U), and paste it into the big box below. (One page = one tab of active cats; paste more tabs or the Village Manager to add the rest.)</p>
+        <p class="hint">Give me your <b>ID number</b> (from any profile / village / cats link) and I fetch your public <b>Cats</b> page and <b>crawl every tab</b> (Adventurers, Trainees, … + Traveling), pulling each cat's <b>name, colour, pattern, white, genetics and real portrait</b> — no per-cat fetching. <b>Not included:</b> attributes (use “✨ Suggest for shown cats” after) and current class/job <b>levels</b> (only in the private Village Manager — paste those views below). Relays can be flaky; if it fails, open your in-game <b>Cats</b> page, view source (Ctrl/⌘+U), and paste it into the box below.</p>
       </div>
 
       <div class="or-divider"><span>or paste a page</span></div>
@@ -777,6 +777,17 @@ function parseCatsPage(html){
   });
   return out;
 }
+
+// Cats pages are split into tabs (Adventurers / Trainees / … and a Traveling
+// group). Grab every tab link so we can crawl them all.
+function extractCatTabUrls(html){
+  let doc; try{ doc=new DOMParser().parseFromString(html,"text/html"); }catch(e){ return {tabs:[], traveling:null}; }
+  const abs=u=>{ if(!u) return null; try{ return new URL(u, CAT_ORIGIN).href; }catch(e){ return u; } };
+  const tabs=[...doc.querySelectorAll("a.cat-tab[href]")].map(a=>abs(a.getAttribute("href"))).filter(Boolean);
+  const travEl=doc.querySelector("a[href*='group=traveling']");
+  return {tabs:[...new Set(tabs)], traveling:travEl?abs(travEl.getAttribute("href")):null};
+}
+function dedupeCats(arr){ const seen=new Set(), out=[]; (arr||[]).forEach(c=>{ if(c&&!seen.has(c.id)){ seen.add(c.id); out.push(c); } }); return out; }
 
 // Pull every cat your profile page links to. Structure-agnostic: it scans for
 // cat links (cat&id= / cat?id= / /cat/NNNN), so it works whatever the layout is.
@@ -2088,23 +2099,44 @@ document.addEventListener("DOMContentLoaded", ()=>{
   function mergeCatIdRows(rows){ rosterMerge({view:"all", headers:[], rows:rows.map(c=>({id:c.id, name:c.name||"", data:{}}))}); }
   function afterRosterChange(){ $("#rosterUI").classList.remove("hide"); fillBreedRosterDatalist(); rosterRender(); }
 
-  // Pull cats straight from your public Cats page (fetch by ID/URL through relays).
-  // The Cats page renders each cat with a full descriptive aria-label + sprite,
-  // so we get name, image and an accurate genotype without any per-cat fetch.
+  // Pull your whole roster from your public Cats page. The page is split into
+  // tabs (Adventurers / Trainees / … + a Traveling group); we fetch the first,
+  // discover every other tab, and crawl them all — each rendered cat gives a
+  // name, real portrait and an accurate genotype with no per-cat fetch.
   async function pullProfile(){
     const raw=($("#profileId").value||"").trim();
     const id=(raw.match(/(\d{2,})/)||[])[1];
-    if(!id){ setStatus($("#profileStatus"),"Enter your profile ID (a number) or your profile link.","err"); return; }
+    if(!id){ setStatus($("#profileStatus"),"Enter your profile/village ID (a number) or any link that contains it.","err"); return; }
     const btn=$("#pullProfileBtn"); btn.disabled=true;
-    setStatus($("#profileStatus"),"Fetching your cats (#"+id+")…","busy");
+    const prog=m=>setStatus($("#profileStatus"),m,"busy");
+    const valid=b=>/catjail|cat[&?]id=/i.test(b);
     try{
-      const html=await fetchViaRelays(catsPageUrl(id), m=>setStatus($("#profileStatus"),m,"busy"), b=>/catjail|cat[&?]id=/i.test(b));
-      const cats=parseCatsPage(html);
-      if(!cats.length){ setStatus($("#profileStatus"),"Fetched the page but found no cats on it. Open your Cats page (the “Cats” link in-game), view source, and paste it into the box below instead.","err"); return; }
-      mergeCatsPageCats(cats); afterRosterChange();
-      setStatus($("#profileStatus"),"Pulled "+cats.length+" cats with their colours, patterns &amp; genetics — ready for the Breeding tab. This is one tab of your active cats; paste other tabs (or the Village Manager) below to add the rest.","ok");
+      prog("Fetching your cats (#"+id+")…");
+      const first=await fetchViaRelays(catsPageUrl(id), prog, valid);
+      let all=parseCatsPage(first);
+      const done=new Set([catsPageUrl(id)]);
+      const queue=[]; const push=u=>{ if(u&&!done.has(u)){ done.add(u); queue.push(u); } };
+      const firstTabs=extractCatTabUrls(first);
+      firstTabs.tabs.forEach(push);
+      const trav=firstTabs.traveling;
+      if(trav && !done.has(trav)){
+        try{ prog("Finding traveling cats…"); const th=await fetchViaRelays(trav, null, valid); done.add(trav); all=all.concat(parseCatsPage(th)); extractCatTabUrls(th).tabs.forEach(push); }catch(e){}
+      }
+      const CAP=24; let n=0, failed=0;
+      for(const url of queue){
+        if(n>=CAP) break; n++;
+        prog("Reading tab "+n+" of "+Math.min(queue.length,CAP)+"… ("+dedupeCats(all).length+" cats so far)");
+        try{ const h=await fetchViaRelays(url, null, valid); all=all.concat(parseCatsPage(h)); }
+        catch(e){ failed++; }
+        await sleep(700);
+      }
+      const uniq=dedupeCats(all);
+      if(!uniq.length){ setStatus($("#profileStatus"),"Fetched the page but found no cats on it. Open your in-game Cats page, view source, and paste it into the box below instead.","err"); return; }
+      mergeCatsPageCats(uniq); afterRosterChange();
+      const tail=" Colours, patterns &amp; genetics are loaded — try the Breeding tab. Attributes for class/job picks: use “✨ Suggest for shown cats”. Current adventure-class &amp; day-job levels live only in your Village Manager — paste those views below to add them.";
+      setStatus($("#profileStatus"),"Pulled "+uniq.length+" cats across "+(n+1)+" tab"+(n?"s":"")+(failed?(" ("+failed+" tab"+(failed>1?"s":"")+" failed — click again to retry those)"):"")+"."+tail, failed?"":"ok");
     }catch(e){
-      setStatus($("#profileStatus"),"Couldn't fetch through a relay ("+(e.message||e)+"). Open your Cats page (in-game “Cats” link), view source (Ctrl/⌘+U), copy all, and paste it into the box below — I'll read the cats from that.","err");
+      setStatus($("#profileStatus"),"Couldn't fetch through a relay ("+(e.message||e)+"). Open your in-game Cats page, view source (Ctrl/⌘+U), copy all, and paste it into the box below — I'll read the cats from that.","err");
     }finally{ btn.disabled=false; }
   }
   $("#pullProfileBtn").addEventListener("click", pullProfile);
