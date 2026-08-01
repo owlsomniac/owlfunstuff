@@ -2564,7 +2564,7 @@ function catImgFromLayers(layers, size, opts){
 }
 // Build sprite layer URLs from a phenotype description.
 function spritePhenoLayers(opts){
-  // opts: {colorName, colorName2, coatType, patternName, patterned, species, whiteType, whiteLevel}
+  // opts: {colorName, colorName2, coatType, patternName, patterned, species, whiteType, whiteLevel, accentColor}
   const sp = opts.species==="Mercat" ? "m" : "c";
   const pat = opts.patterned ? spriteColorTokenPat(opts.patternName) : "solid";
   const layers=[];
@@ -2574,6 +2574,12 @@ function spritePhenoLayers(opts){
   if(mainTok && !isSnow) layers.push(base+mainTok+"_main_"+pat+".png");
   if((opts.coatType==="tortoiseshell"||opts.coatType==="watercolor") && opts.colorName2){
     layers.push(base+spriteColorToken(opts.colorName2)+"_trade_"+pat+".png");
+  }
+  // Mercats have a tail rendered as a separate layer, coloured by the accent gene
+  // (Not-cats have no tail layer). Without it a Mercat preview is body-only.
+  if(sp==="m" && opts.accentColor){
+    const acc=String(opts.accentColor).toLowerCase().replace(/[^a-z]/g,"");
+    if(acc) layers.push(base+acc+"_accent_"+pat+".png");
   }
   if(opts.whiteLevel>0){ layers.push(base+"white_"+(WHITE_TYPE[opts.whiteType]||"Classic").toLowerCase()+"_"+opts.whiteLevel+".png"); }
   layers.push(IMG_ORIGIN+"/images/cats/eyes_neutral.png");
@@ -2588,7 +2594,17 @@ function catPreview(opts){
 function catPreviewFor(ph, size){
   return catPreview({colorName:ph.colorPrimary, colorName2:(ph.colors&&ph.colors[1])||null, coatType:ph.coatType,
     patternName:ph.patternBase, patterned:ph.patterned, species:ph.species,
+    accentColor:ph.accent || (ph.species==="Mercat"?"Black":""),
     whiteType:ph.whiteType, whiteLevel:ph.showsWhite?ph.whiteLevel:0, hex:ph.colorHex, fur:ph.fur, size, title:ph.color+" · "+ph.pattern});
+}
+// A representative accent colour for a kitten's Mercat tail — the offspring's most
+// likely accent, else a known parent's, else a neutral fallback that has a sprite.
+function mercatTailAccent(A,B){
+  const d=accentDist(A,B);
+  if(d && d.size){ const top=[...d.entries()].sort((a,b)=>b[1]-a[1])[0]; if(top) return top[0]; }
+  if(accentKnown(A)) return accentName(A.accent[0],A.accent[1]);
+  if(accentKnown(B)) return accentName(B.accent[0],B.accent[1]);
+  return "Black";
 }
 // pose selector control (rendered into the breeding results)
 function posePicker(){
@@ -2778,6 +2794,7 @@ function kittenGallery(R,A,B){
   // when both parents' accents are known, e.g. Mercats whose tails reveal them).
   const accGenos = offspringAccentGenotypes(A,B);
   const accLine = `<div class="gene-accent">Accent: ${accGenos.map(gn=>`<span class="geno-a">[${esc(gn)}]</span>`).join(" or ")}</div>`;
+  const tailAccent = mercatTailAccent(A,B);   // colours a Mercat kitten's tail in the preview
 
   const cells=colors.map(([label,p])=>{
     const windP = previewSel.wind==="any" ? p : ((cc.windJoint.get(label)||new Map()).get(previewSel.wind)||0);
@@ -2787,7 +2804,7 @@ function kittenGallery(R,A,B){
     const hex=cc.hex.get(label);
     const coatType=/tortoiseshell/i.test(label)?"tortoiseshell":/watercolou?r/i.test(label)?"watercolor":/snow/i.test(label)?"snow":"standard";
     const img=catPreview({colorName:primaryColorWord(label), colorName2:secondaryColorWord(label), coatType,
-      patternName:patName, patterned, species, whiteType:wType, whiteLevel:wLevel, hex, fur, size:96, title:label});
+      patternName:patName, patterned, species, accentColor:tailAccent, whiteType:wType, whiteLevel:wLevel, hex, fur, size:96, title:label});
     const windForStr = previewSel.wind!=="any" ? previewSel.wind
       : coatType==="tortoiseshell"||coatType==="watercolor" ? "Trade" : coatType==="snow" ? "Null" : "North";
     const gstr=offspringGeneString({species, wind:windForStr, coatType, label, patterned, patName, fur, wLevel, wType});
