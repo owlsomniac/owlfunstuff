@@ -1377,7 +1377,9 @@ function mergeCatsPageCats(cats){
     if(p.pattern) setc("Pattern", p.pattern[0].toUpperCase()+p.pattern.slice(1));
     if(p.mainColor){ const mc=colorFromToken(p.mainColor); setc("Color", (mc?mc.name:p.mainColor)+(p.hasTrade?(" "+((colorFromToken(p.tradeColor)||{}).name||p.tradeColor)):"")); }
     if(p.hasTrade) setc("Wind","Trade");
-    if(typeof p.whiteLevel==="number"){ setc("White Level",String(p.whiteLevel)); setc("White Type", WHITE_TYPE[p.whiteType]||"Classic"); }
+    // White type is only knowable when there are markings; with none (level 0) the
+    // rendered avatar reveals no type, so show "None" rather than a defaulted "Classic".
+    if(typeof p.whiteLevel==="number"){ setc("White Level",String(p.whiteLevel)); setc("White Type", p.whiteLevel>0 ? (WHITE_TYPE[p.whiteType]||"Classic") : "None"); }
     r.cats[c.id]=cur; set.add(c.id);
   });
   r.sets.all=[...set];
@@ -1440,8 +1442,11 @@ function catRosterColumns(cat){
   put("Eye Color", bio["eye color"]); put("Age", bio["age"]);
   if(bio["white marks"]){ put("White Marks", bio["white marks"]);
     const m=bio["white marks"].match(/\b([CPLRIT])(\d+)\b/);
-    if(m){ put("White Type", WHITE_TYPE[m[1]]||m[1]); put("White Level", m[2]); }
-    else if(/^\s*no\b|none/i.test(bio["white marks"])){ put("White Level","0"); } }
+    // An explicit "White Type" bio field wins (the page reveals it); otherwise the type
+    // is only known when there are markings — with none it's unknowable, so show "None".
+    const pageType=notNA(bio["white type"]);
+    if(m){ put("White Type", pageType || WHITE_TYPE[m[1]] || m[1]); put("White Level", m[2]); }
+    else if(/^\s*no\b|none/i.test(bio["white marks"])){ put("White Level","0"); put("White Type", pageType || "None"); } }
   if(cat.dayJob){ put("Occupation", cat.dayJob.current);
     if(cat.dayJob.jobs&&cat.dayJob.jobs.length) put("Job Levels", cat.dayJob.jobs.map(j=>j.name+" "+j.level).join(", ")); }
   if(cat.advClass){ put("Class", cat.advClass.current);
