@@ -2791,6 +2791,29 @@ function copyGeneString(btn){
 }
 let breedMeta = {A:null, B:null};
 let lastBreed = null;
+// The Breeding tab persists its last pairing + preview picks to localStorage, so a
+// reload lands you right back where you were — the same way the roster does.
+const BREED_KEY = "pce-breed-v1";
+function breedSave(){
+  try{
+    localStorage.setItem(BREED_KEY, JSON.stringify({
+      a:(($("#pA")||{}).value)||"", b:(($("#pB")||{}).value)||"",
+      pickA:(($("#pickA")||{}).value)||"", pickB:(($("#pickB")||{}).value)||"",
+      metaA:breedMeta.A, metaB:breedMeta.B, sel:previewSel, pose:previewPose, ts:nowTs()
+    }));
+  }catch(e){}
+}
+function breedLoad(){ try{ return JSON.parse(localStorage.getItem(BREED_KEY)||"null"); }catch(e){ return null; } }
+function restoreBreeding(){
+  const st=breedLoad(); if(!st) return;
+  if(st.pose) previewPose=st.pose;
+  if(st.sel && typeof st.sel==="object") previewSel={wind:st.sel.wind||"any", pattern:st.sel.pattern||"any", white:st.sel.white||"any"};
+  if(st.metaA) breedMeta.A=st.metaA; if(st.metaB) breedMeta.B=st.metaB;
+  const setV=(s,val)=>{ const el=$(s); if(el) el.value=val||""; };
+  setV("#pA",st.a); setV("#pB",st.b); setV("#pickA",st.pickA); setV("#pickB",st.pickB);
+  const a=(st.a||"").trim(), b=(st.b||"").trim();
+  if(a&&b && !parseGeneString(a).error && !parseGeneString(b).error) renderBreeding(a,b);
+}
 function renderBreeding(strA, strB){
   lastBreed = {a:strA, b:strB};
   const A = parseGeneString(strA), B = parseGeneString(strB);
@@ -2798,6 +2821,7 @@ function renderBreeding(strA, strB){
   if(A.error || B.error){
     out.innerHTML = `<div class="card"><div class="breed-parents">${parentCard("Parent A",A,breedMeta.A)}${parentCard("Parent B",B,breedMeta.B)}</div>
       <div class="breed-warn" style="margin-top:12px">Fix the string(s) above — expected 7–8 sections like <code>[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]</code>.</div></div>`;
+    breedSave();
     return;
   }
   const R = predictLitter(A,B);
@@ -2837,7 +2861,8 @@ function renderBreeding(strA, strB){
     </div>
     <p class="sub" style="margin-top:12px">Exact Mendelian odds per kitten, with the possible <b>allele pairs</b> under each outcome (colour alleles honour each parent's wind). Colour density &amp; white level land anywhere between the parents' numbers; species &amp; white type are a 50/50 pick from either parent. Swatches approximate the coat — the game renders the real layered sprite.</p>
   </div>`;
-  out.scrollIntoView({behavior:"smooth",block:"nearest"});
+  breedSave();
+  if(!$("#pane-breed").hidden) out.scrollIntoView({behavior:"smooth",block:"nearest"});
 }
 
 /* =========================================================================
@@ -3096,17 +3121,29 @@ document.addEventListener("DOMContentLoaded", ()=>{
     {k:"color",    label:"Base colour", opts:[["","Any"]].concat(SPRITE_COLORS.map(c=>[c[0].toLowerCase(), c[0]])).concat([["snow","Snow"]])},
     {k:"pattern",  label:"Pattern", opts:[["","Any"],["Solid","Solid"]].concat(patternNames.map(n=>[n,n]))},
     {k:"wind",     label:"Wind", opts:[["","Any"],["North","North"],["South","South"],["Trade","Trade"],["Null","Null"]]},
-    {k:"fur",      label:"Fur", opts:[["","Any"],["Shorthair","Shorthair"],["Longhair","Longhair"]]},
+    {k:"fur",      label:"Fur Length", opts:[["","Any"],["Shorthair","Shorthair"],["Longhair","Longhair"]]},
     {k:"species",  label:"Species", opts:[["","Any"],["Not-cat","Not-cat"],["Mercat","Mercat"]]},
     {k:"white",    label:"White markings", opts:[["","Any"],["none","No white"],["any","Has white (any)"]].concat(["C","P","L","R","I","T"].map(t=>[t, WHITE_TYPE[t]]))},
     {k:"accent",   label:"Accent", opts:[["","Any"]].concat(accentNames.map(n=>[n,n]))}
+  ];
+  const finderSelById={}; finderSelects.forEach(f=>finderSelById[f.k]=f);
+  // Field order for the finder form. Range pickers sit next to their related select
+  // (density after Base colour, white level after White markings).
+  const finderOrder=[
+    "species","wind","fur","coatType","color",
+    {rng:"dens", label:"Colour density (1–4)", lo:1, hi:4},
+    "pattern","white",
+    {rng:"wl", label:"White level (0–10)", lo:0, hi:10},
+    "accent"
   ];
   function buildFinderForm(){
     const box=$("#finderForm"); if(!box) return;
     const sel=(k,label,opts)=>`<label>${esc(label)}<select id="f-${k}">${opts.map(([v,t])=>`<option value="${esc(v)}">${esc(t)}</option>`).join("")}</select></label>`;
     const rng=(k,label,lo,hi)=>`<label>${esc(label)}<span class="finder-range"><input type="number" id="f-${k}Min" min="${lo}" max="${hi}" placeholder="min"><span>–</span><input type="number" id="f-${k}Max" min="${lo}" max="${hi}" placeholder="max"></span></label>`;
-    box.innerHTML = finderSelects.map(f=>sel(f.k,f.label,f.opts)).join("")
-      + rng("dens","Colour density (1–4)",1,4) + rng("wl","White level (0–10)",0,10)
+    box.innerHTML = finderOrder.map(item=>{
+        if(typeof item==="string"){ const f=finderSelById[item]; return f?sel(f.k,f.label,f.opts):""; }
+        return rng(item.rng,item.label,item.lo,item.hi);
+      }).join("")
       + `<div class="finder-sub">Only pair cats where <b>both</b> parents have at least…</div>`
       + `<label>Total attributes ≥<input type="number" id="f-minAttr" min="0" placeholder="any"></label>`
       + `<label>Total personality ≥<input type="number" id="f-minPers" min="0" placeholder="any"></label>`;
@@ -3186,6 +3223,9 @@ document.addEventListener("DOMContentLoaded", ()=>{
     setStatus($("#breedStatus"),"Loaded an example pair — a North chocolate Mackerel × a South longhair Ginger Spotted.","ok");
     renderBreeding($("#pA").value, $("#pB").value);
   });
+
+  // Bring back the last pairing + preview picks from a previous visit.
+  restoreBreeding();
 
   // Demos
   $("#demoBtn").addEventListener("click", ()=>{ currentId="430432"; fillSheet(DEMO_CAT()); setStatus($("#fetchStatus"),"Loaded a demo cat — press Analyze.","ok"); });

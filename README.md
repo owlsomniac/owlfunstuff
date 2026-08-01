@@ -86,6 +86,9 @@ your cats with known genetics for ones that could produce it, ranked by the chan
 excluded). Offspring stats aren't genetically determined, so the two stat fields instead constrain the **parents** (only pair
 cats whose total attributes / personality meet a minimum). Click a result to load that pair into the predictor.
 
+Like the roster, the Breeding tab **remembers your last pairing** (both parents and every preview pick — wind / pattern /
+white / pose) across reloads, so you land right back where you left off.
+
 Either way you get each kitten's odds for **coat colour** (standard / watercolor / tortoiseshell / snow, with swatches),
 **colour density** (1–4, the dilution level), **wind**, **fur length**, **pattern** (all 15 named combinations — Mackerel,
 Rosette, Karpati…), **white markings** (named per level &amp; type, e.g. *Bib &amp; Boots*), **accent colour** (Ruby, Amber,
