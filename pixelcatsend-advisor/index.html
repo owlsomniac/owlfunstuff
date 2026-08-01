@@ -612,6 +612,12 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 // Day-job skills grouped by governing attribute (order follows ATTRS). A skill's
 // roll uses its attribute's modifier, so a cat's per-skill modifier == its attr modifier.
 const JOB_SKILLS = ATTRS.flatMap(a=>(a.jobs||[]).map(job=>({job, attrLabel:a.label})));
+// Pull a job's level out of a cat's "Job Levels" string, e.g. "Miner 4, Hunter 1".
+function jobLevelFromData(str, job){
+  if(!str) return null;
+  const m=String(str).match(new RegExp(job.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\s+(\\d+)"));
+  return m ? parseInt(m[1],10) : null;
+}
 
 /* Class definitions — attribute weights + personality wants, per the guide's
    ideal profiles (section 6), with core attribute anchors from the game. */
@@ -1547,10 +1553,14 @@ function rosterCellValue(r,cache,id,key){
   if(key==="sugclass")    return (cache[id]&&cache[id].className)||"";
   if(key==="sugclasspct") return (cache[id]&&cache[id].classPct)?cache[id].classPct+"%":"";
   if(key==="sugjobs")     return (cache[id]&&cache[id].jobs||[]).join(", ");
-  if(key.indexOf("job:")===0){                       // a day-job skill's modifier (from its governing attribute)
+  if(key.indexOf("job:")===0){                       // a day job: its level + governing-attribute modifier
     const js=JOB_SKILLS.find(j=>j.job===key.slice(4)); if(!js) return "";
-    const g=statGrade(parseInt((r.cats[id].data||{})[js.attrLabel],10));
-    return g ? ((g.mod>=0?"+":"")+g.mod) : "";
+    const data=r.cats[id].data||{};
+    const lvl=jobLevelFromData(data["Job Levels"], js.job);
+    const g=statGrade(parseInt(data[js.attrLabel],10));
+    const mod = g ? ((g.mod>=0?"+":"")+g.mod) : "";
+    if(lvl==null && !mod) return "";
+    return "Lv. "+(lvl==null?0:lvl)+(mod?(" ("+mod+")"):"");
   }
   if(key.indexOf("data:")===0) return (r.cats[id].data||{})[key.slice(5)]||"";
   return "";
@@ -1590,8 +1600,8 @@ const ROSTER_GROUP_DEFS=[
    test:h=>PERS.some(p=>p.label.toLowerCase()===h.toLowerCase())},
   {key:"class", label:"Adventure Classes", short:"Classes",     pref:["Class"], extra:[{key:"sugclass",label:"Suggested class"},{key:"sugclasspct",label:"Fit %"}],
    test:h=>/^class$/i.test(h)|| / lv$/i.test(h)},
-  {key:"jobs",  label:"Jobs",              short:"Jobs",        pref:["Occupation","Job Levels"], extra:[{key:"sugjobs",label:"Suggested jobs"}],
-   test:h=>/^(occupation|job levels)$/i.test(h)},
+  {key:"jobs",  label:"Jobs",              short:"Jobs",        pref:["Occupation"], extra:[{key:"sugjobs",label:"Suggested jobs"}],
+   test:h=>/^occupation$/i.test(h)},
   {key:"appear",label:"Appearance",        short:"Appearance",  pref:["Fur","Fur Length","Color","Colour","Color Type","Colour Type","Colortype","Pattern","Size","Weight","Eye Color","Eye Colour","Accent"],
    test:h=>true}
 ];
@@ -1599,9 +1609,14 @@ const ROSTER_GROUP_DEFS=[
 // Order: Basic · Appearance · Jobs · Adventure Classes · Personality · Stats · Base stats.
 const ROSTER_GROUP_ORDER=["basic","appear","jobs","class","pers","stats","base"];
 function rosterColumnModel(r){
-  const rawHeaders=(r.headers||[]).filter(h=>!/^(name|id)$/i.test(h) && !/^white($|\s)/i.test(h));
+  // "Job Levels" is hidden as a column — it's decomposed into the per-job columns below.
+  const rawHeaders=(r.headers||[]).filter(h=>!/^(name|id)$/i.test(h) && !/^white($|\s)/i.test(h) && !/^job levels$/i.test(h));
   const hasWhite=(r.headers||[]).some(h=>/^white($|\s)/i.test(h))
     || Object.values(r.cats||{}).some(c=>c.data && c.data["White"]!=null && c.data["White"]!=="");
+  const hasStats = ATTRS.some(a=>rawHeaders.some(h=>h.toLowerCase()===a.label.toLowerCase()));
+  // Per-job columns (level + governing-attribute modifier) live in Jobs once we know
+  // either the cat's stats (for the modifier) or its job levels.
+  const hasJobData = hasStats || (r.headers||[]).some(h=>/^job levels$/i.test(h));
   const classifyOrder=["basic","base","stats","pers","class","jobs"]; // appear = fallback
   const def=k=>ROSTER_GROUP_DEFS.find(g=>g.key===k);
   const bucket={}; ROSTER_GROUP_DEFS.forEach(g=>bucket[g.key]=[]);
@@ -1618,14 +1633,10 @@ function rosterColumnModel(r){
     const g=def(gk);
     const cols=sortByPref(bucket[gk], g.pref).map(h=>({key:"data:"+h,label:h}));
     if(gk==="appear" && hasWhite) cols.push({key:"white",label:"White"});
+    if(gk==="jobs" && hasJobData) JOB_SKILLS.forEach(js=>cols.push({key:"job:"+js.job, label:js.job}));
     (g.extra||[]).forEach(x=>cols.push(x));
     if(cols.length) groups.push({key:gk,label:g.label,short:g.short,cols});
   });
-  // Job Skills: one virtual column per day-job skill, showing its governing attribute's
-  // modifier. Present once any attribute stat has been captured for the roster.
-  const hasStats = ATTRS.some(a=>rawHeaders.some(h=>h.toLowerCase()===a.label.toLowerCase()));
-  if(hasStats) groups.push({key:"jobskills", label:"Job Skills", short:"Job Skills",
-    cols: JOB_SKILLS.map(js=>({key:"job:"+js.job, label:js.job}))});
   return groups;
 }
 function rosterVisibleIds(r){
@@ -1719,7 +1730,7 @@ function rosterRender(){
           const gr=statGrade(parseInt(v,10)); if(gr){ tdcls=gr.cls; tdtitle=gr.label; }
           cell = esc(v);
         }
-        else if(g.key==="jobskills"){ cell = v?esc(v):"—"; }
+        else if(leaf.key.indexOf("job:")===0){ cell = v?esc(v):"—"; }
         else cell = esc(v);
         cells.push(`<td${tdcls?` class="${tdcls}"`:""}${tdtitle?` title="${esc(tdtitle)}"`:""}>${cell}</td>`);
       });
