@@ -30,10 +30,16 @@ Load a cat one of four ways — they all land on an editable sheet, so you can f
 
    Pasting a **Cats page** into the box reads each cat's rendered avatar — its descriptive `aria-label` gives an
    accurate genotype (main + trade colours → standard/watercolor/tortoiseshell, pattern, white level & type) and its
-   sprite layers give the **real portrait**. Either way the roster is a **searchable, filterable** list saved on your
-   device, with thumbnails. A **Table** view shows every cat with all captured columns plus suggested class/jobs —
-   **click any column header to sort** (numeric-aware, click again to reverse) — and **Suggest for shown cats**
-   computes suggestions in bulk.
+   sprite layers give the **real portrait**. The roster is saved on your device and shown as one **searchable,
+   filterable, sortable table** (zebra-striped, with thumbnails). **Preview, Name and ID stay put on the left**
+   (Name links to the cat's own page); the rest of the columns are grouped under **collapsible headers** — click a
+   group header (*Basic info · Appearance · Jobs · Adventure Classes · Personality · Stats · Base stats*) to fold it
+   away to the left when you're not looking at it. A collapsible **Quick View** column reproduces the old at-a-glance
+   list (appearance, current job & class, and the recommended job/class). **Click any column sub-header to sort**
+   (numeric-aware, click again to reverse); the **Fit %** column under Adventure Classes is the recommended class's
+   fit score (how well the cat's attributes + personality match that class's ideal — `0.55 × attributes + 0.45 ×
+   personality`). White markings are shown as a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or
+   *None*). **Suggest for shown cats** computes recommendations in bulk. (The tool opens on this **🐈 My cats** tab.)
 2. **By cat ID** — paste an ID (e.g. `430432`) or a profile URL, press **Fetch cat**. Routed through public
    CORS relays because the game blocks direct cross-site reads; relays can be flaky, so:
 3. **Paste page HTML** — open the profile, view source (Ctrl/Cmd+U), copy all, paste. Always works.

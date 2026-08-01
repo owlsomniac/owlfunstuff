@@ -255,15 +255,38 @@
   .rostercat .rc-meta{color:var(--ink-soft);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rostercat .rc-sug{color:var(--good-ink);font-weight:700}
   .rosterempty{padding:16px;color:var(--muted);font-size:13px;text-align:center}
-  #rosterTable table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
-  #rosterTable th,#rosterTable td{border:1px solid var(--line-soft);padding:6px 9px;text-align:left;white-space:nowrap}
-  #rosterTable th{background:var(--panel2);position:sticky;top:0;cursor:pointer;user-select:none}
-  #rosterTable th:hover{background:var(--brand-soft)}
+  /* a real styled roster table — echoes the list's look with zebra rows */
+  #rosterTable{margin-top:10px;border:1px solid var(--line-soft);border-radius:var(--radius-sm);overflow:auto;max-height:560px;background:var(--panel2)}
+  #rosterTable table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+  #rosterTable thead{position:sticky;top:0;z-index:2}
+  #rosterTable th,#rosterTable td{border-bottom:1px solid var(--line-soft);padding:7px 11px;text-align:left;white-space:nowrap;vertical-align:middle}
+  #rosterTable thead th{background:var(--panel2);cursor:pointer;user-select:none}
+  #rosterTable thead th:not(.grp):not(.strip):hover{background:var(--brand-soft)}
   #rosterTable th .arr{color:var(--muted);font-size:10px;margin-left:4px;opacity:.55}
   #rosterTable th[aria-sort="ascending"] .arr,#rosterTable th[aria-sort="descending"] .arr{color:var(--brand-ink);opacity:1}
-  #rosterTable tbody tr{cursor:pointer}
+  /* group header row — click a group to collapse it to a thin strip on the left */
+  #rosterTable th.grp{text-align:center;background:var(--brand-soft);color:var(--brand-ink);font-weight:800;letter-spacing:.2px;white-space:nowrap}
+  #rosterTable th.grp:hover{background:var(--brand);color:#fff}
+  #rosterTable th.grp.collapsed{writing-mode:vertical-rl;transform:rotate(180deg);padding:8px 3px;font-size:11px;font-weight:700;width:22px;min-width:22px}
+  #rosterTable th.strip,#rosterTable td.strip{width:16px;min-width:16px;max-width:16px;padding:0;text-align:center;color:var(--muted);cursor:pointer}
+  #rosterTable th.strip:hover,#rosterTable td.strip:hover{background:var(--brand);color:#fff}
+  /* zebra rows + hover, mirroring the roster list */
+  #rosterTable tbody tr{background:var(--panel2);cursor:pointer}
+  #rosterTable tbody tr:nth-child(even){background:var(--panel)}
   #rosterTable tbody tr:hover{background:var(--brand-soft)}
+  #rosterTable td.prev{width:46px;min-width:46px;text-align:center;padding:3px}
+  #rosterTable td.prev .catprev{margin:0 auto;border-radius:8px}
+  #rosterTable td.prev .rc-noimg{font-size:15px;opacity:.5}
+  #rosterTable td.name a{color:var(--ink);text-decoration:none;font-weight:700}
+  #rosterTable td.name a:hover{color:var(--brand-ink);text-decoration:underline}
+  #rosterTable td.idcol{color:var(--muted);font-variant-numeric:tabular-nums}
+  /* Quick View summary cell (the old list at-a-glance, as one collapsible column) */
+  #rosterTable td.qv{white-space:normal;min-width:190px;max-width:300px;font-size:11.5px;line-height:1.55;color:var(--ink-soft)}
+  #rosterTable td.qv .qv-appr{color:var(--ink);font-weight:600;margin-bottom:1px}
+  #rosterTable td.qv .qv-k{color:var(--muted)}
+  #rosterTable td.qv .qv-rec{color:var(--good-ink);font-weight:700}
   #rosterTable .sug{color:var(--good-ink);font-weight:700}
+  #rosterTable .rosterempty{border-bottom:0}
   /* ---- roster input helpers ---- */
   .profilebox{margin-top:12px;border:1px solid var(--line);background:var(--panel2);border-radius:var(--radius-sm);padding:12px 14px}
   .or-divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;margin:16px 0 4px}
@@ -355,15 +378,15 @@
     <h2 id="in-h"><span class="em">🔎</span> Load a cat</h2>
 
     <div class="tabs" role="tablist" aria-label="Input method">
-      <button class="tab" id="tab-mycats" role="tab" aria-selected="false" aria-controls="pane-mycats">🐈 My cats</button>
+      <button class="tab" id="tab-mycats" role="tab" aria-selected="true" aria-controls="pane-mycats">🐈 My cats</button>
       <button class="tab" id="tab-breed"  role="tab" aria-selected="false" aria-controls="pane-breed">🧬 Breeding</button>
-      <button class="tab" id="tab-id"     role="tab" aria-selected="true"  aria-controls="pane-id">By cat ID</button>
+      <button class="tab" id="tab-id"     role="tab" aria-selected="false" aria-controls="pane-id">By cat ID</button>
       <button class="tab" id="tab-paste"  role="tab" aria-selected="false" aria-controls="pane-paste">Paste page HTML</button>
       <button class="tab" id="tab-manual" role="tab" aria-selected="false" aria-controls="pane-manual">Enter manually</button>
     </div>
 
     <!-- My cats (roster) -->
-    <div class="panelbody" id="pane-mycats" role="tabpanel" aria-labelledby="tab-mycats" hidden>
+    <div class="panelbody active" id="pane-mycats" role="tabpanel" aria-labelledby="tab-mycats">
       <p class="sub">Two ways to build your roster. <b>Fastest:</b> just give your <b>profile</b> ID or link and I'll pull every cat it lists — no pasting. Or paste your <b>Village Manager</b> page for the most complete list (it's the only place traveling cats and class/job levels live).</p>
 
       <div class="profilebox">
@@ -403,14 +426,12 @@
         </div>
         <input type="text" id="rosterSearch" placeholder="Search your cats by name or ID…" autocomplete="off" style="margin-top:10px">
         <div class="rfilters" style="margin-top:10px">
-          <button class="rf sm" id="viewList"  type="button" aria-pressed="true">List</button>
-          <button class="rf sm" id="viewTable" type="button" aria-pressed="false">Table</button>
           <button class="btn ghost sm hide" id="suggestAllBtn" type="button" title="Opens each remaining cat's page for its stats, day-job &amp; adventuring-class levels. Pull my cats already does this; this only appears when some cats still need it (e.g. a relay hiccup or a pasted roster).">↻ Fetch stats &amp; levels</button>
           <button class="btn ghost sm hide" id="suggestStopBtn" type="button">Stop</button>
+          <span class="rmeta" style="margin-left:auto">Tip: click a group header to collapse its columns · click a name to open the cat</span>
         </div>
         <div class="status" id="suggestStatus" role="status" aria-live="polite"></div>
-        <div id="rosterList" class="rosterlist"></div>
-        <div id="rosterTable" class="scrollx hide"></div>
+        <div id="rosterTable" class="scrollx"></div>
       </div>
     </div>
 
@@ -457,7 +478,7 @@
     </div>
 
     <!-- By ID -->
-    <div class="panelbody active" id="pane-id" role="tabpanel" aria-labelledby="tab-id">
+    <div class="panelbody" id="pane-id" role="tabpanel" aria-labelledby="tab-id" hidden>
       <div class="row">
         <div class="grow">
           <label class="fld" for="catId">Cat ID or profile URL</label>
@@ -1377,13 +1398,12 @@ function mergeCatsPageCats(cats){
     if(p.pattern) setc("Pattern", p.pattern[0].toUpperCase()+p.pattern.slice(1));
     if(p.mainColor){ const mc=colorFromToken(p.mainColor); setc("Color", (mc?mc.name:p.mainColor)+(p.hasTrade?(" "+((colorFromToken(p.tradeColor)||{}).name||p.tradeColor)):"")); }
     if(p.hasTrade) setc("Wind","Trade");
-    // White type is only knowable when there are markings; with none (level 0) the
-    // rendered avatar reveals no type, so show "None" rather than a defaulted "Classic".
-    if(typeof p.whiteLevel==="number"){ setc("White Level",String(p.whiteLevel)); setc("White Type", p.whiteLevel>0 ? (WHITE_TYPE[p.whiteType]||"Classic") : "None"); }
+    // One combined "White" column ("Classic, C7, Spotted Piebald"); "None" when no markings.
+    if(typeof p.whiteLevel==="number") setc("White", whiteCellText(p.whiteType, p.whiteLevel));
     r.cats[c.id]=cur; set.add(c.id);
   });
   r.sets.all=[...set];
-  const hs=new Set(r.headers||[]); ["Species","Occupation","Wind","Fur","Color","Pattern","White Level","White Type"].forEach(h=>hs.add(h)); r.headers=[...hs];
+  const hs=new Set(r.headers||[]); ["Species","Occupation","Wind","Fur","Color","Pattern","White"].forEach(h=>hs.add(h)); r.headers=[...hs];
   r.ts=nowTs(); rosterSave(r); return cats.length;
 }
 function col(cat,re){ const k=Object.keys(cat.data||{}).find(h=>re.test(h)); return k?cat.data[k]:""; }
@@ -1440,13 +1460,12 @@ function catRosterColumns(cat){
   put("Species", bio["species"]); put("Fur", bio["fur"]); put("Color", bio["color"]);
   put("Pattern", bio["pattern"]); put("Wind", bio["wind"]); put("Size", bio["size"]);
   put("Eye Color", bio["eye color"]); put("Age", bio["age"]);
-  if(bio["white marks"]){ put("White Marks", bio["white marks"]);
-    const m=bio["white marks"].match(/\b([CPLRIT])(\d+)\b/);
-    // An explicit "White Type" bio field wins (the page reveals it); otherwise the type
-    // is only known when there are markings — with none it's unknowable, so show "None".
-    const pageType=notNA(bio["white type"]);
-    if(m){ put("White Type", pageType || WHITE_TYPE[m[1]] || m[1]); put("White Level", m[2]); }
-    else if(/^\s*no\b|none/i.test(bio["white marks"])){ put("White Level","0"); put("White Type", pageType || "None"); } }
+  // One combined "White" column: "Classic, C7, Spotted Piebald" (type, code, marking) — or "None".
+  if(bio["white marks"]){ const raw=bio["white marks"];
+    const m=raw.match(/\b([CPLRIT])(\d+)\b/);
+    if(m) put("White", whiteCellText(m[1], parseInt(m[2],10), raw.split("/")[0].trim()));
+    else if(/^\s*(no\b|none)/i.test(raw)) put("White","None");
+    else put("White", raw); }
   if(cat.dayJob){ put("Occupation", cat.dayJob.current);
     if(cat.dayJob.jobs&&cat.dayJob.jobs.length) put("Job Levels", cat.dayJob.jobs.map(j=>j.name+" "+j.level).join(", ")); }
   if(cat.advClass){ put("Class", cat.advClass.current);
@@ -1480,13 +1499,15 @@ function rosterEnrichFromCat(id, cat){
   r.ts=nowTs(); rosterSave(r);
 }
 
-let rosterFilter="all", rosterView="list", rosterSort=null, bulkStop=false, bulkRunning=false;
+let rosterFilter="all", rosterSort=null, bulkStop=false, bulkRunning=false;
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 function rosterCellValue(r,cache,id,key){
   if(key==="name") return r.cats[id].name||"";
   if(key==="id")   return id;
-  if(key==="sugclass") return (cache[id]&&cache[id].className)||"";
-  if(key==="sugjobs")  return (cache[id]&&cache[id].jobs||[]).join(", ");
+  if(key==="white") return catWhiteText(r.cats[id].data);
+  if(key==="sugclass")    return (cache[id]&&cache[id].className)||"";
+  if(key==="sugclasspct") return (cache[id]&&cache[id].classPct)?cache[id].classPct+"%":"";
+  if(key==="sugjobs")     return (cache[id]&&cache[id].jobs||[]).join(", ");
   if(key.indexOf("data:")===0) return (r.cats[id].data||{})[key.slice(5)]||"";
   return "";
 }
@@ -1507,6 +1528,56 @@ function toggleRosterSort(key){
   if(rosterSort&&rosterSort.key===key) rosterSort.dir*=-1;
   else rosterSort={key,dir:1};
   rosterRender();
+}
+// Collapsible column groups (collapse to a thin strip on the left).
+let rosterCollapsed=new Set();
+function toggleRosterGroup(k){ if(!k) return; if(rosterCollapsed.has(k)) rosterCollapsed.delete(k); else rosterCollapsed.add(k); rosterRender(); }
+// Ordered column groups. Each header column is classified into exactly one group;
+// "appear" is the catch-all. Trinkets ride with Stats (so it sits left of the Base
+// stats group), and the suggested-* / Fit% virtuals hang off Jobs / Adventure Classes.
+const ROSTER_GROUP_DEFS=[
+  {key:"basic", label:"Basic info",        short:"Basic",       pref:["Species","Wind","Age"],
+   test:h=>/^(species|wind|age)$/i.test(h)},
+  {key:"base",  label:"Base stats",        short:"Base stats",  pref:ATTRS.map(a=>a.label+" base"),
+   test:h=>/ base$/i.test(h)},
+  {key:"stats", label:"Stats",             short:"Stats",       pref:ATTRS.map(a=>a.label).concat(["Trinkets"]),
+   test:h=>/^trinkets$/i.test(h)||ATTRS.some(a=>a.label.toLowerCase()===h.toLowerCase())},
+  {key:"pers",  label:"Personality",       short:"Personality", pref:PERS.map(p=>p.label),
+   test:h=>PERS.some(p=>p.label.toLowerCase()===h.toLowerCase())},
+  {key:"class", label:"Adventure Classes", short:"Classes",     pref:["Class"], extra:[{key:"sugclass",label:"Suggested class"},{key:"sugclasspct",label:"Fit %"}],
+   test:h=>/^class$/i.test(h)|| / lv$/i.test(h)},
+  {key:"jobs",  label:"Jobs",              short:"Jobs",        pref:["Occupation","Job Levels"], extra:[{key:"sugjobs",label:"Suggested jobs"}],
+   test:h=>/^(occupation|job levels)$/i.test(h)},
+  {key:"appear",label:"Appearance",        short:"Appearance",  pref:["Fur","Fur Length","Color","Colour","Color Type","Colour Type","Colortype","Pattern","Size","Weight","Eye Color","Eye Colour","Accent"],
+   test:h=>true}
+];
+// Column groups actually present, in display order (pinned Preview/Name handled separately).
+// Order: Basic · Appearance · Jobs · Adventure Classes · Personality · Stats · Base stats.
+const ROSTER_GROUP_ORDER=["basic","appear","jobs","class","pers","stats","base"];
+function rosterColumnModel(r){
+  const rawHeaders=(r.headers||[]).filter(h=>!/^(name|id)$/i.test(h) && !/^white($|\s)/i.test(h));
+  const hasWhite=(r.headers||[]).some(h=>/^white($|\s)/i.test(h))
+    || Object.values(r.cats||{}).some(c=>c.data && c.data["White"]!=null && c.data["White"]!=="");
+  const classifyOrder=["basic","base","stats","pers","class","jobs"]; // appear = fallback
+  const def=k=>ROSTER_GROUP_DEFS.find(g=>g.key===k);
+  const bucket={}; ROSTER_GROUP_DEFS.forEach(g=>bucket[g.key]=[]);
+  rawHeaders.forEach(h=>{
+    let placed=false;
+    for(const k of classifyOrder){ if(def(k).test(h)){ bucket[k].push(h); placed=true; break; } }
+    if(!placed) bucket.appear.push(h);
+  });
+  const sortByPref=(arr,pref)=>{ const pl=pref.map(s=>s.toLowerCase());
+    return [...arr].sort((a,b)=>{ const ia=pl.indexOf(a.toLowerCase()), ib=pl.indexOf(b.toLowerCase());
+      if(ia<0&&ib<0) return a.localeCompare(b); if(ia<0) return 1; if(ib<0) return -1; return ia-ib; }); };
+  const groups=[];
+  ROSTER_GROUP_ORDER.forEach(gk=>{
+    const g=def(gk);
+    const cols=sortByPref(bucket[gk], g.pref).map(h=>({key:"data:"+h,label:h}));
+    if(gk==="appear" && hasWhite) cols.push({key:"white",label:"White"});
+    (g.extra||[]).forEach(x=>cols.push(x));
+    if(cols.length) groups.push({key:gk,label:g.label,short:g.short,cols});
+  });
+  return groups;
 }
 function rosterVisibleIds(r){
   let ids=Object.keys(r.cats);
@@ -1533,50 +1604,62 @@ function rosterRender(){
     el.disabled=!has; if(!has&&rosterFilter===k) rosterFilter="all";
   });
   ["all","active","travel"].forEach(k=>{ const el=$("#rf-"+k); if(el) el.setAttribute("aria-pressed", rosterFilter===k?"true":"false"); });
-  const vl=$("#viewList"), vt=$("#viewTable");
-  if(vl) vl.setAttribute("aria-pressed", rosterView==="list"?"true":"false");
-  if(vt) vt.setAttribute("aria-pressed", rosterView==="table"?"true":"false");
   const ids=rosterVisibleIds(r), cache=suggestLoad();
   const meta=$("#rosterMeta"); if(meta) meta.textContent = all.length? (ids.length+" of "+all.length+" cats") : "";
   updateEnrichBtn(r, ids);
-  if(rosterView==="list"){
-    $("#rosterList").classList.remove("hide"); $("#rosterTable").classList.add("hide");
-    if(!all.length){ $("#rosterList").innerHTML=`<div class="rosterempty">No roster yet — paste your Village Manager page above.</div>`; return; }
-    if(!ids.length){ $("#rosterList").innerHTML=`<div class="rosterempty">No cats match.</div>`; return; }
-    $("#rosterList").innerHTML = ids.slice(0,400).map(id=>{
-      const c=r.cats[id];
-      const meta2=[notNA(col(c,/occupation/i)), notNA(col(c,/^colou?r$/i)), notNA(col(c,/pattern/i)), notNA(col(c,/adventuring|class/i))].filter(Boolean).join(" · ");
-      const s=cache[id]; const sug = (s&&s.className)?`<span class="rc-sug">→ ${esc(s.className)}</span>`:"";
-      const thumb = (c.img&&c.img.length)?catImgFromLayers(c.img,40,{fur:rosterCatFur(c), title:c.name}):"";
-      return `<button class="rostercat" type="button" data-id="${esc(id)}">
-        ${thumb}
-        <span class="rc-body"><span class="rc-top"><span class="rc-name">${esc(c.name)}</span> <span class="rc-id">#${esc(id)}</span></span>
-        <span class="rc-meta">${esc(meta2)} ${sug}</span></span></button>`;
-    }).join("");
-  }else{
-    $("#rosterList").classList.add("hide"); $("#rosterTable").classList.remove("hide");
-    if(!ids.length){ $("#rosterTable").innerHTML=`<div class="rosterempty">No cats match.</div>`; return; }
-    const cols=(r.headers||[]).filter(h=>!/^(name|id)$/i.test(h));
-    const colDefs=[{key:"name",label:"Name"},{key:"id",label:"ID"}]
-      .concat(cols.map(h=>({key:"data:"+h,label:h})))
-      .concat([{key:"sugclass",label:"Suggested class"},{key:"sugjobs",label:"Suggested jobs"}]);
-    let tids=ids;
-    if(rosterSort && colDefs.some(cd=>cd.key===rosterSort.key)) tids=[...ids].sort(rosterCompare(r,cache,rosterSort.key,rosterSort.dir));
-    const head=`<tr>${colDefs.map(cd=>{
-      const on=rosterSort&&rosterSort.key===cd.key;
-      const aria=on?(rosterSort.dir>0?"ascending":"descending"):"none";
-      const arr=on?(rosterSort.dir>0?"▲":"▼"):"↕";
-      return `<th data-key="${esc(cd.key)}" aria-sort="${aria}" tabindex="0" role="button" title="Sort by ${esc(cd.label)}">${esc(cd.label)}<span class="arr" aria-hidden="true">${arr}</span></th>`;
-    }).join("")}</tr>`;
-    const body=tids.slice(0,400).map(id=>{
-      const c=r.cats[id], s=cache[id]||{};
-      const tds=cols.map(h=>`<td>${esc(c.data[h]||"")}</td>`).join("");
-      const sc=s.className?`<span class="sug">${esc(s.className)}${s.classPct?(" "+s.classPct+"%"):""}</span>`:"—";
-      const sj=(s.jobs&&s.jobs.length)?esc(s.jobs.join(", ")):"—";
-      return `<tr data-id="${esc(id)}"><td><b>${esc(c.name)}</b></td><td>${esc(id)}</td>${tds}<td>${sc}</td><td>${sj}</td></tr>`;
-    }).join("");
-    $("#rosterTable").innerHTML=`<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
-  }
+  const T=$("#rosterTable");
+  if(!all.length){ T.innerHTML=`<div class="rosterempty">No roster yet — pull or paste your cats above.</div>`; return; }
+  if(!ids.length){ T.innerHTML=`<div class="rosterempty">No cats match.</div>`; return; }
+  const quickOpen=!rosterCollapsed.has("quick");
+  const groups=rosterColumnModel(r);
+  const sortable=new Set(["name","id", ...groups.flatMap(g=>g.cols.map(c=>c.key))]);
+  let tids=ids;
+  if(rosterSort && sortable.has(rosterSort.key)) tids=[...ids].sort(rosterCompare(r,cache,rosterSort.key,rosterSort.dir));
+  const sortMeta=key=>{ const on=rosterSort&&rosterSort.key===key;
+    return {aria:on?(rosterSort.dir>0?"ascending":"descending"):"none", arr:on?(rosterSort.dir>0?"▲":"▼"):"↕"}; };
+  const pinTh=(key,label)=>{ const m=sortMeta(key);
+    return `<th class="${key}" data-key="${key}" rowspan="2" aria-sort="${m.aria}" tabindex="0" role="button" title="Sort by ${label}">${label}<span class="arr" aria-hidden="true">${m.arr}</span></th>`; };
+  const subTh=leaf=>{ const m=sortMeta(leaf.key);
+    return `<th data-key="${esc(leaf.key)}" aria-sort="${m.aria}" tabindex="0" role="button" title="Sort by ${esc(leaf.label)}">${esc(leaf.label)}<span class="arr" aria-hidden="true">${m.arr}</span></th>`; };
+  const grpTh=(key,label,short,cols)=> rosterCollapsed.has(key)
+    ? `<th class="grp collapsed" data-grp="${esc(key)}" rowspan="2" tabindex="0" role="button" aria-expanded="false" title="Show ${esc(label)}">${esc(short)} ▸</th>`
+    : `<th class="grp" data-grp="${esc(key)}" ${cols?`colspan="${cols}"`:`rowspan="2"`} tabindex="0" role="button" aria-expanded="true" title="Collapse ${esc(label)}">◂ ${esc(label)}</th>`;
+  // header — row 1: pinned Preview/Name/ID + group labels; row 2: sortable sub-columns.
+  const row1=[`<th class="prev" rowspan="2" title="Preview">🐾</th>`, pinTh("name","Name"), pinTh("id","ID"), grpTh("quick","Quick View","Quick",0)];
+  const row2=[];
+  groups.forEach(g=>{
+    row1.push(grpTh(g.key,g.label,g.short,g.cols.length));
+    if(!rosterCollapsed.has(g.key)) g.cols.forEach(leaf=>row2.push(subTh(leaf)));
+  });
+  const head=`<tr>${row1.join("")}</tr><tr>${row2.join("")}</tr>`;
+  // Quick View: the old list's at-a-glance, reordered (Appearance / Job / Class / Rec Job / Rec Class).
+  const quickCell=id=>{
+    const c=r.cats[id], s=cache[id]||{};
+    const white=catWhiteText(c.data);
+    const appr=[notNA(col(c,/^colou?r$/i)), notNA(col(c,/pattern/i)), (white&&white!=="None")?white:""].filter(Boolean).join(" · ");
+    const job=notNA(col(c,/occupation/i)), cls=notNA(col(c,/^class$/i))||notNA(col(c,/adventuring/i));
+    const recJob=(s.jobs&&s.jobs.length)?s.jobs.join(", "):"", recCls=s.className?(s.className+(s.classPct?(" ("+s.classPct+"%)"):"")):"";
+    const line=(k,v,vc)=> v?`<div><span class="qv-k">${k}</span> <span class="${vc||""}">${esc(v)}</span></div>`:"";
+    return `<div class="qv-appr">${esc(appr||"—")}</div>`+line("Job:",job)+line("Class:",cls)+line("Rec Job:",recJob,"qv-rec")+line("Rec Class:",recCls,"qv-rec");
+  };
+  const body=tids.slice(0,400).map(id=>{
+    const c=r.cats[id];
+    const thumb=(c.img&&c.img.length)?catImgFromLayers(c.img,34,{fur:rosterCatFur(c), title:c.name}):`<span class="rc-noimg" aria-hidden="true">🐾</span>`;
+    const cells=[`<td class="prev">${thumb}</td>`,
+      `<td class="name"><a class="cat-ext" href="${esc(catUrl(id))}" target="_blank" rel="noopener"><b>${esc(c.name||("#"+id))}</b></a></td>`,
+      `<td class="idcol">${esc(id)}</td>`,
+      quickOpen ? `<td class="qv">${quickCell(id)}</td>` : `<td class="strip" data-grp="quick" title="Show Quick View">⋯</td>`];
+    groups.forEach(g=>{
+      if(rosterCollapsed.has(g.key)){ cells.push(`<td class="strip" data-grp="${esc(g.key)}" title="Show ${esc(g.label)}">⋯</td>`); return; }
+      g.cols.forEach(leaf=>{
+        const v=rosterCellValue(r,cache,id,leaf.key);
+        const cell=(leaf.key==="sugclass"||leaf.key==="sugjobs"||leaf.key==="sugclasspct") ? (v?`<span class="sug">${esc(v)}</span>`:"—") : esc(v);
+        cells.push(`<td>${cell}</td>`);
+      });
+    });
+    return `<tr data-id="${esc(id)}">${cells.join("")}</tr>`;
+  }).join("");
+  T.innerHTML=`<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
 
 /* =========================================================================
@@ -1636,6 +1719,34 @@ const WHITE_MARK = {
 function whiteMarkName(type,level){
   const a=WHITE_MARK[type]; if(!a) return "";
   return a[Math.max(0,Math.min(10, level|0))] || "";
+}
+// Combine white type + code + marking into one label, e.g. "Classic, C7, Spotted Piebald".
+// No white (level 0 / unknown) → just "None".
+function whiteCellText(typeLetter, level, markName){
+  const lv=parseInt(level,10)||0;
+  if(lv<=0) return "None";
+  const t=String(typeLetter||"").toUpperCase();
+  const typeName=WHITE_TYPE[t]||"";
+  const mark=markName || whiteMarkName(t, lv) || "";
+  return [typeName, (t||"")+lv, mark].filter(Boolean).join(", ");
+}
+// Resolve a roster cat's combined white label from whatever columns it has
+// (new single "White" column, or the older split White Type / Level / Markings).
+function catWhiteText(data){
+  data=data||{};
+  if(data["White"]!=null && data["White"]!=="") return data["White"];
+  const marks=data["White Markings"]||data["White Marks"]||"";
+  const m=String(marks).match(/\b([CPLRIT])(\d+)\b/);
+  if(m) return whiteCellText(m[1], parseInt(m[2],10), String(marks).split("/")[0].trim());
+  if(/^\s*(no\b|none)/i.test(String(marks))) return "None";
+  const lvl=data["White Level"];
+  if(lvl!=null && lvl!==""){
+    const level=parseInt(lvl,10)||0; if(level<=0) return "None";
+    const wt=String(data["White Type"]||"");
+    const letter=WHITE_TYPE_REV[wt.toLowerCase()] || (wt.length===1?wt.toUpperCase():"");
+    return whiteCellText(letter, level, "");
+  }
+  return marks?String(marks):"";
 }
 
 function windName(a,b){
@@ -2481,18 +2592,19 @@ document.addEventListener("DOMContentLoaded", ()=>{
     setStatus($("#rosterStatus"),"Roster cleared from this device.","ok"); rosterRender();
   });
   ["all","active","travel"].forEach(k=>$("#rf-"+k).addEventListener("click", ()=>{ if($("#rf-"+k).disabled) return; rosterFilter=k; rosterRender(); }));
-  $("#viewList").addEventListener("click", ()=>{ rosterView="list"; rosterRender(); });
-  $("#viewTable").addEventListener("click", ()=>{ rosterView="table"; rosterRender(); });
   $("#rosterSearch").addEventListener("input", rosterRender);
   function pickFromRoster(id){ if(!id) return; $("#catId").value=id; switchTab("id"); loadCatById(id); }
-  $("#rosterList").addEventListener("click", e=>{ const b=e.target.closest(".rostercat"); if(b) pickFromRoster(b.getAttribute("data-id")); });
   $("#rosterTable").addEventListener("click", e=>{
+    if(e.target.closest("a")) return;                       // name link → open the cat's page
+    const grp=e.target.closest("[data-grp]"); if(grp){ toggleRosterGroup(grp.getAttribute("data-grp")); return; }
     const th=e.target.closest("th[data-key]"); if(th){ toggleRosterSort(th.getAttribute("data-key")); return; }
     const tr=e.target.closest("tr[data-id]"); if(tr) pickFromRoster(tr.getAttribute("data-id"));
   });
   $("#rosterTable").addEventListener("keydown", e=>{
+    if(!(e.key==="Enter"||e.key===" ")) return;
+    const grp=e.target.closest&&e.target.closest("[data-grp]"); if(grp){ e.preventDefault(); toggleRosterGroup(grp.getAttribute("data-grp")); return; }
     const th=e.target.closest&&e.target.closest("th[data-key]");
-    if(th && (e.key==="Enter"||e.key===" ")){ e.preventDefault(); toggleRosterSort(th.getAttribute("data-key")); }
+    if(th){ e.preventDefault(); toggleRosterSort(th.getAttribute("data-key")); }
   });
 
   // bulk-suggest across the shown cats (fetches each page, throttled)
