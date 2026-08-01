@@ -366,9 +366,18 @@
   .pose-bar{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);margin:2px 0 10px}
   .pose-bar select,.kc-pick{font-family:inherit;font-size:12.5px;padding:3px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel2);color:var(--ink)}
   .pheno-facts{display:flex;flex-direction:column;gap:2px;font-size:12.5px;color:var(--ink-soft);min-width:0}
-  .pheno-facts>div{display:flex;gap:8px;align-items:baseline}
+  .pheno-facts>div{display:flex;gap:8px;align-items:baseline;min-width:0}
+  .pheno-facts>div>span:last-child{min-width:0;overflow-wrap:anywhere}
   .pf-k{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px;flex:0 0 50px;padding-top:1px}
   .pf-sub{color:var(--muted);font-size:11px}
+  /* keep the breeding boxes inside the viewport on narrow screens */
+  .parent-card,.pheno-head,.pheno-line{min-width:0}
+  .pheno-line code{overflow-wrap:anywhere;word-break:break-word;white-space:normal}
+  .grid2>*{min-width:0}
+  @media (max-width:560px){
+    .pheno-head{flex-direction:column;gap:8px}
+    .dist-row{grid-template-columns:minmax(96px,130px) 1fr 40px;gap:8px}
+  }
   .kitten-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:2px 0 12px}
   .kc{display:flex;flex-direction:column;gap:3px}
   .kc>span{color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px}
@@ -592,6 +601,7 @@
       <datalist id="rosterDL"></datalist>
       <div class="row" style="margin-top:12px">
         <button class="btn" id="breedBtn" type="button">🧬 Predict litter</button>
+        <button class="btn ghost sm" id="breedClearBtn" type="button">Clear results</button>
         <button class="btn ghost sm" id="breedDemoBtn" type="button">Try an example pair</button>
       </div>
       <div class="status" id="breedStatus" role="status" aria-live="polite"></div>
@@ -3213,6 +3223,14 @@ document.addEventListener("DOMContentLoaded", ()=>{
     if(!a||!b){ setStatus($("#breedStatus"),"Pick both parents from your cats, or paste both genetic strings.","err"); return; }
     setStatus($("#breedStatus"),"","");
     renderBreeding(a,b);
+  });
+  $("#breedClearBtn").addEventListener("click", ()=>{
+    ["#pA","#pB","#pickA","#pickB"].forEach(s=>{ const el=$(s); if(el) el.value=""; });
+    $("#noteA").textContent=""; $("#noteB").textContent="";
+    breedMeta.A=null; breedMeta.B=null; lastBreed=null;
+    previewSel={wind:"any", pattern:"any", white:"any"};
+    $("#breedResults").innerHTML=""; setStatus($("#breedStatus"),"","");
+    try{ localStorage.removeItem(BREED_KEY); }catch(e){}
   });
   $("#breedDemoBtn").addEventListener("click", ()=>{
     $("#pA").value="[C] [NO] [SL] [BBFF3] [YYTT] [NN0C] [AB] [YR]";
