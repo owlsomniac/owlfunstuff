@@ -2739,8 +2739,8 @@ function parentCard(title, g, meta){
 // Build a kitten's genetic string from its VISIBLE traits, marking every allele the
 // game keeps hidden with "?" (see the Quick Genetics Overview). A trait shown as
 // dominant is "[D?]" (the second copy could be a hidden recessive); a recessive
-// trait is "[rr]" (both copies known). Accent is handled separately (it can be more
-// than one possible genotype), so the string is 7 sections — no accent slot.
+// trait is "[rr]" (both copies known). The accent (o.accGeno) is the one picked from
+// the accent selector — a normal 8th section, even for Not-cats (who don't show it).
 function offspringGeneString(o){
   const sp = o.species==="Mercat" ? "M" : "C";
   const windSec = o.wind==="North"?"N?" : o.wind==="South"?"S?" : o.wind==="Trade"?"NS" : "OO";
@@ -2762,7 +2762,7 @@ function offspringGeneString(o){
   if(o.patterned){ const pr=PATTERN_REV[String(o.patName||"").toLowerCase()]; patSec="Y?"+(pr?pr.join(""):"??"); }
   else patSec="NN??";
   const whiteSec = (o.wLevel>0) ? ("Y?"+o.wLevel+(o.wType||"C")) : "NN0?";
-  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [AB]`;
+  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [AB] [${o.accGeno||"??"}]`;
 }
 // A gallery of every possible kitten coat, with a row of Wind / Pattern / White
 // dropdowns (each listing only outcomes this pairing can produce). Picking any of
@@ -2802,18 +2802,18 @@ function kittenGallery(R,A,B){
   let wLevel=0, wType="C";
   if(previewSel.white!=="any" && previewSel.white!=="none"){ const m=String(previewSel.white).match(/^w:(\d+):([CPLRIT])$/); if(m){ wLevel=parseInt(m[1],10); wType=m[2]; } }
 
-  // Accent display depends on species. A Not-cat hides its accent, so we list every
-  // genotype it could inherit ([B?] or [R?]). A Mercat SHOWS its accent as the tail
-  // colour, so we pick ONE (via the accent selector) and colour the tail with it.
+  // The accent is always resolved to ONE concrete genotype (chosen from the accent
+  // selector), and it rides in the kitten's normal 8-section string — even for a
+  // Not-cat, whose accent the game never shows. A Mercat also has its tail coloured
+  // by it. The picker lists every accent this pairing could produce.
   const isMercat = species==="Mercat";
-  const accGenos = offspringAccentGenotypes(A,B);
-  const accColors = isMercat ? offspringAccentColors(A,B) : [];
-  const selAcc = isMercat && accColors.length
-    ? (accColors.find(c=>c.color===previewSel.accent) || accColors[0]) : null;
-  const accLine = isMercat && selAcc
-    ? `<div class="gene-accent">Accent: <span class="geno-a">[${esc(selAcc.geno)}]</span> ${esc(selAcc.color)}</div>`
-    : `<div class="gene-accent">Accent: ${accGenos.map(gn=>`<span class="geno-a">[${esc(gn)}]</span>`).join(" or ")}</div>`;
-  const tailAccent = selAcc ? selAcc.color : mercatTailAccent(A,B);   // colours a Mercat kitten's tail
+  const accKnownAny = accentKnown(A) || accentKnown(B);       // any real constraint on the accent?
+  const accColors = offspringAccentColors(A,B);
+  const bySel = accColors.find(c=>c.color===previewSel.accent);
+  // default to a concrete accent only when we know something; with NOTHING known,
+  // keep "??" so we never invent an accent (e.g. no bogus Ruby).
+  const selAcc = bySel ? bySel : (accKnownAny && accColors.length ? accColors[0] : {color:"", geno:"??"});
+  const tailAccent = selAcc.color || mercatTailAccent(A,B);   // colours a Mercat kitten's tail
 
   const cells=colors.map(([label,p])=>{
     const windP = previewSel.wind==="any" ? p : ((cc.windJoint.get(label)||new Map()).get(previewSel.wind)||0);
@@ -2826,11 +2826,10 @@ function kittenGallery(R,A,B){
       patternName:patName, patterned, species, accentColor:tailAccent, whiteType:wType, whiteLevel:wLevel, hex, fur, size:96, title:label});
     const windForStr = previewSel.wind!=="any" ? previewSel.wind
       : coatType==="tortoiseshell"||coatType==="watercolor" ? "Trade" : coatType==="snow" ? "Null" : "North";
-    const gstr=offspringGeneString({species, wind:windForStr, coatType, label, patterned, patName, fur, wLevel, wType});
+    const gstr=offspringGeneString({species, wind:windForStr, coatType, label, patterned, patName, fur, wLevel, wType, accGeno:selAcc.geno});
     return `<figure class="kitten">${img}
       <figcaption><span class="knm">${esc(label)}</span><span class="kpct">${pct<9.95?pct.toFixed(1):Math.round(pct)}%</span></figcaption>
       <button type="button" class="gene-copy" data-gene="${esc(gstr)}" title="Copy this genetic string">${esc(gstr)}</button>
-      ${accLine}
     </figure>`;
   }).join("");
 
@@ -2839,10 +2838,13 @@ function kittenGallery(R,A,B){
     `<option value="any"${cur==="any"?" selected":""}>Any</option>`+
     opts.map(([v,lab])=>`<option value="${esc(v)}"${cur===v?" selected":""}>${esc(lab)}</option>`).join("")+
     `</select></label>`;
-  // Mercats reveal their accent as the tail colour, so they get a concrete picker
-  // (one specific colour, not an "or"); Not-cats hide it, so no picker.
-  const accentPicker = (isMercat && selAcc)
-    ? `<label class="kc"><span>Accent (tail)</span><select class="kc-pick accent-pick">${accColors.map(c=>`<option value="${esc(c.color)}"${c.color===selAcc.color?" selected":""}>${esc(c.color)}</option>`).join("")}</select></label>`
+  // Accent selector. On a Mercat it recolours the tail; on a Not-cat it just sets the
+  // (hidden) accent in each kitten's genetic string. When nothing is known it leads
+  // with an "Unknown" (??) option so we don't assert a colour by default.
+  const accentOpts = (accKnownAny ? [] : [["any","Unknown"]]).concat(accColors.map(c=>[c.color, c.color]));
+  const selVal = selAcc.color || "any";
+  const accentPicker = (accentOpts.length>1)
+    ? `<label class="kc"><span>Accent${isMercat?" (tail)":""}</span><select class="kc-pick accent-pick">${accentOpts.map(([v,lab])=>`<option value="${esc(v)}"${v===selVal?" selected":""}>${esc(lab)}</option>`).join("")}</select></label>`
     : "";
   const controls = `<div class="kitten-controls">
     ${sel({label:"Species",k:"species-pick"}, previewSel.species, speciesOut.map(([s])=>[s,s]))}
@@ -2857,7 +2859,7 @@ function kittenGallery(R,A,B){
   return `<div class="dist-block"><h3>Likely kittens</h3>
     ${controls}
     <div class="kitten-gallery">${cells||`<p class="hint">No kitten matches the current picks.</p>`}</div>
-    <p class="hint">Each % is the <b>true overall chance</b> of a kitten with that coat${picked.length?(" and "+esc(picked.join(" · "))):""}. Previews are composited from the game's own sprite layers; a missing layer falls back to a colour swatch. Tap a genetic string to copy it — a <code>?</code> marks an allele the game keeps hidden (a recessive that might be lurking, or an accent it never shows); see the <b>Quick Genetics Overview</b>.</p></div>`;
+    <p class="hint">Each % is the <b>true overall chance</b> of a kitten with that coat${picked.length?(" and "+esc(picked.join(" · "))):""}. Previews are composited from the game's own sprite layers; a missing layer falls back to a colour swatch. Tap a genetic string to copy it — a <code>?</code> marks an allele the game keeps hidden; the last section is the <b>accent</b> chosen in the selector above (Not-cats don't show it, Mercats wear it on the tail). See the <b>Quick Genetics Overview</b>.</p></div>`;
 }
 // One-click copy of a kitten's genetic string; flashes "Copied!" immediately.
 function copyGeneString(btn){
