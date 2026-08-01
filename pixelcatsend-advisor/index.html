@@ -274,9 +274,9 @@
   #rosterTable tbody tr{background:var(--panel2);cursor:pointer}
   #rosterTable tbody tr:nth-child(even){background:var(--panel)}
   #rosterTable tbody tr:hover{background:var(--brand-soft)}
-  #rosterTable td.prev{width:46px;min-width:46px;text-align:center;padding:3px}
-  #rosterTable td.prev .catprev{margin:0 auto;border-radius:8px}
-  #rosterTable td.prev .rc-noimg{font-size:15px;opacity:.5}
+  #rosterTable td.prev,#rosterTable th.prev{width:108px;min-width:108px;text-align:center;padding:4px}
+  #rosterTable td.prev .catprev{margin:0 auto;border-radius:10px}
+  #rosterTable td.prev .rc-noimg{font-size:44px;opacity:.4}
   #rosterTable td.name a{color:var(--ink);text-decoration:none;font-weight:700}
   #rosterTable td.name a:hover{color:var(--brand-ink);text-decoration:underline}
   #rosterTable td.idcol{color:var(--muted);font-variant-numeric:tabular-nums}
@@ -1644,7 +1644,7 @@ function rosterRender(){
   };
   const body=tids.slice(0,400).map(id=>{
     const c=r.cats[id];
-    const thumb=(c.img&&c.img.length)?catImgFromLayers(c.img,34,{fur:rosterCatFur(c), title:c.name}):`<span class="rc-noimg" aria-hidden="true">🐾</span>`;
+    const thumb=(c.img&&c.img.length)?catImgFromLayers(c.img,100,{fur:rosterCatFur(c), title:c.name}):`<span class="rc-noimg" aria-hidden="true">🐾</span>`;
     const cells=[`<td class="prev">${thumb}</td>`,
       `<td class="name"><a class="cat-ext" href="${esc(catUrl(id))}" target="_blank" rel="noopener"><b>${esc(c.name||("#"+id))}</b></a></td>`,
       `<td class="idcol">${esc(id)}</td>`,
