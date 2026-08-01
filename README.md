@@ -64,9 +64,11 @@ Predict a litter **two ways**:
 - **Paste a genetic string** directly (e.g. `[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]`; old dash/pipe strings work too)
   when you have one revealed.
 
-Either way you get each kitten's odds for **coat colour** (incl. tortoiseshell / watercolor / snow, with swatches), **wind**,
+Either way you get each kitten's odds for **coat colour** (standard / watercolor / tortoiseshell / snow, with swatches), **wind**,
 **fur length**, **pattern** (all 15 named combinations — Mackerel, Rosette, Karpati…), **white markings** (named per level &amp;
-type, e.g. *Bib &amp; Boots*), **accent colour** (Ruby, Amber, Teal…), and **species** — plus each parent's decoded phenotype.
+type, e.g. *Bib &amp; Boots*), **accent colour** (Ruby, Amber, Teal…), and **species** — plus each parent's decoded phenotype
+(with its name/#ID when picked from your roster). Parents and the most likely kittens get **composited sprite previews** built
+from the game's own image layers (base coat + pattern + eyes; a missing layer falls back to a colour swatch).
 The genetics engine follows the Not-Wiki's [Genetics](https://pixelcatsend.miraheze.org/wiki/Genetics) rules (Mendelian
 inheritance, recessive dilute/no-white/longhair, number-range colour density &amp; white level, positional colour by wind) with
 the pattern/accent/white-marking name tables from Apocracy's community *Cat Genetics 6* spreadsheet, and is unit-tested against

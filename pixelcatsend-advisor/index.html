@@ -282,6 +282,15 @@
   .dist-bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--violet),var(--violet-ink))}
   .dist-row .pctv{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:12.5px}
   .breed-warn{color:var(--warn-ink);font-size:13px;margin-top:8px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:var(--radius-sm);padding:8px 11px}
+  .pheno-head{display:flex;gap:12px;align-items:flex-start;margin-top:6px}
+  .catprev{position:relative;flex:0 0 auto;border-radius:10px;overflow:hidden;border:1px solid var(--line);image-rendering:pixelated;background-size:cover}
+  .catprev .cpl{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
+  .kitten-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:12px;margin-top:6px}
+  .kitten{margin:0;text-align:center}
+  .kitten .catprev{width:100%;aspect-ratio:1/1;height:auto}
+  .kitten figcaption{margin-top:5px;display:flex;flex-direction:column;gap:1px}
+  .kitten .knm{font-size:11px;color:var(--ink-soft);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .kitten .kpct{font-size:12px;font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums}
   .breed-note{font-size:12px;line-height:1.45;color:var(--muted);margin-top:6px;min-height:1px}
   .breed-note.ok{color:var(--ink-soft)}
   .breed-note.warn{color:var(--warn-ink)}
@@ -1443,11 +1452,14 @@ function phenotype(g){
   const patterned = !(g.patVis[0]==="N"&&g.patVis[1]==="N");
   const showsWhite = !(g.whiteVis[0]==="N"&&g.whiteVis[1]==="N");
   const color = displayedColor(wind, g.color[0], g.color[1], dilute, g.density);
+  const patternBase = patternName(g.pat[0],g.pat[1]);
   return {
     wind, fur, dilute,
-    color: color.label, colorHex: color.hex, coatType: color.coatType,
-    pattern: patterned ? patternName(g.pat[0],g.pat[1]) : "Solid ("+patternName(g.pat[0],g.pat[1])+" hidden)",
-    patterned,
+    color: color.label, colorHex: color.hex, colorHex2: color.hex2||null, coatType: color.coatType,
+    colorPrimary: color.colors[0], colors: color.colors,
+    pattern: patterned ? patternBase : "Solid ("+patternBase+" hidden)",
+    patterned, patternBase,
+    whiteLevel: g.whiteLevel, whiteType: g.whiteType, showsWhite,
     white: showsWhite ? ("White "+g.whiteLevel+" · "+(whiteMarkName(g.whiteType,g.whiteLevel)||WHITE_TYPE[g.whiteType]||g.whiteType)) : "No-white",
     accent: (g.accent&&g.accent.length===2) ? accentName(g.accent[0],g.accent[1]) : "",
     species: g.species==="M"?"Mercat":"Not-cat"
@@ -1456,13 +1468,13 @@ function phenotype(g){
 
 /* group letter of a colour allele, honoring null=snow handled by caller */
 function displayedColor(wind, x, y, dilute, density){
-  if(wind==="Null") return {label:"Snow", hex:SNOW[1], coatType:"snow"};
-  if(wind==="North"){ const c=colorInfo(x,dilute,density); return {label:c.name, hex:c.hex, coatType:"standard"}; }
-  if(wind==="South"){ const c=colorInfo(y,dilute,density); return {label:c.name, hex:c.hex, coatType:"standard"}; }
+  if(wind==="Null") return {label:"Snow", hex:SNOW[1], coatType:"snow", colors:["Snow"]};
+  if(wind==="North"){ const c=colorInfo(x,dilute,density); return {label:c.name+" standard", hex:c.hex, coatType:"standard", colors:[c.name]}; }
+  if(wind==="South"){ const c=colorInfo(y,dilute,density); return {label:c.name+" standard", hex:c.hex, coatType:"standard", colors:[c.name]}; }
   // Trade
-  if(x===y){ const c=colorInfo(x,dilute,density); return {label:c.name+" watercolor", hex:c.hex, coatType:"watercolor"}; }
+  if(x===y){ const c=colorInfo(x,dilute,density); return {label:c.name+" watercolor", hex:c.hex, coatType:"watercolor", colors:[c.name]}; }
   const main=colorInfo(x,dilute,density), sec=colorInfo(y,dilute,density);
-  return {label:main.name+"-"+sec.name+" tortoiseshell", hex:main.hex, hex2:sec.hex, coatType:"tortoiseshell"};
+  return {label:main.name+"-"+sec.name+" tortoiseshell", hex:main.hex, hex2:sec.hex, coatType:"tortoiseshell", colors:[main.name,sec.name]};
 }
 
 /* ---------- distributions ---------- */
@@ -1639,22 +1651,31 @@ function phenotypeToGeneString(t){
 
   let color=["B","B"], dil=["F","F"], density=1;
   const cName=norm(t.color);
+  const cType=norm(t.colortype).toLowerCase();
+  // colour type may live in the Color string ("Red-Black tortoiseshell") OR a
+  // separate Colortype column ("Tortoiseshell" / "Watercolor" / "Standard").
+  const isTortie = /tortoiseshell|tortie/.test(cType) || /tortoiseshell|tortie/i.test(cName);
+  const isWater  = /watercolou?r/.test(cType)         || /watercolou?r/i.test(cName);
+  const stripType = s => s.replace(/\b(standard|solid)\b/ig,"").replace(/tortoiseshell|tortie|watercolou?r/ig,"").trim();
   const setColor=a=>{ dil=[a.dilute?"D":"F", a.dilute?"D":"F"]; density=a.density; };
-  if(!cName){ guessed.push("colour"); }
+  // both a watercolor and a tortoiseshell coat imply a Trade cat (needs N + S)
+  if((isTortie||isWater) && !/trade/i.test(norm(t.wind))){ wind=["N","S"]; if(!resolved.includes("wind")) resolved.push("wind"); }
+  if(!cName && !isTortie && !isWater){ guessed.push("colour"); }
   else if(/snow/i.test(cName)){ wind=["O","O"]; guessed.push("colour (snow hides it)"); }
-  else if(/tortoiseshell/i.test(cName)){
-    const parts=cName.replace(/tortoiseshell/i,"").trim().split(/[-–—]/).map(s=>s.trim());
+  else if(isTortie){
+    const parts=stripType(cName).split(/[-–—/&]|,|\band\b/i).map(s=>s.trim()).filter(Boolean);
     const a=revColor(parts[0]), b=revColor(parts[1]);
     if(a&&b){ color=[a.group,b.group]; setColor(a); resolved.push("colour"); }
+    else if(a){ color=[a.group,a.group]; setColor(a); resolved.push("colour"); guessed.push("2nd tortoiseshell colour"); }
     else guessed.push("colour");
   }
-  else if(/watercolou?r/i.test(cName)){
-    const a=revColor(cName.replace(/watercolou?r/i,"").trim());
+  else if(isWater){
+    const a=revColor(stripType(cName));
     if(a){ color=[a.group,a.group]; setColor(a); resolved.push("colour"); }
     else guessed.push("colour");
   }
   else {
-    const a=revColor(cName);
+    const a=revColor(stripType(cName));
     if(a){ color=[a.group,a.group]; setColor(a); resolved.push("colour"); if(!a.dilute) guessed.push("dilute carrier?"); }
     else guessed.push("colour");
   }
@@ -1698,6 +1719,39 @@ function phenotypeToGeneString(t){
 }
 
 
+/* ---------- layered cat-image preview ----------
+   The game composites a cat from stacked PNG layers inside `.catjail`
+   (base coat + trade + accent + white + eyes). We can build the base coat
+   (colour + pattern, baked into one file) and eyes with confidence; the
+   trade/white/accent overlay URLs aren't documented yet, so we layer what we
+   can and fall back to a colour swatch if a layer 404s. Approximate but real. */
+const IMG_ORIGIN = "https://www.pixelcatsend.com";
+const spriteToken = s => String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+function spriteBaseUrl(colorName, patternName, patterned, species){
+  const sp = species==="Mercat" ? "m" : "c";
+  const color = spriteToken(colorName);
+  const pat = patterned ? spriteToken(patternName) : "solid";
+  if(!color) return null;
+  return IMG_ORIGIN+"/images/cats/"+sp+"/"+color+"_main_"+pat+".png";
+}
+// primary base colour word out of a coat-colour label ("Red-Black tortoiseshell" -> "Red")
+function primaryColorWord(label){
+  const s=String(label).replace(/\b(standard|solid|watercolou?r|tortoiseshell|tortie)\b/ig,"").trim();
+  return s.split(/[-–—/&]|,/)[0].trim();
+}
+function catPreview(opts){
+  // opts: {colorName, patternName, patterned, species, hex, size, title}
+  const size=opts.size||88;
+  const base=spriteBaseUrl(opts.colorName, opts.patternName, opts.patterned, opts.species);
+  const eyes=IMG_ORIGIN+"/images/cats/eyes_neutral.png";
+  const layer=(src,z)=> src?`<img class="cpl" style="z-index:${z}" src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:"";
+  return `<div class="catprev" title="${esc(opts.title||"")}" style="width:${size}px;height:${size}px;background:${esc(opts.hex||"var(--panel2)")}">`+
+    layer(base,2)+layer(eyes,6)+`</div>`;
+}
+function catPreviewFor(ph, size){
+  return catPreview({colorName:ph.colorPrimary, patternName:ph.patternBase, patterned:ph.patterned, species:ph.species, hex:ph.colorHex, size, title:ph.color+" · "+ph.pattern});
+}
+
 /* ---------- breeding render ---------- */
 function distRows(dist, opts){
   opts = opts || {};
@@ -1712,19 +1766,46 @@ function distRows(dist, opts){
       `<div class="pctv">${pctv<9.95?pctv.toFixed(1):Math.round(pctv)}%</div></div>`;
   }).join("");
 }
-function parentCard(title, g){
-  if(g.error) return `<div class="statset parent-card"><h3>${esc(title)}</h3><div class="breed-warn">${esc(g.error)}</div></div>`;
+function parentCard(title, g, meta){
+  const who = (meta&&meta.name) ? `${esc(title)} · ${esc(meta.name)} <span class="rc-id">#${esc(meta.id||"")}</span>` : esc(title);
+  if(g.error) return `<div class="statset parent-card"><h3>${who}</h3><div class="breed-warn">${esc(g.error)}</div></div>`;
   const ph = phenotype(g);
-  return `<div class="statset parent-card"><h3>${esc(title)}</h3>
-    <div class="pheno-line"><span class="swatch lg" style="background:${esc(ph.colorHex)}"></span><b>${esc(ph.color)}</b> · ${esc(ph.pattern)}</div>
-    <div class="pheno-line">${esc(ph.wind)} wind · ${esc(ph.fur)} · ${esc(ph.white)}${ph.accent?(" · "+esc(ph.accent)+" accent"):""} · ${esc(ph.species)}</div>
+  return `<div class="statset parent-card"><h3>${who}</h3>
+    <div class="pheno-head">
+      ${catPreviewFor(ph, 84)}
+      <div>
+        <div class="pheno-line"><b>${esc(ph.color)}</b> · ${esc(ph.pattern)}</div>
+        <div class="pheno-line">${esc(ph.wind)} wind · ${esc(ph.fur)}</div>
+        <div class="pheno-line">${esc(ph.white)}${ph.accent?(" · "+esc(ph.accent)+" accent"):""} · ${esc(ph.species)}</div>
+      </div>
+    </div>
     <div class="pheno-line"><code style="font-size:11px;color:var(--muted)">${esc(g.raw||"")}</code></div></div>`;
 }
+// A gallery of the most likely kittens (top joint coat-colour × pattern outcomes).
+function kittenGallery(R){
+  const cc=R.color; if(cc.error) return "";
+  const colors=[...cc.dist.entries()].sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const pats=[...R.pattern.entries()].sort((a,b)=>b[1]-a[1]);
+  const pShown=[...R.patternVisible.entries()].reduce((o,[k,v])=>{o[k]=v;return o;},{});
+  const pPatterned = pShown["Patterned"]||0;
+  const topPat = pats[0]?pats[0][0]:"Mackerel";
+  const patterned = pPatterned>=0.5;
+  const species = ([...R.species.entries()].sort((a,b)=>b[1]-a[1])[0]||["C"])[0]==="M"?"Mercat":"Not-cat";
+  const cells=colors.map(([label,p])=>{
+    const hex=cc.hex.get(label);
+    const img=catPreview({colorName:primaryColorWord(label), patternName:topPat, patterned, species, hex, size:84, title:label});
+    const pct=p*100;
+    return `<figure class="kitten">${img}<figcaption><span class="knm">${esc(label)}</span><span class="kpct">${pct<9.95?pct.toFixed(1):Math.round(pct)}%</span></figcaption></figure>`;
+  }).join("");
+  return `<div class="dist-block"><h3>Likely kittens</h3><div class="kitten-gallery">${cells}</div>
+    <p class="hint">Coat previews composited from the game's sprite layers (base colour + ${patterned?("most-likely pattern, "+esc(topPat)):"solid"} + eyes). White markings, tortoiseshell blends &amp; accents aren't overlaid yet. A missing image falls back to a colour swatch.</p></div>`;
+}
+let breedMeta = {A:null, B:null};
 function renderBreeding(strA, strB){
   const A = parseGeneString(strA), B = parseGeneString(strB);
   const out = $("#breedResults");
   if(A.error || B.error){
-    out.innerHTML = `<div class="card"><div class="breed-parents">${parentCard("Parent A",A)}${parentCard("Parent B",B)}</div>
+    out.innerHTML = `<div class="card"><div class="breed-parents">${parentCard("Parent A",A,breedMeta.A)}${parentCard("Parent B",B,breedMeta.B)}</div>
       <div class="breed-warn" style="margin-top:12px">Fix the string(s) above — expected 7–8 sections like <code>[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]</code>.</div></div>`;
     return;
   }
@@ -1735,8 +1816,9 @@ function renderBreeding(strA, strB){
   const colorBlock = cc.error ? `<div class="breed-warn">${esc(cc.error)}</div>`
     : `<div class="dist-block"><h3>Coat colour</h3>${distRows(cc.dist,{hex:cc.hex})}</div>`;
   out.innerHTML = `<div class="card">
-    <div class="breed-parents">${parentCard("Parent A",A)}${parentCard("Parent B",B)}</div>
+    <div class="breed-parents">${parentCard("Parent A",A,breedMeta.A)}${parentCard("Parent B",B,breedMeta.B)}</div>
     ${warn}
+    ${kittenGallery(R)}
     <div class="grid2" style="margin-top:6px">
       <div>${colorBlock}
         <div class="dist-block"><h3>Wind</h3>${distRows(R.wind)}</div>
@@ -1945,19 +2027,20 @@ document.addEventListener("DOMContentLoaded", ()=>{
     dl.innerHTML = ids.map(id=>`<option value="${esc((r.cats[id].name||"Cat")+" #"+id)}"></option>`).join("");
   }
   // Resolve a picker's value to a roster cat and fill the genetic-string box.
-  function resolvePick(pickSel, targetSel, noteSel){
+  function resolvePick(slot, pickSel, targetSel, noteSel){
     const note=$(noteSel), raw=($(pickSel).value||"").trim();
-    if(!raw){ note.className="breed-note"; note.textContent=""; return; }
+    if(!raw){ note.className="breed-note"; note.textContent=""; breedMeta[slot]=null; return; }
     const r=rosterLoad();
     let id=""; const m=raw.match(/#(\d+)/);
     if(m && r.cats[m[1]]) id=m[1];
     if(!id){ const hit=Object.keys(r.cats).find(k=>(r.cats[k].name||"").toLowerCase()===raw.toLowerCase()); if(hit) id=hit; }
     if(!id){ const hits=Object.keys(r.cats).filter(k=>(r.cats[k].name||"").toLowerCase().startsWith(raw.toLowerCase())); if(hits.length===1) id=hits[0]; }
-    if(!id||!r.cats[id]){ note.className="breed-note warn"; note.textContent="No cat matches “"+raw+"”. Pick from the list, or paste a genetic string below."; return; }
+    if(!id||!r.cats[id]){ note.className="breed-note warn"; note.textContent="No cat matches “"+raw+"”. Pick from the list, or paste a genetic string below."; breedMeta[slot]=null; return; }
     const res=rosterCatToGeneString(r.cats[id]);
-    if(res.error){ note.className="breed-note warn"; note.textContent=res.error; return; }
+    if(res.error){ note.className="breed-note warn"; note.textContent=res.error; breedMeta[slot]=null; return; }
     $(targetSel).value=res.str;
     const nm=r.cats[id].name||("#"+id);
+    breedMeta[slot]={name:nm, id:id};
     if(res.source==="string"){ note.className="breed-note ok"; note.textContent="Loaded "+nm+"’s revealed genetic string."; }
     else{
       const g=res.guessed && res.guessed.length ? " Hidden genes assumed: "+res.guessed.join(", ")+"." : "";
@@ -1971,8 +2054,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
     const a=$("#pA").value.trim(), b=$("#pB").value.trim();
     if(a&&b && !parseGeneString(a).error && !parseGeneString(b).error){ setStatus($("#breedStatus"),"",""); renderBreeding(a,b); }
   }
-  $("#pickA").addEventListener("change", ()=>resolvePick("#pickA","#pA","#noteA"));
-  $("#pickB").addEventListener("change", ()=>resolvePick("#pickB","#pB","#noteB"));
+  $("#pickA").addEventListener("change", ()=>resolvePick("A","#pickA","#pA","#noteA"));
+  $("#pickB").addEventListener("change", ()=>resolvePick("B","#pickB","#pB","#noteB"));
+  // Editing a string box by hand detaches it from the picked cat.
+  $("#pA").addEventListener("input", ()=>{ breedMeta.A=null; });
+  $("#pB").addEventListener("input", ()=>{ breedMeta.B=null; });
   fillBreedRosterDatalist();
 
   $("#breedBtn").addEventListener("click", ()=>{
@@ -1986,6 +2072,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     $("#pB").value="[C] [SO] [LL] [OOFF3] [YYSS] [YY4P] [BA] [YR]";
     $("#pickA").value=""; $("#pickB").value="";
     $("#noteA").textContent=""; $("#noteB").textContent="";
+    breedMeta.A=null; breedMeta.B=null;
     setStatus($("#breedStatus"),"Loaded an example pair — a North chocolate Mackerel × a South longhair Ginger Spotted.","ok");
     renderBreeding($("#pA").value, $("#pB").value);
   });
