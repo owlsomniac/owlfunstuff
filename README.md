@@ -17,11 +17,11 @@ Load a cat one of four ways — they all land on an editable sheet, so you can f
 
 1. **My cats (roster)** — two ways to build it:
    - **Fastest — pull your whole roster:** type your **village/profile ID** (or any link with it) and hit **Pull my
-     cats**. It fetches your public **Cats** page and **crawls every tab** (Adventurers, Trainees, … + Traveling),
-     pulling each cat's **name, colour, pattern, white markings, genetics and real portrait** — no per-cat fetching.
-     Then hit **✨ Fetch stats & levels for shown cats** to open each cat's page and add its **7 attributes, current
-     day job & adventuring class, every day-job level and all 7 class levels** — each a sortable column. (These all
-     come from the public cat pages, so no Village Manager needed for them.)
+     cats**. In one click it crawls every Cats-page tab (Adventurers, Trainees, … + Traveling) for each cat's name,
+     colour, pattern, white, genetics and real portrait, **then opens each cat's page** to add its **7 attributes
+     (base / trinket / total), equipped trinkets, current day job & adventuring class, every day-job level and all 7
+     class levels** — each a sortable column. (All from public pages — no Village Manager needed.) The **✨ Fetch
+     stats & levels** button re-runs just the per-cat pass to fill any gaps (e.g. relay hiccups).
    - **Most complete — Village Manager:** paste that page's **HTML** once (it's a private, logged-in page, so it
      can't be auto-loaded, and pasting the *address* won't work — you need the page **source**). Grab it with
      **Ctrl+U → Ctrl+A → Ctrl+C** (⌘+⌥+U on Mac), or use the one-click **bookmarklet** in that tab. This is the only
