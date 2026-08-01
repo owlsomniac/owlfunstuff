@@ -287,6 +287,7 @@
   #rosterTable td.qv .qv-rec{color:var(--good-ink);font-weight:700}
   #rosterTable .sug{color:var(--good-ink);font-weight:700}
   #rosterTable .trink{color:var(--good-ink);font-weight:800}   /* stat total boosted by a trinket */
+  #rosterTable .trink-up{color:var(--good-ink);font-size:9px;font-weight:900;vertical-align:top;margin-left:2px;line-height:1}
   #rosterTable .rosterempty{border-bottom:0}
   /* ---- roster input helpers ---- */
   .profilebox{margin-top:12px;border:1px solid var(--line);background:var(--panel2);border-radius:var(--radius-sm);padding:12px 14px}
@@ -1661,7 +1662,7 @@ function rosterRender(){
         else if(g.key==="stats" && leaf.key.indexOf("data:")===0 && attrLabels.has(leaf.key.slice(5))){
           const label=leaf.key.slice(5), base=(c.data||{})[label+" base"];
           const boosted = v!=="" && base!=null && base!=="" && String(base)!==String(v);
-          cell = boosted ? `<span class="trink" title="Boosted by a trinket (base ${esc(String(base))})">${esc(v)}</span>` : esc(v);
+          cell = boosted ? `<span class="trink" title="Boosted by a trinket (base ${esc(String(base))})">${esc(v)}</span><span class="trink-up" aria-hidden="true" title="Boosted by a trinket (base ${esc(String(base))})">▲</span>` : esc(v);
         }
         else cell = esc(v);
         cells.push(`<td>${cell}</td>`);
