@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Cat's End — Adventuring Advisor</title>
+<meta name="description" content="Pull a Pixel Cat's End cat's attributes and personality by ID, see the bonuses each stat grants, and get an adventuring class and day-job recommendation.">
+<style>
+  /* =========================================================================
+     THEME TOKENS — light + dark (auto by system pref; toggle stamps data-theme)
+     ========================================================================= */
+  :root{
+    --bg:#f4efe6; --bg2:#ece3d3; --panel:#fffdf8; --panel2:#f6f0e4;
+    --ink:#3a3229; --ink-soft:#665a4b; --muted:#8c7f6c;
+    --line:#e4d9c5; --line-soft:#efe7d6;
+    --brand:#c8622d; --brand-ink:#a1471c; --brand-soft:#f3d9c6;
+    --good:#4f8a5b; --good-soft:#dcecdc; --good-ink:#356440;
+    --warn:#b8892a; --warn-soft:#f2e6c6; --warn-ink:#8a6516;
+    --bad:#c0492f; --bad-soft:#f4d8cf; --bad-ink:#96341f;
+    --cool:#4a76a8; --cool-soft:#d9e4f0; --cool-ink:#345a85;
+    --violet:#8a5fb0; --violet-soft:#e7ddf1; --violet-ink:#684790;
+    --shadow:0 1px 2px rgba(60,45,25,.06),0 10px 28px rgba(60,45,25,.09);
+    --radius:16px; --radius-sm:10px;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#201c17; --bg2:#17130f; --panel:#2b251d; --panel2:#332c22;
+      --ink:#efe6d6; --ink-soft:#cabfab; --muted:#988c78;
+      --line:#43392c; --line-soft:#382f24;
+      --brand:#e0824c; --brand-ink:#efa579; --brand-soft:#4a3122;
+      --good:#6fb07d; --good-soft:#2b3a2e; --good-ink:#a9d6b2;
+      --warn:#d8ad55; --warn-soft:#3d331d; --warn-ink:#e7c988;
+      --bad:#e0704f; --bad-soft:#3d271f; --bad-ink:#f0a48b;
+      --cool:#79a3d0; --cool-soft:#243444; --cool-ink:#aecbe8;
+      --violet:#b18ad6; --violet-soft:#312542; --violet-ink:#d5bdee;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f4efe6; --bg2:#ece3d3; --panel:#fffdf8; --panel2:#f6f0e4;
+    --ink:#3a3229; --ink-soft:#665a4b; --muted:#8c7f6c;
+    --line:#e4d9c5; --line-soft:#efe7d6;
+    --brand:#c8622d; --brand-ink:#a1471c; --brand-soft:#f3d9c6;
+    --good:#4f8a5b; --good-soft:#dcecdc; --good-ink:#356440;
+    --warn:#b8892a; --warn-soft:#f2e6c6; --warn-ink:#8a6516;
+    --bad:#c0492f; --bad-soft:#f4d8cf; --bad-ink:#96341f;
+    --cool:#4a76a8; --cool-soft:#d9e4f0; --cool-ink:#345a85;
+    --violet:#8a5fb0; --violet-soft:#e7ddf1; --violet-ink:#684790;
+    --shadow:0 1px 2px rgba(60,45,25,.06),0 10px 28px rgba(60,45,25,.09);
+  }
+  :root[data-theme="dark"]{
+    --bg:#201c17; --bg2:#17130f; --panel:#2b251d; --panel2:#332c22;
+    --ink:#efe6d6; --ink-soft:#cabfab; --muted:#988c78;
+    --line:#43392c; --line-soft:#382f24;
+    --brand:#e0824c; --brand-ink:#efa579; --brand-soft:#4a3122;
+    --good:#6fb07d; --good-soft:#2b3a2e; --good-ink:#a9d6b2;
+    --warn:#d8ad55; --warn-soft:#3d331d; --warn-ink:#e7c988;
+    --bad:#e0704f; --bad-soft:#3d271f; --bad-ink:#f0a48b;
+    --cool:#79a3d0; --cool-soft:#243444; --cool-ink:#aecbe8;
+    --violet:#b18ad6; --violet-soft:#312542; --violet-ink:#d5bdee;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; font-family:var(--sans); color:var(--ink);
+    background:
+      radial-gradient(1200px 600px at 15% -10%, var(--bg2), transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, var(--panel2), transparent 55%),
+      var(--bg);
+    line-height:1.5; min-height:100vh;
+  }
+  a{color:var(--brand-ink)}
+  h1,h2,h3{line-height:1.2;margin:0}
+  .wrap{max-width:1040px;margin:0 auto;padding:22px 18px 72px}
+
+  /* ---- header ---- */
+  header.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  .logo{font-size:30px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.15))}
+  .titles h1{font-size:clamp(20px,3.4vw,27px);letter-spacing:-.4px}
+  .titles p{margin:2px 0 0;color:var(--muted);font-size:13.5px}
+  .spacer{flex:1 1 auto}
+  .theme-btn{
+    border:1px solid var(--line);background:var(--panel);color:var(--ink-soft);
+    border-radius:999px;padding:7px 13px;font-size:13px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:7px;box-shadow:var(--shadow)
+  }
+  .theme-btn:hover{border-color:var(--brand)}
+
+  /* ---- cards ---- */
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:18px;margin-top:18px
+  }
+  .card > h2{font-size:16px;display:flex;align-items:center;gap:8px}
+  .card > h2 .em{font-size:18px}
+  .sub{color:var(--muted);font-size:13px;margin:3px 0 0}
+
+  /* ---- tabs ---- */
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid var(--line-soft);padding-bottom:12px}
+  .tab{
+    border:1px solid var(--line);background:var(--panel2);color:var(--ink-soft);
+    border-radius:999px;padding:8px 15px;font-size:13.5px;cursor:pointer;font-weight:600
+  }
+  .tab[aria-selected="true"]{background:var(--brand);border-color:var(--brand);color:#fff}
+  .tab:hover:not([aria-selected="true"]){border-color:var(--brand)}
+  .panelbody{display:none}
+  .panelbody.active{display:block}
+
+  /* ---- inputs ---- */
+  label.fld{display:block;font-size:12.5px;font-weight:700;color:var(--ink-soft);margin:0 0 5px;letter-spacing:.2px}
+  input[type=text],input[type=number],textarea,select{
+    width:100%;font-family:var(--sans);font-size:14.5px;color:var(--ink);
+    background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius-sm);
+    padding:10px 12px;outline:none
+  }
+  input:focus,textarea:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+  textarea{min-height:120px;resize:vertical;font-family:var(--mono);font-size:12.5px;line-height:1.45}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .row > .grow{flex:1 1 220px;min-width:0}
+  .btn{
+    border:1px solid var(--brand);background:var(--brand);color:#fff;font-weight:700;
+    border-radius:var(--radius-sm);padding:11px 18px;font-size:14.5px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:8px;white-space:nowrap
+  }
+  .btn:hover{background:var(--brand-ink);border-color:var(--brand-ink)}
+  .btn:disabled{opacity:.55;cursor:progress}
+  .btn.ghost{background:transparent;color:var(--brand-ink);border-color:var(--line)}
+  .btn.ghost:hover{border-color:var(--brand);background:var(--panel2)}
+  .btn.sm{padding:8px 13px;font-size:13px}
+  .hint{font-size:12.5px;color:var(--muted);margin:8px 0 0}
+  .hint code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
+
+  /* ---- status line ---- */
+  .status{margin-top:12px;font-size:13.5px;min-height:20px;display:flex;align-items:center;gap:8px}
+  .status.err{color:var(--bad-ink)}
+  .status.ok{color:var(--good-ink)}
+  .status.busy{color:var(--cool-ink)}
+  .spin{width:14px;height:14px;border:2px solid var(--cool-soft);border-top-color:var(--cool);border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ---- editable sheet ---- */
+  .sheet-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:640px){.sheet-grid{grid-template-columns:1fr}.sheet-head{flex-direction:column;align-items:flex-start}}
+  .statset{border:1px solid var(--line-soft);border-radius:var(--radius-sm);padding:12px;background:var(--panel2)}
+  .statset h3{font-size:12.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:10px}
+  .statrow{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+  .statrow label{flex:1 1 auto;font-size:13.5px;font-weight:600;color:var(--ink-soft)}
+  .statrow input{width:76px;flex:0 0 auto;text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
+  .sheet-head{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+  .sheet-head .thumb{width:56px;height:56px;border-radius:12px;object-fit:cover;background:var(--panel2);border:1px solid var(--line);flex:0 0 auto}
+  .sheet-head .grow{flex:1 1 auto;min-width:0}
+  .flag{color:var(--warn-ink);font-size:12px;margin-top:6px}
+
+  /* =========================================================================
+     RESULTS
+     ========================================================================= */
+  #results{margin-top:6px}
+  .cat-hero{
+    display:flex;gap:18px;align-items:center;flex-wrap:wrap;
+    background:linear-gradient(135deg,var(--brand-soft),var(--panel2));
+    border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)
+  }
+  .cat-hero img.portrait{
+    width:110px;height:110px;border-radius:16px;object-fit:cover;
+    background:var(--panel);border:2px solid var(--panel);box-shadow:var(--shadow);flex:0 0 auto;image-rendering:pixelated
+  }
+  .cat-hero .who{flex:1 1 240px;min-width:0}
+  .cat-hero .who h2{font-size:clamp(21px,4vw,28px);letter-spacing:-.5px}
+  .cat-hero .who .meta{color:var(--ink-soft);font-size:13.5px;margin-top:4px}
+  .arch-chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;padding:5px 12px;font-size:13px;font-weight:700;margin-top:9px;color:var(--brand-ink)}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:760px){.grid2{grid-template-columns:1fr}}
+
+  .stat-line{display:grid;grid-template-columns:120px 1fr auto;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line-soft)}
+  .stat-line:first-of-type{border-top:0}
+  .stat-line .name{font-weight:700;font-size:13.5px}
+  .stat-line .name small{display:block;font-weight:500;color:var(--muted);font-size:11px}
+  .bar{height:9px;border-radius:99px;background:var(--panel2);overflow:hidden;border:1px solid var(--line-soft)}
+  .bar > span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--brand),var(--brand-ink))}
+  .bar.p > span{background:linear-gradient(90deg,var(--violet),var(--violet-ink))}
+  .val{font-variant-numeric:tabular-nums;font-weight:800;font-size:15px;text-align:right;min-width:30px}
+  .rate{font-size:11px;color:var(--muted);text-align:right}
+
+  .pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:800;letter-spacing:.2px;border:1px solid transparent;vertical-align:middle}
+  .pill.g{background:var(--good-soft);color:var(--good-ink);border-color:var(--good)}
+  .pill.w{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn)}
+  .pill.b{background:var(--bad-soft);color:var(--bad-ink);border-color:var(--bad)}
+  .pill.c{background:var(--cool-soft);color:var(--cool-ink);border-color:var(--cool)}
+  .pill.v{background:var(--violet-soft);color:var(--violet-ink);border-color:var(--violet)}
+  .pill.n{background:var(--panel2);color:var(--muted);border-color:var(--line)}
+
+  .bonus{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-top:1px solid var(--line-soft)}
+  .bonus:first-of-type{border-top:0}
+  .bonus .em{font-size:20px;flex:0 0 auto;width:24px;text-align:center}
+  .bonus .body{flex:1 1 auto;min-width:0}
+  .bonus .body b{font-size:14px}
+  .bonus .body p{margin:2px 0 0;font-size:12.8px;color:var(--ink-soft)}
+
+  .rec-top{display:flex;gap:16px;align-items:center;background:var(--panel2);border:1px solid var(--line);
+    border-radius:var(--radius);padding:16px;margin-bottom:12px}
+  .rec-top .em{font-size:40px;flex:0 0 auto}
+  .rec-top .grow{flex:1 1 auto;min-width:0}
+  .rec-top h3{font-size:20px}
+  .rec-top .why{font-size:13px;color:var(--ink-soft);margin-top:4px}
+  .rec-score{font-weight:900;font-size:22px;color:var(--brand-ink);font-variant-numeric:tabular-nums}
+  .rank{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line-soft);font-size:13.5px}
+  .rank .nm{font-weight:700}
+  .rank .mini{height:7px;border-radius:99px;background:var(--panel2);overflow:hidden;flex:1 1 auto;max-width:180px;border:1px solid var(--line-soft)}
+  .rank .mini>span{display:block;height:100%;background:linear-gradient(90deg,var(--cool),var(--cool-ink))}
+
+  .joblist{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
+  .job{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:6px 11px;font-size:13px;font-weight:600}
+  .job b{color:var(--brand-ink)}
+  .role{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line-soft);font-size:13px}
+  .role:first-of-type{border-top:0}
+  .role .em{font-size:18px;width:22px;text-align:center;flex:0 0 auto}
+
+  details.notes{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:4px 18px}
+  details.notes summary{cursor:pointer;font-weight:700;padding:12px 0;font-size:14px}
+  details.notes[open] summary{border-bottom:1px solid var(--line-soft);margin-bottom:10px}
+  details.notes h4{margin:14px 0 4px;font-size:13.5px}
+  details.notes p,details.notes li{font-size:12.8px;color:var(--ink-soft)}
+  details.notes table{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0}
+  details.notes th,details.notes td{border:1px solid var(--line-soft);padding:5px 8px;text-align:left}
+  details.notes th{background:var(--panel2)}
+  .scrollx{overflow-x:auto}
+
+  footer{margin-top:30px;text-align:center;color:var(--muted);font-size:12px}
+  footer a{color:var(--muted)}
+  .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .hide{display:none !important}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="logo" aria-hidden="true">🐾</div>
+    <div class="titles">
+      <h1>Pixel Cat's End — Adventuring Advisor</h1>
+      <p>Pull a cat's stats by ID, read the bonuses each gives, and get class &amp; day-job picks.</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="theme-btn" id="themeToggle" type="button" aria-label="Toggle color theme">
+      <span id="themeEmoji">🌙</span><span id="themeLabel">Dark</span>
+    </button>
+  </header>
+
+  <!-- ============================ INPUT ============================ -->
+  <section class="card" aria-labelledby="in-h">
+    <h2 id="in-h"><span class="em">🔎</span> Load a cat</h2>
+
+    <div class="tabs" role="tablist" aria-label="Input method">
+      <button class="tab" id="tab-id"     role="tab" aria-selected="true"  aria-controls="pane-id">By cat ID</button>
+      <button class="tab" id="tab-paste"  role="tab" aria-selected="false" aria-controls="pane-paste">Paste page HTML</button>
+      <button class="tab" id="tab-manual" role="tab" aria-selected="false" aria-controls="pane-manual">Enter manually</button>
+    </div>
+
+    <!-- By ID -->
+    <div class="panelbody active" id="pane-id" role="tabpanel" aria-labelledby="tab-id">
+      <div class="row">
+        <div class="grow">
+          <label class="fld" for="catId">Cat ID or profile URL</label>
+          <input type="text" id="catId" inputmode="numeric" placeholder="e.g. 430432  or  https://www.pixelcatsend.com/cat&amp;id=430432" autocomplete="off">
+        </div>
+        <button class="btn" id="fetchBtn" type="button"><span>Fetch cat</span></button>
+        <button class="btn ghost sm" id="demoBtn" type="button">Try a demo cat</button>
+      </div>
+      <div class="status" id="fetchStatus" role="status" aria-live="polite"></div>
+      <p class="hint">
+        This fetches the public profile at <code>pixelcatsend.com/cat&amp;id=…</code> through a public CORS relay
+        (the game doesn't allow direct cross-site reads). Relays can be flaky or rate-limited — if a fetch fails,
+        use <b>Paste page HTML</b> (always works) or <b>Enter manually</b>.
+      </p>
+    </div>
+
+    <!-- Paste HTML -->
+    <div class="panelbody" id="pane-paste" role="tabpanel" aria-labelledby="tab-paste" hidden>
+      <label class="fld" for="pasteBox">Open the cat's profile, view page source (Ctrl/Cmd+U), copy all, paste here</label>
+      <textarea id="pasteBox" placeholder="Paste the full page HTML here…" spellcheck="false"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="parsePasteBtn" type="button">Read pasted page</button>
+        <button class="btn ghost sm" id="sampleHtmlBtn" type="button">Load sample page</button>
+      </div>
+      <div class="status" id="pasteStatus" role="status" aria-live="polite"></div>
+    </div>
+
+    <!-- Manual -->
+    <div class="panelbody" id="pane-manual" role="tabpanel" aria-labelledby="tab-manual" hidden>
+      <p class="sub">Type any values you know. Blank fields are ignored. Then press <b>Analyze</b> below.</p>
+      <div class="row" style="margin-top:6px">
+        <button class="btn ghost sm" id="blankSheetBtn" type="button">Start a blank sheet</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ EDITABLE SHEET ============================ -->
+  <section class="card hide" id="sheetCard" aria-labelledby="sheet-h">
+    <h2 id="sheet-h"><span class="em">📝</span> Review &amp; edit</h2>
+    <p class="sub">Fix anything the reader got wrong, then analyze. Attributes run 4–24; personality traits are typically 1–14.</p>
+
+    <div class="sheet-head" style="margin-top:14px">
+      <img class="thumb" id="sheetThumb" alt="" src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
+      <div class="grow">
+        <label class="fld" for="sheetName">Name</label>
+        <input type="text" id="sheetName" placeholder="Cat name" autocomplete="off">
+      </div>
+    </div>
+    <div class="row" style="margin-bottom:14px">
+      <div class="grow">
+        <label class="fld" for="sheetImg">Image URL (optional)</label>
+        <input type="text" id="sheetImg" placeholder="https://…" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="sheet-grid">
+      <div class="statset">
+        <h3>Base attributes</h3>
+        <div id="attrInputs"></div>
+      </div>
+      <div class="statset">
+        <h3>Personality traits</h3>
+        <div id="persInputs"></div>
+      </div>
+    </div>
+    <div class="flag" id="sheetFlags"></div>
+
+    <div class="row" style="margin-top:16px">
+      <button class="btn" id="analyzeBtn" type="button"><span>⚔️ Analyze this cat</span></button>
+      <button class="btn ghost sm" id="clearBtn" type="button">Clear</button>
+    </div>
+  </section>
+
+  <!-- ============================ RESULTS ============================ -->
+  <div id="results" aria-live="polite"></div>
+
+  <footer>
+    Fan-made helper for <a href="https://www.pixelcatsend.com" target="_blank" rel="noopener">Pixel Cat's End</a>.
+    Not affiliated with the game. Bonus rules follow the supplied Adventuring Guide; job/class data cross-checked
+    against the community wiki. All analysis runs in your browser — no data leaves this page.
+  </footer>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   0. DATA MODEL  (from the Adventuring Guide + Pixel Cat's End community data)
+   ========================================================================= */
+const ATTRS = [
+  {key:"strength",   label:"Strength",   short:"physical might",        jobs:["Builder","Mason","Blacksmith","Miner"]},
+  {key:"agility",    label:"Agility",    short:"speed & dexterity",     jobs:["Hunter","Fisher","Bug Catcher"]},
+  {key:"health",     label:"Health",     short:"resilience & healing",  jobs:[]},
+  {key:"finesse",    label:"Finesse",    short:"precision & detail",    jobs:["Clothier","Artist","Craftscat"]},
+  {key:"cleverness", label:"Cleverness", short:"intellect & knowledge", jobs:["Herbalist","Apothecary","Scribe"]},
+  {key:"perception", label:"Perception", short:"awareness & focus",     jobs:["Gatherer","Gardener","Farmer","Flockherd","Baker"]},
+  {key:"luck",       label:"Luck",       short:"fortune & rare finds",  jobs:[]}
+];
+const PERS = [
+  {key:"bravery",      label:"Bravery",      low:"Timid",     high:"Fearless"},
+  {key:"benevolence",  label:"Benevolence",  low:"Malicious", high:"Kindly"},
+  {key:"energy",       label:"Energy",       low:"Languid",   high:"Energetic"},
+  {key:"extroversion", label:"Extroversion", low:"Reserved",  high:"Outgoing"},
+  {key:"dedication",   label:"Dedication",   low:"Fickle",    high:"Devoted"}
+];
+const ATTR_MIN=4, ATTR_MAX=24;        // average adult range (4d6)
+const PERS_DISPLAY_MAX=14;            // real traits observed up to ~14+
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+/* Class definitions — attribute weights + personality wants, per the guide's
+   ideal profiles (section 6), with core attribute anchors from the game. */
+const CLASSES = [
+  {key:"fighter", name:"Fighter", em:"⚔️", core:"strength",
+   attrs:{strength:1,agility:.6}, pers:[["bravery","high"]],
+   blurb:"Frontline bruiser — shrugs off fear and lands heavy Kick/Bite hits."},
+  {key:"guardian", name:"Guardian", em:"🛡️", core:"health",
+   attrs:{health:1,agility:.55}, pers:[["bravery","high"],["dedication","high"]],
+   blurb:"Damage sponge — Protects allies (150% HP) and resists status attacks."},
+  {key:"thief", name:"Thief", em:"🗡️", core:"agility",
+   attrs:{agility:1,finesse:.7}, pers:[["benevolence","low"],["extroversion","low"]],
+   blurb:"Elusive striker — hard to hit, uses Spite for underhanded tactics."},
+  {key:"ranger", name:"Ranger", em:"🏹", core:"finesse",
+   attrs:{finesse:1,perception:.75}, pers:[["dedication","high"]],
+   blurb:"Precision shooter — patient, lands consecutive long-range attacks."},
+  {key:"medic", name:"Medic", em:"➕", core:"cleverness",
+   attrs:{cleverness:1,health:.55}, pers:[["benevolence","high"],["dedication","high"]],
+   blurb:"Field healer — Cleverness scales Tend Wounds; Benevolence buys goodwill."},
+  {key:"scout", name:"Scout", em:"👁️", core:"perception",
+   attrs:{perception:1,agility:.7}, pers:[["energy","high"]],
+   blurb:"Skill-check specialist — +150% initiative, thrives on active events."},
+  {key:"bard", name:"Bard", em:"🎵", core:"perception",
+   attrs:{perception:.55,cleverness:.45,_balanced:true}, pers:[["benevolence","polarized"]],
+   blurb:"Team amplifier — buffs everyone's Bravery/Benevolence/Spite rolls."}
+];
+
+/* Public CORS relays tried in order for the By-ID fetch. */
+const PROXIES = [
+  u=>"https://api.allorigins.win/raw?url="+encodeURIComponent(u),
+  u=>"https://corsproxy.io/?url="+encodeURIComponent(u),
+  u=>"https://api.codetabs.com/v1/proxy/?quest="+encodeURIComponent(u),
+  u=>"https://thingproxy.freeboard.io/fetch/"+u
+];
+const CAT_ORIGIN = "https://www.pixelcatsend.com";
+const catUrl = id => CAT_ORIGIN + "/cat&id=" + id;
+
+/* =========================================================================
+   1. PARSING  — tolerant extraction from a cat page's HTML
+   ========================================================================= */
+function findLabeledNumber(text, label, min, max){
+  // Find `Label … number` where a plausible number sits shortly after the label.
+  // Allows separators like "·", ":", spaces, dashes between label and value.
+  // (?![A-Za-z]) keeps "Bravery" from matching "Braverything" yet still allows a
+  // digit glued straight onto the label, e.g. "Bravery9" on a minified page.
+  const re = new RegExp("\\b"+label+"(?![A-Za-z])[^0-9A-Za-z]{0,18}(\\d{1,2})", "gi");
+  let m;
+  while((m = re.exec(text)) !== null){
+    const n = parseInt(m[1],10);
+    if(n>=min && n<=max) return n;
+  }
+  // second pass: accept any number if none fell in range (user can correct)
+  const re2 = new RegExp("\\b"+label+"(?![A-Za-z])[^0-9A-Za-z]{0,18}(\\d{1,2})","i");
+  const m2 = re2.exec(text);
+  return m2 ? parseInt(m2[1],10) : null;
+}
+
+function extractSearchText(doc){
+  // Walk text nodes and join with spaces (SHOW_TEXT === 4) so element
+  // boundaries always separate tokens, even when the source has no whitespace.
+  try{
+    const w = doc.createTreeWalker(doc.body, 4, null);
+    const parts=[]; let n;
+    while((n=w.nextNode())) parts.push(n.nodeValue);
+    if(parts.length) return parts.join(" ");
+  }catch(e){/* fall through */}
+  return doc.body ? doc.body.textContent : "";
+}
+
+function parseCatHTML(html){
+  const out = {name:"", image:"", id:"", attributes:{}, personality:{}, warnings:[]};
+  let doc;
+  try{ doc = new DOMParser().parseFromString(html, "text/html"); }
+  catch(e){ out.warnings.push("Could not parse the HTML."); return out; }
+
+  // strip non-content nodes so their text can't pollute matches
+  doc.querySelectorAll("script,style,noscript,svg").forEach(n=>n.remove());
+
+  // --- name ---
+  const og = doc.querySelector('meta[property="og:title"],meta[name="og:title"]');
+  let title = og && og.content ? og.content : (doc.querySelector("title")?.textContent || "");
+  title = title.replace(/\s*\|\s*Cat'?s End.*$/i,"").replace(/\s*[-–]\s*Pixel Cat.*$/i,"").trim();
+  if(!title){ title = (doc.querySelector("h1")?.textContent||"").trim(); }
+  out.name = title;
+
+  // --- image ---
+  const ogImg = doc.querySelector('meta[property="og:image"],meta[name="og:image"]');
+  let img = ogImg && ogImg.content ? ogImg.content : "";
+  if(!img){
+    const cands = [...doc.querySelectorAll("img")].map(i=>i.getAttribute("src")||"").filter(Boolean);
+    img = cands.find(s=>/cat|image|render|thumb|avatar/i.test(s)) || cands[0] || "";
+  }
+  if(img && img.startsWith("//")) img = "https:"+img;
+  else if(img && img.startsWith("/")) img = CAT_ORIGIN+img;
+  out.image = img;
+
+  // --- id (from any cat&id= reference or canonical link) ---
+  const idm = html.match(/cat&id=(\d+)/i);
+  if(idm) out.id = idm[1];
+
+  // --- numbers: read collapsed body text ---
+  // Join text nodes with spaces so adjacent elements (e.g. on a minified page)
+  // don't glue into "GreatAgility", which would defeat the \bLabel\b anchors.
+  const text = extractSearchText(doc).replace(/\s+/g," ");
+  ATTRS.forEach(a=>{
+    const v = findLabeledNumber(text, a.label, 1, 40);
+    if(v!=null) out.attributes[a.key]=v;
+  });
+  PERS.forEach(p=>{
+    const v = findLabeledNumber(text, p.label, 0, 30);
+    if(v!=null) out.personality[p.key]=v;
+  });
+
+  const gotA = Object.keys(out.attributes).length, gotP = Object.keys(out.personality).length;
+  if(gotA===0 && gotP===0) out.warnings.push("No stats were recognised in this page — the layout may have changed, or the page was empty. Enter values manually.");
+  else{
+    if(gotA<ATTRS.length) out.warnings.push((ATTRS.length-gotA)+" attribute(s) not found — please fill them in.");
+    if(gotP<PERS.length)  out.warnings.push((PERS.length-gotP)+" personality trait(s) not found — please fill them in.");
+  }
+  return out;
+}
+
+/* =========================================================================
+   2. FETCH by ID (rotating relays with timeout)
+   ========================================================================= */
+function withTimeout(promise, ms){
+  return new Promise((res,rej)=>{
+    const t=setTimeout(()=>rej(new Error("timeout")),ms);
+    promise.then(v=>{clearTimeout(t);res(v);},e=>{clearTimeout(t);rej(e);});
+  });
+}
+async function fetchCatById(id, onProgress){
+  const target = catUrl(id);
+  let lastErr;
+  for(let i=0;i<PROXIES.length;i++){
+    try{
+      onProgress && onProgress("Contacting relay "+(i+1)+" of "+PROXIES.length+"…");
+      const res = await withTimeout(fetch(PROXIES[i](target), {redirect:"follow"}), 15000);
+      if(!res.ok) throw new Error("HTTP "+res.status);
+      const body = await res.text();
+      if(!body || body.length<200) throw new Error("empty response");
+      // crude sanity: the page should mention at least one known label
+      if(!/Strength|Bravery|Agility|Perception/i.test(body)) throw new Error("unexpected content");
+      return body;
+    }catch(e){ lastErr=e; }
+  }
+  throw lastErr || new Error("all relays failed");
+}
+
+/* =========================================================================
+   3. ENGINE  — bonuses, class fit, job fit  (rules from the guide)
+   ========================================================================= */
+function braveryBonus(v){ return v==null?null:clamp(Math.floor(v/2),0,5); }
+
+function benevolenceOutcome(v){
+  if(v==null) return null;
+  if(v<=1)  return {mode:"Malice",     benevolence:0, spite:5};
+  if(v<=3)  return {mode:"Spiteful",   benevolence:0, spite:3};
+  if(v<=5)  return {mode:"Cool",       benevolence:0, spite:1};
+  if(v<=7)  return {mode:"Amiable",    benevolence:1, spite:0};
+  return     {mode:"Benevolent", benevolence:clamp(Math.floor(v/2),0,5), spite:0};   // 8+
+}
+
+function attrRating(v){
+  if(v==null) return {label:"—",cls:"n"};
+  if(v>=22) return {label:"Exceptional",cls:"g"};
+  if(v>=18) return {label:"Great",cls:"g"};
+  if(v>=14) return {label:"Good",cls:"c"};
+  if(v>=8)  return {label:"Average",cls:"n"};
+  return {label:"Poor",cls:"w"};
+}
+const persLean = v => v==null?"n" : v>=8?"high" : v<=3?"low" : "mid";
+
+// personality want → 0..1 match
+function persMatch(v, want){
+  if(v==null) return 0;
+  if(want==="high") return v>=8?1 : v>=6?.6 : v>=4?.3 : 0;
+  if(want==="low")  return v<=1?1 : v<=3?.8 : v<=5?.4 : 0;
+  if(want==="polarized") return (v>=8||v<=3)?1 : (v>=6||v<=5)?.4 : .1;
+  return 0;
+}
+const attrNorm = v => v==null?0 : clamp((v-ATTR_MIN)/(ATTR_MAX-ATTR_MIN),0,1);
+
+function balanceScore(attributes){
+  const vals = ATTRS.map(a=>attributes[a.key]).filter(v=>v!=null);
+  if(vals.length<2) return .5;
+  const mean = vals.reduce((s,v)=>s+v,0)/vals.length;
+  const varc = vals.reduce((s,v)=>s+(v-mean)*(v-mean),0)/vals.length;
+  const sd = Math.sqrt(varc);
+  return clamp(1 - sd/6, 0, 1);   // lower spread → higher balance
+}
+
+function scoreClasses(cat){
+  const {attributes:A, personality:P} = cat;
+  return CLASSES.map(c=>{
+    // attribute score (weighted average of wanted attrs)
+    let aw=0, as=0, reasons=[];
+    for(const k in c.attrs){
+      if(k==="_balanced") continue;
+      const w=c.attrs[k]; aw+=w;
+      const nv=attrNorm(A[k]); as+=nv*w;
+      if(A[k]!=null && attrNorm(A[k])>=.6) reasons.push(labelOf(k)+" "+A[k]);
+    }
+    let attrScore = aw>0? as/aw : 0;
+    if(c.attrs._balanced) attrScore = attrScore*.5 + balanceScore(A)*.5;
+
+    // personality score
+    let ps=0;
+    c.pers.forEach(([tk,want])=>{
+      const m=persMatch(P[tk],want); ps+=m;
+      if(m>=.6){
+        const pl=PERS.find(x=>x.key===tk);
+        reasons.push((want==="low"?pl.low:want==="polarized"?"polarized "+pl.label:pl.high)+(P[tk]!=null?" ("+P[tk]+")":""));
+      }
+    });
+    const persScore = c.pers.length? ps/c.pers.length : .5;
+
+    const total = 0.55*attrScore + 0.45*persScore;
+    return {...c, attrScore, persScore, total, pct:Math.round(total*100), reasons};
+  }).sort((x,y)=>y.total-x.total);
+}
+function labelOf(k){ const a=ATTRS.find(x=>x.key===k); return a?a.label:k; }
+
+function recommendJobs(cat){
+  const A = cat.attributes;
+  const ranked = ATTRS.filter(a=>A[a.key]!=null && a.jobs.length)
+                      .map(a=>({a, v:A[a.key]}))
+                      .sort((x,y)=>y.v-x.v);
+  const top = ranked.slice(0,3);
+  const jobs = top.map(t=>({attr:t.a.label, val:t.v, jobs:t.a.jobs}));
+
+  // personality-flavoured specialty roles
+  const P = cat.personality, roles=[];
+  const ben = P.benevolence, spite = benevolenceOutcome(ben);
+  if(ben!=null && ben>=8){
+    roles.push(["💞","Caregiver / Doctor","High Benevolence unlocks nurturing specialty roles; Doctor also scales its party heal off Benevolence + Cleverness."]);
+    if((A.cleverness??0)>=14) roles.push(["🩺","Doctor (strong)","Benevolence "+ben+" paired with Cleverness "+A.cleverness+" makes a potent party-healing Doctor."]);
+    roles.push(["🕊️","Diplomat Bard","Max Benevolence makes an ideal peace-making, Befriend-focused Bard."]);
+  }
+  if(spite && spite.spite>=3){
+    roles.push(["😾","Spite Bard","Very low Benevolence maximises the Bard's Hiss debuff and Intimidate/Bluff skills."]);
+  }
+  if((P.bravery??0)>=8){
+    roles.push(["🏅","Village Mayor (Adventurous)","High Bravery suits the Adventurous Mayor role — grants +1 Bravery to every village cat."]);
+  }
+  if((A.luck??0)>=16){
+    roles.push(["🍀","Any gathering job","High Luck ("+A.luck+") boosts rare finds across every day job."]);
+  }
+  return {jobs, roles};
+}
+
+/* archetype guess from personality shape (flavour only) */
+function archetype(P){
+  const b=P.bravery,be=P.benevolence,e=P.energy,x=P.extroversion,d=P.dedication;
+  if([b,be,e,x,d].every(v=>v==null)) return null;
+  if(b>=8 && e>=8) return "Adventurous";
+  if(be>=8 && x>=7) return "Compassionate";
+  if(be<=2) return "Malicious";
+  if(d>=8 && be>=6) return "Protective";
+  if(e<=3 && x<=3) return "Reserved";
+  if(x>=8) return "Sociable";
+  if(b>=8) return "Bold";
+  return "Balanced";
+}
+
+/* =========================================================================
+   4. RENDERING
+   ========================================================================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const PLACEHOLDER_IMG = ("data:image/svg+xml;utf8,"+encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='110' height='110'>"+
+  "<rect width='110' height='110' rx='16' fill='%23efe7d6'/>"+
+  "<text x='55' y='70' font-size='52' text-anchor='middle'>🐱</text></svg>"))
+  .replace(/'/g,"%27");   // encodeURIComponent leaves ' — encode it so the URI is safe in any quoting
+
+function pct(v,max){ return v==null?0:clamp(Math.round(v/max*100),0,100); }
+
+function renderResults(cat){
+  const classes = scoreClasses(cat);
+  const jobsData = recommendJobs(cat);
+  const arch = archetype(cat.personality);
+  const bb = braveryBonus(cat.personality.bravery);
+  const bo = benevolenceOutcome(cat.personality.benevolence);
+
+  const attrRows = ATTRS.map(a=>{
+    const v=cat.attributes[a.key], r=attrRating(v);
+    return `<div class="stat-line">
+      <div class="name">${a.label}<small>${a.short}</small></div>
+      <div class="bar"><span style="width:${pct(v,ATTR_MAX)}%"></span></div>
+      <div><div class="val">${v??"—"}</div><div class="rate">${r.label}</div></div>
+    </div>`;
+  }).join("");
+
+  const persRows = PERS.map(p=>{
+    const v=cat.personality[p.key], lean=persLean(v);
+    let tag = v==null? '<span class="pill n">—</span>'
+      : lean==="high"? `<span class="pill g">${esc(p.high)}</span>`
+      : lean==="low" ? `<span class="pill b">${esc(p.low)}</span>`
+      : `<span class="pill n">Balanced</span>`;
+    return `<div class="stat-line">
+      <div class="name">${p.label}<small>${esc(p.low)} ↔ ${esc(p.high)}</small></div>
+      <div class="bar p"><span style="width:${pct(v,PERS_DISPLAY_MAX)}%"></span></div>
+      <div><div class="val">${v??"—"}</div><div class="rate">${tag}</div></div>
+    </div>`;
+  }).join("");
+
+  // combat bonus cards
+  const bonusCards=[];
+  if(bb!=null){
+    const strong=bb>=4;
+    bonusCards.push(`<div class="bonus"><div class="em">🦁</div><div class="body">
+      <b>Bravery → +${bb} Bravery</b> <span class="pill ${strong?'g':bb>=2?'c':'w'}">${strong?'Fearless':bb>=2?'Steady':'Skittish'}</span>
+      <p>Adds <b>+${bb}</b> to mental-fortitude dice pools and to <b>defending against Spite</b> (Growl, Screech, Hiss).
+      ${bb<=1?'Low Bravery is a pure liability on quests — prone to fleeing and unmitigated psychological damage.':'High Bravery is universally wanted for adventuring.'}</p>
+    </div></div>`);
+  }
+  if(bo){
+    if(bo.spite>0){
+      bonusCards.push(`<div class="bonus"><div class="em">😾</div><div class="body">
+        <b>Low Benevolence → +${bo.spite} Spite</b> <span class="pill b">${esc(bo.mode)}</span>
+        <p>Powers <b>Intimidate</b> &amp; <b>Bluff</b> and armor-piercing psychological attacks (Growl, Screech, and the Bard's <b>Hiss</b>). Resisted by the target's Bravery.</p>
+      </div></div>`);
+    }
+    if(bo.benevolence>0){
+      bonusCards.push(`<div class="bonus"><div class="em">💞</div><div class="body">
+        <b>Benevolence → +${bo.benevolence} Benevolence</b> <span class="pill g">${esc(bo.mode)}</span>
+        <p>Adds <b>+${bo.benevolence}</b> to cooperative/friendly dice pools and the <b>Befriend</b> skill — pacify or recruit wild creatures to skip combat. Also gates caring day jobs.</p>
+      </div></div>`);
+    }
+    if(bo.spite===0 && bo.benevolence===0){
+      bonusCards.push(`<div class="bonus"><div class="em">🤝</div><div class="body">
+        <b>Benevolence → neutral</b> <span class="pill n">${esc(bo.mode)}</span>
+        <p>Mid-range Benevolence grants no combat bonus either way — neither the Befriend boost (needs 8+) nor the Spite engine (needs 0–1).</p>
+      </div></div>`);
+    }
+  }
+  // situational (non-combat) traits
+  const sit=[];
+  const eV=cat.personality.energy, xV=cat.personality.extroversion, dV=cat.personality.dedication;
+  if(eV!=null) sit.push(["⚡","Energy",
+    eV>=8?"High Energy — excels at fast, athletic map events (climbing, sprinting) and active Scout-style roles."
+    :eV<=3?"Low Energy — excels at patience events (inspecting ruins, reading inscriptions)."
+    :"Middling Energy — no strong lean between active and passive events."]);
+  if(xV!=null) sit.push(["🗣️","Extroversion",
+    xV>=8?"Outgoing — advantaged in crowds and markets."
+    :xV<=3?"Reserved — advantaged navigating solo or isolated paths."
+    :"Balanced sociability."]);
+  if(dV!=null) sit.push(["🎯","Dedication",
+    dV>=8?"Devoted — strong fatigue resistance through multi-stage quests and prolonged obstacles."
+    :dV<=3?"Fickle — tires quickly on long, multi-stage events."
+    :"Average work ethic on drawn-out quests."]);
+  const sitCards = sit.map(([em,t,d])=>`<div class="bonus"><div class="em">${em}</div><div class="body"><b>${t}</b><p>${d}</p></div></div>`).join("");
+
+  // class ranking
+  const top = classes[0];
+  const rankRows = classes.slice(1,4).map(c=>`
+    <div class="rank">
+      <span class="nm">${c.em} ${c.name}</span>
+      <span class="mini"><span style="width:${c.pct}%"></span></span>
+      <span class="val" style="font-size:13px">${c.pct}%</span>
+    </div>`).join("");
+
+  // jobs
+  const jobChips = jobsData.jobs.length
+    ? jobsData.jobs.map(j=>`<div style="margin-bottom:8px">
+        <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px">${j.attr} · ${j.val}</div>
+        <div class="joblist">${j.jobs.map(n=>`<span class="job">${esc(n)}</span>`).join("")}</div>
+      </div>`).join("")
+    : `<p class="sub">Fill in attribute values to see day-job picks.</p>`;
+  const roleRows = jobsData.roles.length
+    ? jobsData.roles.map(([em,t,d])=>`<div class="role"><span class="em">${em}</span><div><b>${esc(t)}</b><div style="color:var(--ink-soft)">${d}</div></div></div>`).join("")
+    : `<p class="sub" style="margin-top:8px">No personality-specific specialty roles stand out for this cat.</p>`;
+
+  const imgSrc = cat.image || PLACEHOLDER_IMG;
+
+  $("#results").innerHTML = `
+  <div class="card" style="padding:0;overflow:hidden">
+    <div class="cat-hero">
+      <img class="portrait" src="${esc(imgSrc)}" alt="Portrait of ${esc(cat.name||'the cat')}">
+      <div class="who">
+        <h2>${esc(cat.name||"Unnamed cat")}</h2>
+        <div class="meta">${cat.id?("Cat #"+esc(cat.id)+" · "):""}<a href="${esc(catUrl(cat.id||''))}" target="_blank" rel="noopener">view on Pixel Cat's End ↗</a></div>
+        ${arch?`<div class="arch-chip">✨ ${esc(arch)} personality</div>`:""}
+      </div>
+    </div>
+
+    <div style="padding:18px">
+      <div class="grid2">
+        <div class="card" style="margin:0">
+          <h2><span class="em">💪</span> Attributes</h2>
+          <p class="sub">Physical stats — power combat, gathering &amp; day jobs. Range ${ATTR_MIN}–${ATTR_MAX}.</p>
+          <div style="margin-top:10px">${attrRows}</div>
+        </div>
+        <div class="card" style="margin:0">
+          <h2><span class="em">🎭</span> Personality</h2>
+          <p class="sub">Behaviour traits — only Bravery &amp; Benevolence feed combat stats.</p>
+          <div style="margin-top:10px">${persRows}</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="em">✨</span> Combat bonuses from personality</h2>
+        <div style="margin-top:6px">${bonusCards.join("")||'<p class="sub">Enter Bravery and Benevolence to see combat bonuses.</p>'}</div>
+        ${sitCards?`<h2 style="margin-top:16px;font-size:14px"><span class="em">🧭</span> Situational (exploration) traits</h2><div style="margin-top:4px">${sitCards}</div>`:""}
+      </div>
+
+      <div class="card">
+        <h2><span class="em">🎓</span> Recommended adventuring class</h2>
+        <div class="rec-top" style="margin-top:10px">
+          <div class="em">${top.em}</div>
+          <div class="grow">
+            <h3>${top.name}</h3>
+            <div class="why">${esc(top.blurb)}</div>
+            ${top.reasons.length?`<div class="why" style="margin-top:6px"><b>Why:</b> ${top.reasons.slice(0,4).map(esc).join(" · ")}</div>`:""}
+          </div>
+          <div class="rec-score">${top.pct}%</div>
+        </div>
+        <div style="font-size:12px;color:var(--muted);font-weight:700;margin:4px 0 2px">Runners-up</div>
+        ${rankRows}
+      </div>
+
+      <div class="grid2">
+        <div class="card" style="margin:0">
+          <h2><span class="em">🛠️</span> Best day jobs</h2>
+          <p class="sub">From the cat's strongest attributes.</p>
+          <div style="margin-top:10px">${jobChips}</div>
+        </div>
+        <div class="card" style="margin:0">
+          <h2><span class="em">🌟</span> Specialty roles</h2>
+          <p class="sub">Unlocked or boosted by personality.</p>
+          <div style="margin-top:6px">${roleRows}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <details class="notes">
+    <summary>How these numbers are calculated</summary>
+    <h4>Personality → combat bonus rules</h4>
+    <div class="scrollx"><table>
+      <tr><th>Trait value</th><th>Bravery bonus</th><th>Benevolence value</th><th>Result</th></tr>
+      <tr><td>10+</td><td>+5</td><td>0–1</td><td>+5 Spite (Malice)</td></tr>
+      <tr><td>8–9</td><td>+4</td><td>2–3</td><td>+3 Spite (Spiteful)</td></tr>
+      <tr><td>6–7</td><td>+3</td><td>4–5</td><td>+1 Spite (Cool)</td></tr>
+      <tr><td>4–5</td><td>+2</td><td>6–7</td><td>+1 Benevolence (Amiable)</td></tr>
+      <tr><td>2–3</td><td>+1</td><td>8–9</td><td>+4 Benevolence</td></tr>
+      <tr><td>0–1</td><td>+0</td><td>10+</td><td>+5 Benevolence</td></tr>
+    </table></div>
+    <p>Bravery bonus = <code>min(5, floor(value ÷ 2))</code>. Energy, Extroversion and Dedication give
+    <b>situational exploration advantages only</b> — the guide is explicit that they do not feed dedicated combat stats or scale heals.</p>
+    <h4>Class fit</h4>
+    <p>Each class scores <code>0.55 × attribute-fit + 0.45 × personality-fit</code>. Attribute-fit weights that class's core stat highest;
+    personality-fit rewards the profile it wants (e.g. Fighter wants high Bravery, Thief wants low Benevolence + low Extroversion, Bard wants a polarised Benevolence).</p>
+    <h4>Day jobs (governing attribute)</h4>
+    <div class="scrollx"><table>
+      <tr><th>Strength</th><th>Agility</th><th>Finesse</th><th>Cleverness</th><th>Perception</th></tr>
+      <tr><td>Builder, Mason, Blacksmith, Miner</td><td>Hunter, Fisher, Bug Catcher</td><td>Clothier, Artist, Craftscat</td><td>Herbalist, Apothecary, Scribe</td><td>Gatherer, Gardener, Farmer, Flockherd, Baker</td></tr>
+    </table></div>
+    <p><b>Sources:</b> the supplied Adventuring Guide (bonus rules, class profiles) plus the
+    <a href="https://pixelcatsend.miraheze.org/wiki/Attributes" target="_blank" rel="noopener">Pixel Cat Not-Wiki</a>
+    and the game's <a href="https://www.pixelcatsend.com/article&article=8" target="_blank" rel="noopener">Personality &amp; Stats article</a>
+    (attribute ranges, job→attribute mapping, class anchors). The guide's stated 1–10 trait scale is treated leniently — real profiles reach ~14, so thresholds use “8+ = high, 3− = low”.</p>
+  </details>`;
+
+  // fall back to the placeholder if the portrait fails to load (attached in JS
+  // so the data-URI never has to survive an inline attribute context)
+  const port = $("#results").querySelector("img.portrait");
+  if(port) port.addEventListener("error", ()=>{ port.src = PLACEHOLDER_IMG; }, {once:true});
+
+  $("#results").scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+/* =========================================================================
+   5. EDITABLE SHEET  (single convergence point for all input modes)
+   ========================================================================= */
+function buildSheetInputs(){
+  $("#attrInputs").innerHTML = ATTRS.map(a=>`
+    <div class="statrow">
+      <label for="in-${a.key}">${a.label}</label>
+      <input type="number" id="in-${a.key}" data-akey="${a.key}" min="0" max="40" step="1" inputmode="numeric" placeholder="—">
+    </div>`).join("");
+  $("#persInputs").innerHTML = PERS.map(p=>`
+    <div class="statrow">
+      <label for="in-${p.key}">${p.label}</label>
+      <input type="number" id="in-${p.key}" data-pkey="${p.key}" min="0" max="30" step="1" inputmode="numeric" placeholder="—">
+    </div>`).join("");
+}
+function fillSheet(cat){
+  $("#sheetCard").classList.remove("hide");
+  $("#sheetName").value = cat.name||"";
+  $("#sheetImg").value  = cat.image||"";
+  $("#sheetThumb").src  = cat.image||PLACEHOLDER_IMG;
+  $("#sheetThumb").onerror = function(){ this.onerror=null; this.src=PLACEHOLDER_IMG; };
+  ATTRS.forEach(a=>{ $("#in-"+a.key).value = (cat.attributes[a.key]??""); });
+  PERS.forEach(p=>{ $("#in-"+p.key).value = (cat.personality[p.key]??""); });
+  const f = cat.warnings && cat.warnings.length ? "⚠ "+cat.warnings.join("  ") : "";
+  $("#sheetFlags").textContent = f;
+  $("#sheetCard").scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+function readSheet(){
+  const cat={name:$("#sheetName").value.trim(), image:$("#sheetImg").value.trim(), id:currentId, attributes:{}, personality:{}, warnings:[]};
+  ATTRS.forEach(a=>{ const raw=$("#in-"+a.key).value.trim(); if(raw!==""){ const n=parseInt(raw,10); if(!isNaN(n)) cat.attributes[a.key]=n; } });
+  PERS.forEach(p=>{ const raw=$("#in-"+p.key).value.trim(); if(raw!==""){ const n=parseInt(raw,10); if(!isNaN(n)) cat.personality[p.key]=n; } });
+  return cat;
+}
+let currentId = "";
+
+/* =========================================================================
+   6. UI WIRING
+   ========================================================================= */
+function setStatus(el, msg, cls){
+  el.className = "status"+(cls?(" "+cls):"");
+  el.innerHTML = cls==="busy" ? `<span class="spin"></span><span>${esc(msg)}</span>` : esc(msg);
+}
+function parseIdInput(raw){
+  const m = String(raw).match(/(\d{2,})/);
+  return m ? m[1] : "";
+}
+
+function switchTab(which){
+  ["id","paste","manual"].forEach(k=>{
+    const sel = k===which;
+    const tab=$("#tab-"+k), pane=$("#pane-"+k);
+    tab.setAttribute("aria-selected", sel?"true":"false");
+    pane.classList.toggle("active", sel);
+    pane.hidden = !sel;
+  });
+}
+
+function initTheme(){
+  const saved = (()=>{ try{return localStorage.getItem("pce-theme");}catch(e){return null;} })();
+  if(saved) document.documentElement.setAttribute("data-theme", saved);
+  syncThemeBtn();
+}
+function currentTheme(){
+  const attr=document.documentElement.getAttribute("data-theme");
+  if(attr) return attr;
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme:dark)").matches ? "dark":"light";
+}
+function syncThemeBtn(){
+  const dark = currentTheme()==="dark";
+  $("#themeEmoji").textContent = dark? "☀️":"🌙";
+  $("#themeLabel").textContent = dark? "Light":"Dark";
+}
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  buildSheetInputs();
+  initTheme();
+
+  $("#themeToggle").addEventListener("click", ()=>{
+    const next = currentTheme()==="dark" ? "light":"dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try{ localStorage.setItem("pce-theme", next); }catch(e){}
+    syncThemeBtn();
+  });
+
+  $("#tab-id").addEventListener("click", ()=>switchTab("id"));
+  $("#tab-paste").addEventListener("click", ()=>switchTab("paste"));
+  $("#tab-manual").addEventListener("click", ()=>{ switchTab("manual"); $("#sheetCard").classList.remove("hide"); });
+
+  // Fetch by ID
+  async function doFetch(){
+    const id = parseIdInput($("#catId").value);
+    if(!id){ setStatus($("#fetchStatus"),"Enter a numeric cat ID or a profile URL.","err"); return; }
+    currentId = id;
+    const btn=$("#fetchBtn"); btn.disabled=true;
+    setStatus($("#fetchStatus"),"Fetching cat #"+id+"…","busy");
+    try{
+      const html = await fetchCatById(id, m=>setStatus($("#fetchStatus"),m,"busy"));
+      const cat = parseCatHTML(html);
+      if(!cat.id) cat.id=id;
+      setStatus($("#fetchStatus"),"Loaded — review the values below.","ok");
+      fillSheet(cat);
+    }catch(e){
+      setStatus($("#fetchStatus"),"Couldn't fetch automatically ("+(e.message||e)+"). Try “Paste page HTML”, or enter values manually.","err");
+      $("#sheetCard").classList.remove("hide");
+    }finally{ btn.disabled=false; }
+  }
+  $("#fetchBtn").addEventListener("click", doFetch);
+  $("#catId").addEventListener("keydown", e=>{ if(e.key==="Enter") doFetch(); });
+
+  // Paste HTML
+  $("#parsePasteBtn").addEventListener("click", ()=>{
+    const html=$("#pasteBox").value;
+    if(html.trim().length<50){ setStatus($("#pasteStatus"),"Paste the page's HTML first.","err"); return; }
+    const cat=parseCatHTML(html);
+    currentId = cat.id||"";
+    setStatus($("#pasteStatus"), cat.warnings.length?("Read with notes — check the sheet."):"Read the page — review below.", cat.warnings.length?"":"ok");
+    fillSheet(cat);
+  });
+
+  // Demos
+  $("#demoBtn").addEventListener("click", ()=>{ currentId="430432"; fillSheet(DEMO_CAT()); setStatus($("#fetchStatus"),"Loaded a demo cat — press Analyze.","ok"); });
+  $("#blankSheetBtn").addEventListener("click", ()=>{ fillSheet({name:"",image:"",attributes:{},personality:{},warnings:[]}); });
+  $("#sampleHtmlBtn").addEventListener("click", ()=>{ $("#pasteBox").value = SAMPLE_HTML(); setStatus($("#pasteStatus"),"Sample page loaded — press “Read pasted page”.","ok"); });
+
+  // Analyze / clear
+  $("#analyzeBtn").addEventListener("click", ()=>{
+    const cat=readSheet();
+    const hasAny = Object.keys(cat.attributes).length || Object.keys(cat.personality).length;
+    if(!hasAny){ $("#sheetFlags").textContent="⚠ Enter at least a few stats before analyzing."; return; }
+    renderResults(cat);
+  });
+  $("#clearBtn").addEventListener("click", ()=>{
+    ATTRS.forEach(a=>$("#in-"+a.key).value="");
+    PERS.forEach(p=>$("#in-"+p.key).value="");
+    $("#sheetName").value=""; $("#sheetImg").value=""; $("#sheetThumb").src=PLACEHOLDER_IMG;
+    $("#sheetFlags").textContent=""; $("#results").innerHTML="";
+  });
+
+  // live thumb preview
+  $("#sheetImg").addEventListener("change", ()=>{ $("#sheetThumb").src=$("#sheetImg").value||PLACEHOLDER_IMG; });
+});
+
+/* Demo data + a realistic sample page for the paste parser */
+function DEMO_CAT(){
+  return {name:"Mochi", image:PLACEHOLDER_IMG, id:"430432", warnings:[],
+    attributes:{strength:19,agility:16,health:14,finesse:11,cleverness:9,perception:13,luck:12},
+    personality:{bravery:9,benevolence:12,energy:9,extroversion:8,dedication:8}};
+}
+function SAMPLE_HTML(){
+  return `<!doctype html><html><head><title>Mochi | Cat's End</title>
+<meta property="og:title" content="Mochi | Cat's End">
+</head><body>
+<h1>Mochi</h1>
+<div class="stats">
+  <div class="stat">Strength &middot; 19 &nbsp; 5d6 &nbsp; +2 &nbsp; Great</div>
+  <div class="stat">Agility &middot; 16 &nbsp; 4d6 &nbsp; +1 &nbsp; Good</div>
+  <div class="stat">Health &middot; 14 &nbsp; 4d6 &nbsp; +1 &nbsp; Good</div>
+  <div class="stat">Finesse &middot; 11 &nbsp; 3d6 &nbsp; +0 &nbsp; Average</div>
+  <div class="stat">Cleverness &middot; 9 &nbsp; 3d6 &nbsp; +0 &nbsp; Average</div>
+  <div class="stat">Perception &middot; 13 &nbsp; 3d6 &nbsp; +0 &nbsp; Good</div>
+  <div class="stat">Luck &middot; 12 &nbsp; 3d6 &nbsp; +0 &nbsp; Average</div>
+</div>
+<div class="personality">
+  <div>Bravery: 9</div>
+  <div>Benevolence: 12</div>
+  <div>Energy: 9</div>
+  <div>Extroversion: 8</div>
+  <div>Dedication: 8</div>
+</div>
+</body></html>`;
+}
+</script>
+</body>
+</html>
