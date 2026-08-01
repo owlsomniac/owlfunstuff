@@ -273,6 +273,8 @@
   .breed-parents{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media (max-width:640px){.breed-parents{grid-template-columns:1fr}}
   .parent-card h3{font-size:13px;margin-bottom:6px}
+  .parent-card h3 .cat-ext{color:var(--brand-ink);text-decoration:none}
+  .parent-card h3 .cat-ext:hover{text-decoration:underline}
   .pheno-line{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink-soft);margin-top:8px;flex-wrap:wrap}
   .swatch{width:16px;height:16px;border-radius:4px;border:1px solid var(--line);flex:0 0 auto;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
   .swatch.lg{width:26px;height:26px;border-radius:6px}
@@ -2057,7 +2059,9 @@ function distRows(dist, opts){
   }).join("");
 }
 function parentCard(title, g, meta){
-  const who = (meta&&meta.name) ? `${esc(title)} · ${esc(meta.name)} <span class="rc-id">#${esc(meta.id||"")}</span>` : esc(title);
+  const who = (meta&&meta.name)
+    ? `${esc(title)} · <a class="cat-ext" href="${esc(catUrl(meta.id))}" target="_blank" rel="noopener">${esc(meta.name)} <span class="rc-id">#${esc(meta.id||"")}</span></a>`
+    : esc(title);
   if(g.error) return `<div class="statset parent-card"><h3>${who}</h3><div class="breed-warn">${esc(g.error)}</div></div>`;
   const ph = phenotype(g);
   const portrait = (meta&&meta.img&&meta.img.length) ? catImgFromLayers(meta.img, 84, {fur:ph.fur, title:ph.color}) : catPreviewFor(ph, 84);
