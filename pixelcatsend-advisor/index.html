@@ -288,6 +288,18 @@
   #rosterTable .sug{color:var(--good-ink);font-weight:700}
   #rosterTable .trink{color:var(--good-ink);font-weight:800}   /* stat total boosted by a trinket */
   #rosterTable .trink-up{color:var(--good-ink);font-size:9px;font-weight:900;vertical-align:top;margin-left:2px;line-height:1}
+  #rosterTable td .dice{display:block;font-size:9.5px;color:var(--muted);font-weight:400;line-height:1.15;margin-top:1px}
+  /* attribute-grade tints (ROYGBP pastels) — rgba so they read right in light AND dark */
+  .rt-poor{background:rgba(229,57,53,.22)}
+  .rt-average{background:rgba(251,146,60,.26)}
+  .rt-good{background:rgba(250,204,21,.30)}
+  .rt-vgood{background:rgba(74,181,94,.26)}
+  .rt-excellent{background:rgba(59,130,246,.22)}
+  .rt-exceptional{background:rgba(168,85,247,.24)}
+  /* grade legend */
+  .ratingkey{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0 0;font-size:10.5px}
+  .ratingkey .rk-lab{color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;font-size:9.5px}
+  .ratingkey .rk{padding:2px 9px;border-radius:99px;border:1px solid var(--line-soft);color:var(--ink);white-space:nowrap;font-weight:600}
   #rosterTable .rosterempty{border-bottom:0}
   /* ---- roster input helpers ---- */
   .profilebox{margin-top:12px;border:1px solid var(--line);background:var(--panel2);border-radius:var(--radius-sm);padding:12px 14px}
@@ -433,6 +445,15 @@
           <span class="rmeta" style="margin-left:auto">Tip: click a group header to collapse its columns · click a name to open the cat</span>
         </div>
         <div class="status" id="suggestStatus" role="status" aria-live="polite"></div>
+        <div class="ratingkey" aria-label="Stat grade colours">
+          <span class="rk-lab">Stat grades</span>
+          <span class="rk rt-poor">Poor 0–6</span>
+          <span class="rk rt-average">Average 7–12</span>
+          <span class="rk rt-good">Good 13–16</span>
+          <span class="rk rt-vgood">Very Good 17–20</span>
+          <span class="rk rt-excellent">Excellent 21–25</span>
+          <span class="rk rt-exceptional">Exceptional 26+</span>
+        </div>
         <div id="rosterTable" class="scrollx"></div>
       </div>
     </div>
@@ -588,6 +609,9 @@ const PERS = [
 const ATTR_MIN=4, ATTR_MAX=24;        // average adult range (4d6)
 const PERS_DISPLAY_MAX=14;            // real traits observed up to ~14+
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+// Day-job skills grouped by governing attribute (order follows ATTRS). A skill's
+// roll uses its attribute's modifier, so a cat's per-skill modifier == its attr modifier.
+const JOB_SKILLS = ATTRS.flatMap(a=>(a.jobs||[]).map(job=>({job, attrLabel:a.label})));
 
 /* Class definitions — attribute weights + personality wants, per the guide's
    ideal profiles (section 6), with core attribute anchors from the game. */
@@ -955,6 +979,18 @@ function attrRating(v){
   if(v>=14) return {label:"Good",cls:"c"};
   if(v>=8)  return {label:"Average",cls:"n"};
   return {label:"Poor",cls:"w"};
+}
+// Full Pixel Cat's End stat table: grade (colour), adventuring dice pool, and the
+// job-skill modifier a stat value grants. Grades: Poor 0-6, Average 7-12, Good 13-16,
+// Very Good 17-20, Excellent 21-25, Exceptional 26+. Dice step every 4 from 3d6@13;
+// modifier steps every 2 from +0@13, tapering to -4 at the bottom.
+function statGrade(v){
+  if(v==null || isNaN(v)) return null;
+  const g = v<=6?["Poor","rt-poor"] : v<=12?["Average","rt-average"] : v<=16?["Good","rt-good"]
+          : v<=20?["Very Good","rt-vgood"] : v<=25?["Excellent","rt-excellent"] : ["Exceptional","rt-exceptional"];
+  const dice = (v<=6?1 : v<=12?2 : Math.floor((v-13)/4)+3) + "d6";
+  const mod = v>=13 ? Math.floor((v-13)/2) : v>=10?-1 : v>=7?-2 : v>=4?-3 : -4;
+  return {label:g[0], cls:g[1], dice, mod};
 }
 const persLean = v => v==null?"n" : v>=8?"high" : v<=3?"low" : "mid";
 
@@ -1511,18 +1547,23 @@ function rosterCellValue(r,cache,id,key){
   if(key==="sugclass")    return (cache[id]&&cache[id].className)||"";
   if(key==="sugclasspct") return (cache[id]&&cache[id].classPct)?cache[id].classPct+"%":"";
   if(key==="sugjobs")     return (cache[id]&&cache[id].jobs||[]).join(", ");
+  if(key.indexOf("job:")===0){                       // a day-job skill's modifier (from its governing attribute)
+    const js=JOB_SKILLS.find(j=>j.job===key.slice(4)); if(!js) return "";
+    const g=statGrade(parseInt((r.cats[id].data||{})[js.attrLabel],10));
+    return g ? ((g.mod>=0?"+":"")+g.mod) : "";
+  }
   if(key.indexOf("data:")===0) return (r.cats[id].data||{})[key.slice(5)]||"";
   return "";
 }
 function rosterCompare(r,cache,key,dir){
-  const numish=v=>v!=="" && /^\s*-?[\d.,]+\s*%?\s*$/.test(v);
+  const numish=v=>v!=="" && /^\s*[+-]?[\d.,]+\s*%?\s*$/.test(v);   // also signed modifiers like +3 / -1
   return (a,b)=>{
     const va=String(rosterCellValue(r,cache,a,key)), vb=String(rosterCellValue(r,cache,b,key));
     if(va===""&&vb!=="") return 1;      // blanks always sink to the bottom
     if(vb===""&&va!=="") return -1;
     let c;
     if(key==="id") c=(parseInt(va,10)||0)-(parseInt(vb,10)||0);
-    else if(numish(va)&&numish(vb)) c=parseFloat(va.replace(/[,%\s]/g,""))-parseFloat(vb.replace(/[,%\s]/g,""));
+    else if(numish(va)&&numish(vb)) c=parseFloat(va.replace(/[,%\s+]/g,""))-parseFloat(vb.replace(/[,%\s+]/g,""));
     else c=va.localeCompare(vb,undefined,{numeric:true,sensitivity:"base"});
     return c*dir;
   };
@@ -1580,6 +1621,11 @@ function rosterColumnModel(r){
     (g.extra||[]).forEach(x=>cols.push(x));
     if(cols.length) groups.push({key:gk,label:g.label,short:g.short,cols});
   });
+  // Job Skills: one virtual column per day-job skill, showing its governing attribute's
+  // modifier. Present once any attribute stat has been captured for the roster.
+  const hasStats = ATTRS.some(a=>rawHeaders.some(h=>h.toLowerCase()===a.label.toLowerCase()));
+  if(hasStats) groups.push({key:"jobskills", label:"Job Skills", short:"Job Skills",
+    cols: JOB_SKILLS.map(js=>({key:"job:"+js.job, label:js.job}))});
   return groups;
 }
 function rosterVisibleIds(r){
@@ -1657,15 +1703,25 @@ function rosterRender(){
       if(rosterCollapsed.has(g.key)){ cells.push(`<td class="strip" data-grp="${esc(g.key)}" title="Show ${esc(g.label)}">⋯</td>`); return; }
       g.cols.forEach(leaf=>{
         const v=rosterCellValue(r,cache,id,leaf.key);
-        let cell;
+        const isData = leaf.key.indexOf("data:")===0;
+        let cell, tdcls="", tdtitle="";
         if(leaf.key==="sugclass"||leaf.key==="sugjobs"||leaf.key==="sugclasspct"){ cell = v?`<span class="sug">${esc(v)}</span>`:"—"; }
-        else if(g.key==="stats" && leaf.key.indexOf("data:")===0 && attrLabels.has(leaf.key.slice(5))){
-          const label=leaf.key.slice(5), base=(c.data||{})[label+" base"];
+        else if(g.key==="stats" && isData && attrLabels.has(leaf.key.slice(5))){
+          const label=leaf.key.slice(5), base=(c.data||{})[label+" base"], gr=statGrade(parseInt(v,10));
+          if(gr){ tdcls=gr.cls; tdtitle=`${label}: ${gr.label} · ${gr.dice}`; }
           const boosted = v!=="" && base!=null && base!=="" && String(base)!==String(v);
-          cell = boosted ? `<span class="trink" title="Boosted by a trinket (base ${esc(String(base))})">${esc(v)}</span><span class="trink-up" aria-hidden="true" title="Boosted by a trinket (base ${esc(String(base))})">▲</span>` : esc(v);
+          const valHtml = boosted
+            ? `<span class="trink" title="Boosted by a trinket (base ${esc(String(base))})">${esc(v)}</span><span class="trink-up" aria-hidden="true">▲</span>`
+            : esc(v);
+          cell = valHtml + (gr?`<span class="dice">${gr.dice}</span>`:"");
         }
+        else if(g.key==="base" && isData){
+          const gr=statGrade(parseInt(v,10)); if(gr){ tdcls=gr.cls; tdtitle=gr.label; }
+          cell = esc(v);
+        }
+        else if(g.key==="jobskills"){ cell = v?esc(v):"—"; }
         else cell = esc(v);
-        cells.push(`<td>${cell}</td>`);
+        cells.push(`<td${tdcls?` class="${tdcls}"`:""}${tdtitle?` title="${esc(tdtitle)}"`:""}>${cell}</td>`);
       });
     });
     return `<tr data-id="${esc(id)}">${cells.join("")}</tr>`;
