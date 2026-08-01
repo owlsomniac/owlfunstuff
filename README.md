@@ -13,40 +13,38 @@ combined profile. All analysis runs in your browser; nothing leaves the page.
 
 ### Using it
 
-Load a cat one of four ways — they all land on an editable sheet, so you can fix anything before analyzing:
+Everything lives on two tabs — **🐈 My cats** and **🧬 Breeding**. The tool opens on **My cats**, which has three
+collapsible rows (open one at a time):
 
-1. **My cats (roster)** — two ways to build it:
-   - **Fastest — pull your whole roster:** type your **village/profile ID** (or any link with it) and hit **Pull my
-     cats**. In one click it crawls every Cats-page tab (Adventurers, Trainees, … + Traveling) for each cat's name,
-     colour, pattern, white, genetics and real portrait, **then opens each cat's page** to add its **7 attributes
-     (base / trinket / total), equipped trinkets, current day job & adventuring class, every day-job level and all 7
-     class levels** — each a sortable column. (All from public pages — no Village Manager needed.) A small **↻ Fetch
-     stats & levels** button only appears when some cats still need it (a relay hiccup, or a pasted roster) and hides
-     itself once they're all done.
-   - **Most complete — Village Manager:** paste that page's **HTML** once (it's a private, logged-in page, so it
-     can't be auto-loaded, and pasting the *address* won't work — you need the page **source**). Grab it with
-     **Ctrl+U → Ctrl+A → Ctrl+C** (⌘+⌥+U on Mac), or use the one-click **bookmarklet** in that tab. This is the only
-     source for traveling cats and class/job levels. Paste more views and their columns/filters merge in.
+1. **🪄 Pull My Whole Roster** — paste your **User Profile ID** (or any link that contains it) and hit **Pull my
+   cats**. It crawls every Cats-page tab (Adventurers, Trainees, … + Traveling) for each cat's name, colour, pattern,
+   white, genetics and real portrait, **then opens each cat's page** to add its **7 attributes (base / trinket /
+   total), equipped trinkets, current day job & adventuring class, every day-job level and all 7 class levels**. All
+   from public pages. A small **↻ Fetch stats & levels** button appears only if some cats still need it (a relay
+   hiccup) and hides itself once they're done.
+2. **🔎 Single Cat Look-Up** — paste one cat's **ID** or **page link** and press **Fetch cat** (or **Try a demo
+   cat**). Routed through public CORS relays because the game blocks direct cross-site reads.
+3. **✏️ Enter Manually** — start a blank sheet and type any values you know.
 
-   Pasting a **Cats page** into the box reads each cat's rendered avatar — its descriptive `aria-label` gives an
-   accurate genotype (main + trade colours → standard/watercolor/tortoiseshell, pattern, white level & type) and its
-   sprite layers give the **real portrait**. The roster is saved on your device and shown as one **searchable,
-   filterable, sortable table** (zebra-striped, with thumbnails). **Preview, Name and ID stay put on the left**
-   (Name links to the cat's own page); the rest of the columns are grouped under **collapsible headers** — click a
-   group header (*Basic info · Appearance · Jobs · Adventure Classes · Personality · Stats · Base stats*) to fold it
-   away to the left when you're not looking at it. A collapsible **Quick View** column reproduces the old at-a-glance
-   list (appearance, current job & class, and the recommended job/class). **Click any column sub-header to sort**
-   (numeric-aware, click again to reverse); the **Fit %** column under Adventure Classes is the recommended class's
-   fit score (how well the cat's attributes + personality match that class's ideal — `0.55 × attributes + 0.45 ×
-   personality`). White markings are shown as a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or
-   *None*). **Suggest for shown cats** computes recommendations in bulk. (The tool opens on this **🐈 My cats** tab.)
-2. **By cat ID** — paste an ID (e.g. `430432`) or a profile URL, press **Fetch cat**. Routed through public
-   CORS relays because the game blocks direct cross-site reads; relays can be flaky, so:
-3. **Paste page HTML** — open the profile, view source (Ctrl/Cmd+U), copy all, paste. Always works.
-4. **Enter manually** — type the numbers.
+Single-cat lookups land on an editable **Review & edit** sheet (with a real cropped portrait), so you can fix any
+mis-parse before **Analyze**. Attributes read the **effective total** (base + equipped trinkets); equipped stats show
+a `base X · +N Item` breakdown.
 
-Press **Try a demo cat** to see the full output instantly. Attributes read the **effective total** (base +
-equipped trinkets) from the cat's stat boxes, and equipped stats show a `base X · +N Item` breakdown.
+The roster itself is one **searchable, filterable, sortable table** (zebra-striped, with full-size portraits).
+**Preview, Name and ID stay on the left** (Name links to the cat's own page); every other column is grouped under a
+**collapsible header** — click a group (*Basic info · Appearance · Jobs · Adventure Classes · Personality · Stats ·
+Base stats*) to fold it away to the left. A collapsible **Quick View** column gives the at-a-glance summary
+(appearance, current job & class, recommended job/class). **Click any column sub-header to sort.** Highlights:
+
+- **Appearance** — a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or *None*) and an **Accent**
+  column (the game shows accent only when it's visible, so cats without a revealed accent read **Unknown**).
+- **Stats** — each total is tinted by its game **grade** (ROYGBP pastels: Poor · Average · Good · Very Good ·
+  Excellent · Exceptional) and shows its **dice pool** (1d6–9d6); a trinket-boosted total is bold with a ▲.
+- **Jobs** — one column per day job reading **`Lv. N (+M)`**: its level plus its governing attribute's modifier.
+- **Adventure Classes** — a **Fit %** column (how well the cat matches the recommended class's ideal —
+  `0.55 × attributes + 0.45 × personality`).
+
+**Suggest for shown cats** computes recommendations in bulk.
 
 ### What it computes
 
