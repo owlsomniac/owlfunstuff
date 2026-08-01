@@ -2203,6 +2203,19 @@ function offspringAccentGenotypes(A,B){
   a.forEach(x=>b.forEach(y=>set.add(orderAccentPair(x,y))));
   return [...set];
 }
+// A Mercat SHOWS its accent (tail colour), so for Mercat previews we enumerate the
+// possible accent COLOURS (resolving a hidden parent's allele to any of R/B/Y/L),
+// each with a representative genotype, ordered by likelihood when it's computable.
+function offspringAccentColors(A,B){
+  const ALL=["R","B","Y","L"];
+  const alleles = g => accentKnown(g) ? [...new Set(g.accent)] : ALL.slice();
+  const a=alleles(A), b=alleles(B), byColor=new Map();
+  a.forEach(x=>b.forEach(y=>{ const geno=[x,y].sort().join(""), color=accentName(x,y); if(!byColor.has(color)) byColor.set(color, geno); }));
+  let out=[...byColor.entries()].map(([color,geno])=>({color, geno}));
+  const d=accentDist(A,B);
+  if(d) out.sort((p,q)=>(d.get(q.color)||0)-(d.get(p.color)||0));
+  return out;
+}
 
 // which parent contributes the north(slot1) / south(slot2) colour allele, from winds
 function colorRoles(wa,wb){
@@ -2541,7 +2554,7 @@ const POSE_Y = {
   m: {sitting:-11, standing:-8, playing:-2, sleeping:0, upsidedown:0}
 };
 let previewPose = "standing";
-let previewSel = {species:"any", wind:"any", pattern:"any", white:"any"};   // kitten-gallery pickers (default: Any)
+let previewSel = {species:"any", wind:"any", pattern:"any", white:"any", accent:"any"};   // kitten-gallery pickers (default: Any)
 function poseOffset(species, fur, pose){
   pose = (POSE_X[pose]!=null) ? pose : "standing";
   const sp = /mer/i.test(species||"") ? "m" : "c";
@@ -2789,12 +2802,18 @@ function kittenGallery(R,A,B){
   let wLevel=0, wType="C";
   if(previewSel.white!=="any" && previewSel.white!=="none"){ const m=String(previewSel.white).match(/^w:(\d+):([CPLRIT])$/); if(m){ wLevel=parseInt(m[1],10); wType=m[2]; } }
 
-  // A kitten's accent is coat-independent: list every genotype it could inherit
-  // (partials like [B?] when a Not-cat parent's accent is hidden; full genotypes
-  // when both parents' accents are known, e.g. Mercats whose tails reveal them).
+  // Accent display depends on species. A Not-cat hides its accent, so we list every
+  // genotype it could inherit ([B?] or [R?]). A Mercat SHOWS its accent as the tail
+  // colour, so we pick ONE (via the accent selector) and colour the tail with it.
+  const isMercat = species==="Mercat";
   const accGenos = offspringAccentGenotypes(A,B);
-  const accLine = `<div class="gene-accent">Accent: ${accGenos.map(gn=>`<span class="geno-a">[${esc(gn)}]</span>`).join(" or ")}</div>`;
-  const tailAccent = mercatTailAccent(A,B);   // colours a Mercat kitten's tail in the preview
+  const accColors = isMercat ? offspringAccentColors(A,B) : [];
+  const selAcc = isMercat && accColors.length
+    ? (accColors.find(c=>c.color===previewSel.accent) || accColors[0]) : null;
+  const accLine = isMercat && selAcc
+    ? `<div class="gene-accent">Accent: <span class="geno-a">[${esc(selAcc.geno)}]</span> ${esc(selAcc.color)}</div>`
+    : `<div class="gene-accent">Accent: ${accGenos.map(gn=>`<span class="geno-a">[${esc(gn)}]</span>`).join(" or ")}</div>`;
+  const tailAccent = selAcc ? selAcc.color : mercatTailAccent(A,B);   // colours a Mercat kitten's tail
 
   const cells=colors.map(([label,p])=>{
     const windP = previewSel.wind==="any" ? p : ((cc.windJoint.get(label)||new Map()).get(previewSel.wind)||0);
@@ -2820,11 +2839,17 @@ function kittenGallery(R,A,B){
     `<option value="any"${cur==="any"?" selected":""}>Any</option>`+
     opts.map(([v,lab])=>`<option value="${esc(v)}"${cur===v?" selected":""}>${esc(lab)}</option>`).join("")+
     `</select></label>`;
+  // Mercats reveal their accent as the tail colour, so they get a concrete picker
+  // (one specific colour, not an "or"); Not-cats hide it, so no picker.
+  const accentPicker = (isMercat && selAcc)
+    ? `<label class="kc"><span>Accent (tail)</span><select class="kc-pick accent-pick">${accColors.map(c=>`<option value="${esc(c.color)}"${c.color===selAcc.color?" selected":""}>${esc(c.color)}</option>`).join("")}</select></label>`
+    : "";
   const controls = `<div class="kitten-controls">
     ${sel({label:"Species",k:"species-pick"}, previewSel.species, speciesOut.map(([s])=>[s,s]))}
     ${sel({label:"Wind",k:"wind-pick"},    previewSel.wind,    windOut.map(([w])=>[w,w]))}
     ${sel({label:"Pattern",k:"pat-pick"},  previewSel.pattern, patOut.map(([k])=>[k,k]))}
     ${sel({label:"White",k:"white-pick"},  previewSel.white,   whiteOut.map(([k])=>[k,whiteOutcomeLabel(k)]))}
+    ${accentPicker}
   </div>`;
 
   const picked=[previewSel.species!=="any"?previewSel.species:null, previewSel.wind!=="any"?previewSel.wind:null,
@@ -2866,7 +2891,7 @@ function breedLoad(){ try{ return JSON.parse(localStorage.getItem(BREED_KEY)||"n
 function restoreBreeding(){
   const st=breedLoad(); if(!st) return;
   if(st.pose) previewPose=st.pose;
-  if(st.sel && typeof st.sel==="object") previewSel={species:st.sel.species||"any", wind:st.sel.wind||"any", pattern:st.sel.pattern||"any", white:st.sel.white||"any"};
+  if(st.sel && typeof st.sel==="object") previewSel={species:st.sel.species||"any", wind:st.sel.wind||"any", pattern:st.sel.pattern||"any", white:st.sel.white||"any", accent:st.sel.accent||"any"};
   if(st.metaA) breedMeta.A=st.metaA; if(st.metaB) breedMeta.B=st.metaB;
   const setV=(s,val)=>{ const el=$(s); if(el) el.value=val||""; };
   setV("#pA",st.a); setV("#pB",st.b); setV("#pickA",st.pickA); setV("#pickB",st.pickB);
@@ -3161,6 +3186,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     if(!t||!t.classList) return;
     if(t.classList.contains("pose-pick")){ previewPose=t.value; reBreed(); rosterRender(); }
     else if(t.classList.contains("species-pick")){ previewSel.species=t.value; reBreed(); }
+    else if(t.classList.contains("accent-pick")){ previewSel.accent=t.value; reBreed(); }
     else if(t.classList.contains("wind-pick")){ previewSel.wind=t.value; reBreed(); }
     else if(t.classList.contains("pat-pick")){ previewSel.pattern=t.value; reBreed(); }
     else if(t.classList.contains("white-pick")){ previewSel.white=t.value; reBreed(); }
@@ -3275,7 +3301,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     ["#pA","#pB","#pickA","#pickB"].forEach(s=>{ const el=$(s); if(el) el.value=""; });
     $("#noteA").textContent=""; $("#noteB").textContent="";
     breedMeta.A=null; breedMeta.B=null; lastBreed=null;
-    previewSel={species:"any", wind:"any", pattern:"any", white:"any"};
+    previewSel={species:"any", wind:"any", pattern:"any", white:"any", accent:"any"};
     $("#breedResults").innerHTML=""; setStatus($("#breedStatus"),"","");
     try{ localStorage.removeItem(BREED_KEY); }catch(e){}
   });

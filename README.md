@@ -96,15 +96,17 @@ Teal…), and **species** — the result blocks are ordered to mirror the finder
 possible **allele pairs** are listed (e.g. accent `[RR]` × `[LL]` → *Pink* `[RL] / [LR]`); colour alleles honour each parent's
 **wind** (which slot each donates), and traits that aren't a two-allele cross (species, white type & level, density) show a short
 inheritance note instead. A pattern only names its type when it's actually shown (a solid cat reads **Solid**, never a leaked
-hidden type). **Accent** is handled honestly per Pixel Cat's End's rules: Not-cats never display it, so a parent with a hidden
-accent reads **Accent: Unknown**, and a kitten's accent is listed as the genotypes it could inherit — e.g. a known `[BR]` parent
-over a hidden one gives **`[B?]` or `[R?]`** (Mercats reveal accent on their tails, so theirs resolve to full genotypes). Plus
+hidden type). **Accent** is handled per Pixel Cat's End's rules — Not-cats hide it, Mercats show it on their tail. A **Not-cat**
+kitten lists the accent genotypes it could inherit (e.g. a known `[BR]` parent over a hidden one gives **`[B?]` or `[R?]`**), and
+a parent with a hidden accent reads **Accent: Unknown**. A **Mercat** kitten instead shows **one concrete accent** and gains an
+**Accent (tail) picker** — its tail is coloured by the chosen accent, and switching it re-colours every Mercat preview. Plus
 each parent's decoded phenotype (shown as **labelled facts** in the same order as the search inputs — Species / Wind / Fur /
 Coat / Pattern / White / Accent — with its name/#ID linking to the cat's page when picked from your roster). Parents and
 **every** possible kitten get **composited sprite previews** built from the game's own image layers, each **cropped to a single
 pose** (correct per-species offsets for Not-cats and Mercats) — pick **standing / sitting / playing / sleeping / upsidedown**
-from the pose selector. Above the kitten gallery a row of four **dropdowns — Species · Wind · Pattern · White** — each lists
-**only outcomes this pairing can actually produce** (Species toggles the previews between Not-cat and Mercat sprites); picking
+from the pose selector. Above the kitten gallery a row of **dropdowns — Species · Wind · Pattern · White** (plus an **Accent**
+picker whenever the preview is a Mercat) — each lists **only outcomes this pairing can actually produce** (Species toggles the
+previews between Not-cat and Mercat sprites); picking
 any of them narrows the previews and rewrites every kitten's % to the **true overall chance** of a kitten with that coat *and*
 the chosen
 species/wind/pattern/white (independent loci multiply in, and a wind pick isolates the exact coat-and-wind pair). Each kitten also
