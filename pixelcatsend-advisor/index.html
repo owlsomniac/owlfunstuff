@@ -364,24 +364,23 @@
   .catprev .catstage{position:absolute;top:0;left:0;width:100px;height:100px;overflow:hidden;transform-origin:top left}
   .catprev .cpl{position:absolute;image-rendering:pixelated}
   .pose-bar{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);margin:2px 0 10px}
-  .pose-bar select,.wt-pick{font-family:inherit;font-size:12.5px;padding:3px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel2);color:var(--ink)}
+  .pose-bar select,.kc-pick{font-family:inherit;font-size:12.5px;padding:3px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel2);color:var(--ink)}
   .pheno-facts{display:flex;flex-direction:column;gap:2px;font-size:12.5px;color:var(--ink-soft);min-width:0}
   .pheno-facts>div{display:flex;gap:8px;align-items:baseline}
   .pf-k{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px;flex:0 0 50px;padding-top:1px}
   .pf-sub{color:var(--muted);font-size:11px}
-  .white-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 10px;font-size:12.5px}
-  .white-bar .wb-k{color:var(--muted);text-transform:uppercase;font-size:10.5px;letter-spacing:.5px}
-  .wl-buttons{display:inline-flex;gap:4px;flex-wrap:wrap}
-  .wl{font-family:inherit;font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:99px;background:var(--panel2);color:var(--ink-soft);cursor:pointer}
-  .wl:hover{border-color:var(--brand)}
-  .wl.on{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:700}
-  .white-bar .wmark{color:var(--muted)}
+  .kitten-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:2px 0 12px}
+  .kc{display:flex;flex-direction:column;gap:3px}
+  .kc>span{color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px}
   .kitten-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:12px;margin-top:6px}
   .kitten{margin:0;text-align:center}
   .kitten .catprev{margin:0 auto}
   .kitten figcaption{margin-top:5px;display:flex;flex-direction:column;gap:1px}
   .kitten .knm{font-size:11px;color:var(--ink-soft);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .kitten .kpct{font-size:12px;font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums}
+  .gene-copy{display:block;width:100%;margin-top:5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:9.5px;line-height:1.35;color:var(--muted);background:var(--panel2);border:1px solid var(--line-soft);border-radius:6px;padding:3px 5px;cursor:pointer;white-space:normal;word-break:break-word;overflow-wrap:anywhere;text-align:center}
+  .gene-copy:hover{border-color:var(--brand);color:var(--ink-soft)}
+  .gene-copy.copied{border-color:var(--brand);color:var(--brand-ink);font-weight:700}
   .finder{margin:12px 0 4px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel2);padding:0 12px}
   .finder>summary{cursor:pointer;font-weight:700;color:var(--brand-ink);padding:11px 0;font-size:14px}
   .finder[open]{padding-bottom:12px}
@@ -1871,10 +1870,12 @@ const ACCENT_NAME = {
   YY:"Gold", LY:"Teal",   LL:"Black"
 };
 function accentName(x,y){
-  if(!x||!y) return "Hidden";
+  if(!x||!y||x==="?"||y==="?") return "Hidden";
   const k=[x,y].sort().join("");
   return ACCENT_NAME[k] || (x+"/"+y);
 }
+// A valid, revealed accent genotype (two of R/B/Y/L). "??" and blanks are unknown.
+function accentKnown(g){ return !!(g && g.accent && g.accent.length===2 && /^[RBYL]{2}$/i.test(g.accent.join(""))); }
 
 // White-marking descriptive name for each (type, level 0-10). From "Genetic Breakdown".
 const WHITE_MARK = {
@@ -2008,7 +2009,7 @@ function phenotype(g){
     patterned, patternBase,
     whiteLevel: g.whiteLevel, whiteType: g.whiteType, showsWhite,
     white: showsWhite ? ("White "+g.whiteLevel+" · "+(whiteMarkName(g.whiteType,g.whiteLevel)||WHITE_TYPE[g.whiteType]||g.whiteType)) : "No-white",
-    accent: (g.accent&&g.accent.length===2) ? accentName(g.accent[0],g.accent[1]) : "",
+    accent: accentKnown(g) ? accentName(g.accent[0],g.accent[1]) : "",
     species: g.species==="M"?"Mercat":"Not-cat"
   };
 }
@@ -2086,10 +2087,18 @@ function whiteTypeDist(A,B){
 }
 function speciesDist(A,B){ const m=new Map(); mapAdd(m,A.species,0.5); mapAdd(m,B.species,0.5); return m; }
 function accentDist(A,B){
-  if(!(A.accent&&A.accent.length===2&&B.accent&&B.accent.length===2)) return null;
+  if(!accentKnown(A)||!accentKnown(B)) return null;
   const m=new Map();
   donate(A.accent).forEach(([x,px])=>donate(B.accent).forEach(([y,py])=>mapAdd(m,accentName(x,y),px*py)));
   return m;
+}
+// The offspring's accent genotype string when it's fully determined ("RL"), else
+// "??" (unknown, or more than one possible pair from these parents).
+function offspringAccentAlleles(A,B){
+  if(!accentKnown(A)||!accentKnown(B)) return "??";
+  const set=new Set();
+  donate(A.accent).forEach(([x])=>donate(B.accent).forEach(([y])=>set.add([x,y].sort().join(""))));
+  return set.size===1 ? [...set][0] : "??";
 }
 
 // which parent contributes the north(slot1) / south(slot2) colour allele, from winds
@@ -2124,7 +2133,7 @@ function coatColorDist(A,B){
     const map={A,B};
     assignments.push({w:1, s1:alleleDist(map[roles.s1]), s2:alleleDist(map[roles.s2])});
   }
-  const out=new Map(); const hexOf=new Map(); const genoSet=new Map();
+  const out=new Map(); const hexOf=new Map(); const genoSet=new Map(); const windJoint=new Map();
   wD.forEach((pw,wind)=>{
     assignments.forEach(asg=>{
       asg.s1.forEach(([x,px])=>asg.s2.forEach(([y,py])=>{
@@ -2135,6 +2144,9 @@ function coatColorDist(A,B){
             const c=displayedColor(wind,x,y,dil==="Dilute",den);
             mapAdd(out,c.label,p);
             if(!hexOf.has(c.label)) hexOf.set(c.label,c.hex);
+            // per-(coat,wind) joint probability, so a wind pick can isolate the exact kitten
+            if(!windJoint.has(c.label)) windJoint.set(c.label,new Map());
+            mapAdd(windJoint.get(c.label), wind, p);
             // the coat-allele pair, in slot order (slot1=north/main, slot2=south/trade).
             // Snow ignores the colour alleles entirely, so record nothing there.
             if(wind!=="Null"){ if(!genoSet.has(c.label)) genoSet.set(c.label,new Set()); genoSet.get(c.label).add(x+y); }
@@ -2145,7 +2157,35 @@ function coatColorDist(A,B){
   });
   const genos=new Map();
   genoSet.forEach((set,label)=>genos.set(label,[...set].map(k=>"["+k+"]")));
-  return {dist:out, hex:hexOf, genos};
+  return {dist:out, hex:hexOf, genos, windJoint};
+}
+// Visible-outcome distributions used by the kitten-gallery pickers. Each sums to 1
+// and is independent of coat colour (separate loci), so a picked outcome multiplies
+// straight into the per-coat probability to give the true overall chance.
+function patternOutcomeDist(R){
+  const m=new Map();
+  const solid=R.patternVisible.get("Solid")||0, patterned=R.patternVisible.get("Patterned")||0;
+  if(solid>0) m.set("Solid", solid);
+  R.pattern.forEach((p,name)=>{ const v=patterned*p; if(v>0) mapAdd(m,name,v); });
+  return m;
+}
+function whiteOutcomeDist(R){
+  const m=new Map();
+  const noW=R.whiteVisible.get("No-white")||0, yesW=R.whiteVisible.get("White")||0;
+  const lvl0=R.whiteLevel.get(0)||0;
+  const none=noW + yesW*lvl0;                 // no white shown, or white gene but level 0
+  if(none>0) m.set("none", none);
+  R.whiteLevel.forEach((pl,L)=>{ if(L<=0) return;
+    R.whiteType.forEach((pt,T)=>{ const v=yesW*pl*pt; if(v>0) mapAdd(m,"w:"+L+":"+T,v); });
+  });
+  return m;
+}
+function whiteOutcomeLabel(k){
+  if(k==="none") return "None";
+  const m=String(k).match(/^w:(\d+):([CPLRIT])$/); if(!m) return k;
+  const L=parseInt(m[1],10), T=m[2];
+  const mark=whiteMarkName(T,L);
+  return "Lv "+L+" "+(WHITE_TYPE[T]||T)+(mark?(" — "+mark):"");
 }
 
 /* ---------- full litter prediction ---------- */
@@ -2293,8 +2333,8 @@ function phenotypeToGeneString(t){
   const coat=color[0]+color[1]+dil[0]+dil[1]+density;
   const pattern=patVis[0]+patVis[1]+pat[0]+pat[1];
   const white=whiteVis[0]+whiteVis[1]+whiteLevel+whiteType;
-  const base=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB]`;
-  const str=accent ? (base+` [${accent.join("")}]`) : base;
+  // Unknown accent → "??" placeholder (parsed back as unknown, never Ruby).
+  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB] [${accent?accent.join(""):"??"}]`;
   return { str, resolved, guessed };
 }
 
@@ -2366,8 +2406,8 @@ function phenoLabelToGeneString(p){
   const coat=color[0]+color[1]+dil[0]+dil[1]+density;
   const pattern=patVis[0]+patVis[1]+pat[0]+pat[1];
   const white=whiteVis[0]+whiteVis[1]+whiteLevel+whiteType;
-  // aria-labels never expose accent → omit the accent section (unknown, not Ruby).
-  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB]`;
+  // aria-labels never expose accent → "??" placeholder (unknown, not Ruby).
+  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB] [??]`;
   return { str, resolved, guessed };
 }
 
@@ -2398,7 +2438,7 @@ const POSE_Y = {
   m: {sitting:-11, standing:-8, playing:-2, sleeping:0, upsidedown:0}
 };
 let previewPose = "standing";
-let previewWhite = {level:0, type:"C"};   // kitten-preview white overlay (default: none)
+let previewSel = {wind:"any", pattern:"any", white:"any"};   // kitten-gallery pickers (default: Any)
 function poseOffset(species, fur, pose){
   pose = (POSE_X[pose]!=null) ? pose : "standing";
   const sp = /mer/i.test(species||"") ? "m" : "c";
@@ -2563,47 +2603,93 @@ function parentCard(title, g, meta){
     <div class="pheno-head">${portrait}${facts}</div>
     <div class="pheno-line"><code style="font-size:11px;color:var(--muted)">${esc(g.raw||"")}</code></div></div>`;
 }
-// A gallery of every possible kitten coat. Previews default to NO white; a
-// picker (under the header, above the images) lets you try each possible white
-// level & type on all of them at once.
-function kittenGallery(R){
+// A gallery of every possible kitten coat, with a row of Wind / Pattern / White
+// dropdowns (each listing only outcomes this pairing can produce). Picking any of
+// them narrows the previews and rewrites every % to the TRUE overall chance of a
+// kitten with that coat AND the selected wind/pattern/white. Each kitten also shows
+// a click-to-copy full genetic string ("??" marks alleles the game keeps hidden).
+function kittenGallery(R,A,B){
   const cc=R.color; if(cc.error) return "";
-  const colors=[...cc.dist.entries()].sort((a,b)=>b[1]-a[1]);   // show every possible coat colour
-  const pats=[...R.pattern.entries()].sort((a,b)=>b[1]-a[1]);
-  const pPatterned = ([...R.patternVisible.entries()].reduce((o,[k,v])=>{o[k]=v;return o;},{})["Patterned"])||0;
-  const topPat = pats[0]?pats[0][0]:"Mackerel";
-  const patterned = pPatterned>=0.5;
+  const colors=[...cc.dist.entries()].sort((a,b)=>b[1]-a[1]);
   const species = ([...R.species.entries()].sort((a,b)=>b[1]-a[1])[0]||["C"])[0]==="M"?"Mercat":"Not-cat";
   const fur = ([...R.fur.entries()].sort((a,b)=>b[1]-a[1])[0]||["Shorthair"])[0];
-  // possible white outcomes
-  const canWhite = (R.whiteVisible.get("White")||0) > 0;
-  const levels = [...R.whiteLevel.entries()].filter(([l,p])=>l>0 && p>0).map(([l])=>l).sort((a,b)=>a-b);
-  const types  = [...R.whiteType.entries()].sort((a,b)=>b[1]-a[1]).map(([t])=>t);
-  if(!types.includes(previewWhite.type)) previewWhite.type = types[0]||"C";
-  if(previewWhite.level>0 && !levels.includes(previewWhite.level)) previewWhite.level = 0;
-  const useLevel = canWhite ? previewWhite.level : 0;
-  const useType  = previewWhite.type;
+
+  // possible visible outcomes (each sums to 1)
+  const windOut  = [...R.wind.entries()].filter(([w,p])=>p>0).sort((a,b)=>b[1]-a[1]);
+  const patOut   = [...patternOutcomeDist(R).entries()].sort((a,b)=>b[1]-a[1]);
+  const whiteOut = [...whiteOutcomeDist(R).entries()].sort((a,b)=>b[1]-a[1]);
+  const patMap=new Map(patOut), whiteMap=new Map(whiteOut);
+
+  // keep the current selection valid for this pairing
+  if(previewSel.wind!=="any"    && !windOut.some(([w])=>w===previewSel.wind))   previewSel.wind="any";
+  if(previewSel.pattern!=="any" && !patMap.has(previewSel.pattern))             previewSel.pattern="any";
+  if(previewSel.white!=="any"   && !whiteMap.has(previewSel.white))             previewSel.white="any";
+
+  const patFactor   = previewSel.pattern==="any" ? 1 : (patMap.get(previewSel.pattern)||0);
+  const whiteFactor = previewSel.white==="any"   ? 1 : (whiteMap.get(previewSel.white)||0);
+
+  // what the previews render (most-likely when the picker is on "Any")
+  const topPatEntry = patOut.filter(([k])=>k!=="Solid").sort((a,b)=>b[1]-a[1])[0];
+  let patterned, patName;
+  if(previewSel.pattern==="any"){ patterned=(patMap.get("Solid")||0)<0.5; patName=topPatEntry?topPatEntry[0]:"Mackerel"; }
+  else if(previewSel.pattern==="Solid"){ patterned=false; patName="Mackerel"; }
+  else { patterned=true; patName=previewSel.pattern; }
+  let wLevel=0, wType="C";
+  if(previewSel.white!=="any" && previewSel.white!=="none"){ const m=String(previewSel.white).match(/^w:(\d+):([CPLRIT])$/); if(m){ wLevel=parseInt(m[1],10); wType=m[2]; } }
+
+  const accAlleles = offspringAccentAlleles(A,B);   // "RL" when fixed, else "??"
+  const accName = accAlleles==="??" ? "" : accentName(accAlleles[0],accAlleles[1]);
+
   const cells=colors.map(([label,p])=>{
+    const windP = previewSel.wind==="any" ? p : ((cc.windJoint.get(label)||new Map()).get(previewSel.wind)||0);
+    const prob  = windP * patFactor * whiteFactor;
+    if(prob<=0) return "";                          // impossible under the current picks
+    const pct=prob*100;
     const hex=cc.hex.get(label);
     const coatType=/tortoiseshell/i.test(label)?"tortoiseshell":/watercolou?r/i.test(label)?"watercolor":/snow/i.test(label)?"snow":"standard";
     const img=catPreview({colorName:primaryColorWord(label), colorName2:secondaryColorWord(label), coatType,
-      patternName:topPat, patterned, species, whiteType:useType, whiteLevel:useLevel, hex, fur, size:96, title:label});
-    const pct=p*100;
-    return `<figure class="kitten">${img}<figcaption><span class="knm">${esc(label)}</span><span class="kpct">${pct<9.95?pct.toFixed(1):Math.round(pct)}%</span></figcaption></figure>`;
+      patternName:patName, patterned, species, whiteType:wType, whiteLevel:wLevel, hex, fur, size:96, title:label});
+    const windForStr = previewSel.wind!=="any" ? previewSel.wind
+      : coatType==="tortoiseshell"||coatType==="watercolor" ? "Trade" : coatType==="snow" ? "Null" : "North";
+    const gstr=phenotypeToGeneString({species, wind:windForStr, color:label, colortype:coatType,
+      pattern:patterned?patName:"Solid", whiteLevel:String(wLevel), whiteType:WHITE_TYPE[wType]||"Classic", accent:accName}).str;
+    return `<figure class="kitten">${img}
+      <figcaption><span class="knm">${esc(label)}</span><span class="kpct">${pct<9.95?pct.toFixed(1):Math.round(pct)}%</span></figcaption>
+      <button type="button" class="gene-copy" data-gene="${esc(gstr)}" title="Copy this genetic string">${esc(gstr)}</button>
+    </figure>`;
   }).join("");
-  const whiteBar = canWhite ? `<div class="white-bar">
-      <span class="wb-k">White markings</span>
-      <div class="wl-buttons">
-        <button type="button" class="wl${useLevel===0?" on":""}" data-wl="0">None</button>
-        ${levels.map(l=>`<button type="button" class="wl${useLevel===l?" on":""}" data-wl="${l}">Lv ${l}</button>`).join("")}
-      </div>
-      <select class="wt-pick" title="White type"${useLevel===0?" disabled":""}>${types.map(t=>`<option value="${t}"${t===useType?" selected":""}>${esc(WHITE_TYPE[t]||t)}</option>`).join("")}</select>
-      <span class="wmark">${useLevel>0?esc(whiteMarkName(useType,useLevel)||""):"no white shown"}</span>
-    </div>` : `<p class="hint" style="margin:2px 0 8px">These two can't pass on white markings.</p>`;
+
+  const sel=(cls,cur,opts)=>`<label class="kc"><span>${cls.label}</span>`+
+    `<select class="kc-pick ${cls.k}">`+
+    `<option value="any"${cur==="any"?" selected":""}>Any</option>`+
+    opts.map(([v,lab])=>`<option value="${esc(v)}"${cur===v?" selected":""}>${esc(lab)}</option>`).join("")+
+    `</select></label>`;
+  const controls = `<div class="kitten-controls">
+    ${sel({label:"Wind",k:"wind-pick"},    previewSel.wind,    windOut.map(([w])=>[w,w]))}
+    ${sel({label:"Pattern",k:"pat-pick"},  previewSel.pattern, patOut.map(([k])=>[k,k]))}
+    ${sel({label:"White",k:"white-pick"},  previewSel.white,   whiteOut.map(([k])=>[k,whiteOutcomeLabel(k)]))}
+  </div>`;
+
+  const picked=[previewSel.wind!=="any"?previewSel.wind:null, previewSel.pattern!=="any"?previewSel.pattern:null,
+    previewSel.white!=="any"?whiteOutcomeLabel(previewSel.white):null].filter(Boolean);
   return `<div class="dist-block"><h3>Likely kittens</h3>
-    ${whiteBar}
-    <div class="kitten-gallery">${cells}</div>
-    <p class="hint">Every possible coat, composited from the game's own sprite layers (base colour${patterned?(" + "+esc(topPat)+" pattern"):""} + eyes${useLevel>0?(" + "+esc(whiteMarkName(useType,useLevel)||"white")):""}), for the most-likely pattern. A missing layer falls back to a colour swatch.</p></div>`;
+    ${controls}
+    <div class="kitten-gallery">${cells||`<p class="hint">No kitten matches the current picks.</p>`}</div>
+    <p class="hint">Each % is the <b>true overall chance</b> of a kitten with that coat${picked.length?(" and "+esc(picked.join(" · "))):""}. Previews are composited from the game's own sprite layers; a missing layer falls back to a colour swatch. Tap a genetic string to copy it — <code>??</code> marks alleles the game keeps hidden.</p></div>`;
+}
+// One-click copy of a kitten's genetic string; flashes "Copied!" immediately.
+function copyGeneString(btn){
+  const s=btn.getAttribute("data-gene")||"";
+  const restore=btn.innerHTML;
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(s).catch(()=>{}); }
+    else {
+      const ta=document.createElement("textarea"); ta.value=s; ta.setAttribute("readonly",""); ta.style.position="fixed"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); }catch(e){} ta.remove();
+    }
+  }catch(e){}
+  btn.classList.add("copied"); btn.textContent="Copied!";
+  setTimeout(()=>{ btn.classList.remove("copied"); btn.innerHTML=restore; }, 1100);
 }
 let breedMeta = {A:null, B:null};
 let lastBreed = null;
@@ -2629,12 +2715,12 @@ function renderBreeding(strA, strB){
   const gPatVis  = genoPairsSym(A.patVis,B.patVis, (x,y)=>(x==="N"&&y==="N")?"Solid":"Patterned");
   const gPattern = genoPairsSym(A.pat,B.pat, patternName);
   const gWhiteV  = genoPairsSym(A.whiteVis,B.whiteVis, (x,y)=>(x==="N"&&y==="N")?"No-white":"White");
-  const gAccent  = (A.accent&&A.accent.length===2&&B.accent&&B.accent.length===2) ? genoPairsSym(A.accent,B.accent, accentName) : null;
+  const gAccent  = (accentKnown(A)&&accentKnown(B)) ? genoPairsSym(A.accent,B.accent, accentName) : null;
   out.innerHTML = `<div class="card">
     ${posePicker()}
     <div class="breed-parents">${parentCard("Parent A",A,breedMeta.A)}${parentCard("Parent B",B,breedMeta.B)}</div>
     ${warn}
-    ${kittenGallery(R)}
+    ${kittenGallery(R,A,B)}
     <div class="grid2" style="margin-top:6px">
       <div>${colorBlock}
         <div class="dist-block"><h3>Colour density</h3>${distRows(rangeDist(A.density,B.density),{map:DENSITY_MAP, note:"Colour density (dilution level) — lands on any value between the parents'."})}</div>
@@ -2895,11 +2981,13 @@ document.addEventListener("DOMContentLoaded", ()=>{
     const t=e.target;
     if(!t||!t.classList) return;
     if(t.classList.contains("pose-pick")){ previewPose=t.value; reBreed(); rosterRender(); }
-    else if(t.classList.contains("wt-pick")){ previewWhite.type=t.value; reBreed(); }
+    else if(t.classList.contains("wind-pick")){ previewSel.wind=t.value; reBreed(); }
+    else if(t.classList.contains("pat-pick")){ previewSel.pattern=t.value; reBreed(); }
+    else if(t.classList.contains("white-pick")){ previewSel.white=t.value; reBreed(); }
   });
   $("#breedResults").addEventListener("click", e=>{
-    const b=e.target.closest && e.target.closest(".wl");
-    if(b){ previewWhite.level=parseInt(b.getAttribute("data-wl"),10)||0; reBreed(); }
+    const b=e.target.closest && e.target.closest(".gene-copy");
+    if(b) copyGeneString(b);
   });
 
   // ----- Desired-outcome pair finder -----

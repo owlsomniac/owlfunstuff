@@ -96,9 +96,12 @@ type when it's actually shown (a solid cat reads **Solid**, never a leaked hidde
 unknown** rather than defaulting to Ruby. Plus each parent's decoded phenotype (shown as **labelled facts** — Coat /
 Pattern / Wind / Fur / White / Accent / Species — with its name/#ID linking to the cat's page when picked from your roster). Parents and **every** possible kitten get **composited sprite previews** built from the
 game's own image layers, each **cropped to a single pose** (correct per-species offsets for Not-cats and Mercats) — pick
-**standing / sitting / playing / sleeping / upsidedown** from the pose selector. Kitten previews default to **no white**; a
-**white-marking picker** under the header lets you try each possible level & type on all of them at once. A missing layer
-falls back to a colour swatch.
+**standing / sitting / playing / sleeping / upsidedown** from the pose selector. Above the kitten gallery a row of three
+**dropdowns — Wind · Pattern · White** — each lists **only outcomes this pairing can actually produce**; picking any of them
+narrows the previews and rewrites every kitten's % to the **true overall chance** of a kitten with that coat *and* the chosen
+wind/pattern/white (independent loci multiply in, and a wind pick isolates the exact coat-and-wind pair). Each kitten also
+carries a **click-to-copy full genetic string** (small, wrapping button) — alleles the game keeps hidden read as **`?`** (e.g.
+an unrevealed accent shows `[??]`, never a guessed colour). A missing layer falls back to a colour swatch.
 The genetics engine follows the Not-Wiki's [Genetics](https://pixelcatsend.miraheze.org/wiki/Genetics) rules (Mendelian
 inheritance, recessive dilute/no-white/longhair, number-range colour density &amp; white level, positional colour by wind) with
 the pattern/accent/white-marking name tables from Apocracy's community *Cat Genetics 6* spreadsheet, and is unit-tested against
