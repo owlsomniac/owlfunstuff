@@ -266,6 +266,19 @@
   #rosterTable thead th:not(.grp):not(.strip):hover{background:var(--brand-soft)}
   #rosterTable th .arr{color:var(--muted);font-size:10px;margin-left:4px;opacity:.55}
   #rosterTable th[aria-sort="ascending"] .arr,#rosterTable th[aria-sort="descending"] .arr{color:var(--brand-ink);opacity:1}
+  /* 3px vertical dividers between category groups; a clear 1px under the sub-headers */
+  #rosterTable th.grp,#rosterTable .grp-start{border-left:3px solid var(--line)}
+  #rosterTable thead th{border-bottom:1px solid var(--line)}
+  /* dual Lv/Fit class column — two sort chips in the header */
+  #rosterTable th.classcol{padding:4px 7px;text-align:center;cursor:default}
+  #rosterTable th.classcol .cc-name{font-weight:700}
+  #rosterTable th.classcol .cc-sorts{display:flex;gap:4px;justify-content:center;margin-top:3px}
+  #rosterTable th.classcol .cc-sort{cursor:pointer;font-size:10px;font-weight:600;color:var(--muted);border:1px solid var(--line-soft);border-radius:99px;padding:0 6px;user-select:none}
+  #rosterTable th.classcol .cc-sort .arr{margin-left:2px}
+  #rosterTable th.classcol .cc-sort:hover{background:var(--brand-soft);color:var(--brand-ink)}
+  #rosterTable th.classcol .cc-sort[aria-sort="ascending"],#rosterTable th.classcol .cc-sort[aria-sort="descending"]{background:var(--brand);color:#fff;border-color:var(--brand)}
+  #rosterTable td.classcell{font-size:11.5px;line-height:1.55}
+  #rosterTable td.classcell .qv-k{color:var(--muted)}
   /* group header row — click a group to collapse it to a thin strip on the left */
   #rosterTable th.grp{text-align:center;background:var(--brand-soft);color:var(--brand-ink);font-weight:800;letter-spacing:.2px;white-space:nowrap}
   #rosterTable th.grp:hover{background:var(--brand);color:#fff}
@@ -291,6 +304,10 @@
   #rosterTable .trink{color:var(--good-ink);font-weight:800}   /* stat total boosted by a trinket */
   #rosterTable .trink-up{color:var(--good-ink);font-size:9px;font-weight:900;vertical-align:top;margin-left:2px;line-height:1}
   #rosterTable td .dice{display:block;font-size:9.5px;color:var(--muted);font-weight:400;line-height:1.15;margin-top:1px}
+  /* trinket-adjusted stat: adjusted total on top, base below a thin rule */
+  #rosterTable td.statsplit{padding:0}
+  #rosterTable td.statsplit .stat-adj{padding:5px 11px 4px}
+  #rosterTable td.statsplit .stat-base{padding:3px 11px 4px;border-top:1px solid var(--line-soft);color:var(--muted);font-size:11px;line-height:1.1}
   /* attribute-grade tints (ROYGBP pastels) — rgba so they read right in light AND dark */
   .rt-poor{background:rgba(229,57,53,.22)}
   .rt-average{background:rgba(251,146,60,.26)}
@@ -597,7 +614,7 @@ const PERS_DISPLAY_MAX=14;            // real traits observed up to ~14+
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 // Day-job skills grouped by governing attribute (order follows ATTRS). A skill's
 // roll uses its attribute's modifier, so a cat's per-skill modifier == its attr modifier.
-const JOB_SKILLS = ATTRS.flatMap(a=>(a.jobs||[]).map(job=>({job, attrLabel:a.label})));
+const JOB_SKILLS = ATTRS.flatMap(a=>(a.jobs||[]).map(job=>({job, attrLabel:a.label}))).sort((a,b)=>a.job.localeCompare(b.job));
 // Pull a job's level out of a cat's "Job Levels" string, e.g. "Miner 4, Hunter 1".
 function jobLevelFromData(str, job){
   if(!str) return null;
@@ -1103,7 +1120,7 @@ function renderResults(cat){
   const classes = scoreClasses(cat);
   const jobsData = recommendJobs(cat);
   // remember this cat's suggestion so the roster list/table can show it
-  if(cat.id){ try{ const c=suggestLoad(); c[cat.id]={className:classes[0]?classes[0].name:"", classPct:classes[0]?classes[0].pct:0, jobs:jobsData.jobs.flatMap(j=>j.jobs).slice(0,4), ts:nowTs()}; suggestSave(c); rosterRender(); }catch(e){} }
+  if(cat.id){ try{ const c=suggestLoad(); c[cat.id]={className:classes[0]?classes[0].name:"", classPct:classes[0]?classes[0].pct:0, pcts:classPctMap(classes), jobs:jobsData.jobs.flatMap(j=>j.jobs).slice(0,4), ts:nowTs()}; suggestSave(c); rosterRender(); }catch(e){} }
   const arch = archetype(cat.personality);
   const bb = braveryBonus(cat.personality.bravery);
   const bo = benevolenceOutcome(cat.personality.benevolence);
@@ -1491,10 +1508,11 @@ function rosterCatToGeneString(cat){
 
 // Bookmarklet that copies the (private) Village Manager page's HTML to the clipboard.
 const ROSTER_BOOKMARKLET = "javascript:(function(){try{var h=document.documentElement.outerHTML;function done(){alert('Village roster copied \\u2014 paste it into the Pixel Cat\\u2019s End advisor.');}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(h).then(done,function(){window.prompt('Copy this HTML, then paste into the advisor:',h);});}else{window.prompt('Copy this HTML, then paste into the advisor:',h);}}catch(e){alert('Could not copy: '+e);}})();";
+function classPctMap(classesArr){ const m={}; (classesArr||[]).forEach(c=>{ if(c&&c.name) m[c.name]=c.pct; }); return m; }
 function computeSuggestion(cat){
-  const cls=scoreClasses(cat)[0];
+  const classes=scoreClasses(cat), cls=classes[0];
   const jobs=recommendJobs(cat).jobs.flatMap(j=>j.jobs).slice(0,4);
-  return {className:cls?cls.name:"", classPct:cls?cls.pct:0, jobs, ts:nowTs()};
+  return {className:cls?cls.name:"", classPct:cls?cls.pct:0, pcts:classPctMap(classes), jobs, ts:nowTs()};
 }
 function cacheSuggestion(id,cat){ if(!id) return; const c=suggestLoad(); c[id]=computeSuggestion(cat); suggestSave(c); }
 
@@ -1567,6 +1585,16 @@ function rosterCellValue(r,cache,id,key){
     if(lvl==null && !mod) return "";
     return "Lv. "+(lvl==null?0:lvl)+(mod?(" ("+mod+")"):"");
   }
+  if(key.indexOf("clslv:")===0){                     // a cat's level in one adventuring class
+    const data=r.cats[id].data||{}, lv=data[key.slice(6)+" Lv"];
+    if(lv!=null && lv!=="") return String(lv);
+    // not listed on the profile → level 1 (but only once we've actually fetched this cat)
+    const enriched = data["Strength"]!=null || Object.keys(data).some(k=>/ lv$/i.test(k));
+    return enriched ? "1" : "";
+  }
+  if(key.indexOf("clsfit:")===0){                    // the cat's fit % for one class
+    const s=cache[id]; return (s&&s.pcts&&s.pcts[key.slice(7)]!=null) ? (s.pcts[key.slice(7)]+"%") : "";
+  }
   if(key.indexOf("data:")===0) return (r.cats[id].data||{})[key.slice(5)]||"";
   return "";
 }
@@ -1603,26 +1631,30 @@ const ROSTER_GROUP_DEFS=[
    test:h=>/^trinkets$/i.test(h)||ATTRS.some(a=>a.label.toLowerCase()===h.toLowerCase())},
   {key:"pers",  label:"Personality",       short:"Personality", pref:PERS.map(p=>p.label),
    test:h=>PERS.some(p=>p.label.toLowerCase()===h.toLowerCase())},
-  {key:"class", label:"Adventure Classes", short:"Classes",     pref:["Class"], extra:[{key:"sugclass",label:"Suggested class"},{key:"sugclasspct",label:"Fit %"}],
-   test:h=>/^class$/i.test(h)|| / lv$/i.test(h)},
+  {key:"class", label:"Adventure Classes", short:"Classes",     pref:["Class"], extra:[{key:"sugclass",label:"Suggested class"}],
+   test:h=>/^class$/i.test(h)},
   {key:"jobs",  label:"Jobs",              short:"Jobs",        pref:["Occupation"], extra:[{key:"sugjobs",label:"Suggested jobs"}],
    test:h=>/^occupation$/i.test(h)},
   {key:"appear",label:"Appearance",        short:"Appearance",  pref:["Fur","Fur Length","Color","Colour","Color Type","Colour Type","Colortype","Pattern","Size","Weight","Eye Color","Eye Colour","Accent"],
    test:h=>true}
 ];
 // Column groups actually present, in display order (pinned Preview/Name handled separately).
-// Order: Basic · Appearance · Jobs · Adventure Classes · Personality · Stats · Base stats.
-const ROSTER_GROUP_ORDER=["basic","appear","jobs","class","pers","stats","base"];
+// Order: Basic · Appearance · Jobs · Adventure Classes · Personality · Stats. (Base values
+// are shown inline in the Stats cell for trinket-adjusted stats, so there's no Base group.)
+const ROSTER_GROUP_ORDER=["basic","appear","jobs","class","pers","stats"];
 function rosterColumnModel(r){
-  // "Job Levels" is decomposed into per-job columns; "White"/"Accent" are shown as
-  // computed virtual columns, so drop their raw headers here.
-  const rawHeaders=(r.headers||[]).filter(h=>!/^(name|id)$/i.test(h) && !/^white($|\s)/i.test(h) && !/^accent$/i.test(h) && !/^job levels$/i.test(h));
+  // "Job Levels" and "<Class> Lv" are decomposed into per-job / per-class columns;
+  // "White"/"Accent" are computed virtual columns — so drop their raw headers here.
+  const rawHeaders=(r.headers||[]).filter(h=>!/^(name|id)$/i.test(h) && !/^white($|\s)/i.test(h) && !/^accent$/i.test(h) && !/^job levels$/i.test(h) && !/ lv$/i.test(h));
   const hasWhite=(r.headers||[]).some(h=>/^white($|\s)/i.test(h))
     || Object.values(r.cats||{}).some(c=>c.data && c.data["White"]!=null && c.data["White"]!=="");
   const hasStats = ATTRS.some(a=>rawHeaders.some(h=>h.toLowerCase()===a.label.toLowerCase()));
   // Per-job columns (level + governing-attribute modifier) live in Jobs once we know
   // either the cat's stats (for the modifier) or its job levels.
   const hasJobData = hasStats || (r.headers||[]).some(h=>/^job levels$/i.test(h));
+  // Per-class columns (level + fit%) live in Adventure Classes once we have class
+  // levels (from the page) or stats (to compute fit).
+  const hasClassData = hasStats || (r.headers||[]).some(h=>/ lv$/i.test(h));
   const classifyOrder=["basic","base","stats","pers","class","jobs"]; // appear = fallback
   const def=k=>ROSTER_GROUP_DEFS.find(g=>g.key===k);
   const bucket={}; ROSTER_GROUP_DEFS.forEach(g=>bucket[g.key]=[]);
@@ -1641,6 +1673,8 @@ function rosterColumnModel(r){
     if(gk==="appear"){ if(hasWhite) cols.push({key:"white",label:"White"});
       if(cols.length) cols.push({key:"accent",label:"Accent"}); }   // Accent after White
     if(gk==="jobs" && hasJobData) JOB_SKILLS.forEach(js=>cols.push({key:"job:"+js.job, label:js.job}));
+    // Adventure Classes: one dual (Lv + Fit%) column per class, in class order.
+    if(gk==="class" && hasClassData) CLASSES.forEach(C=>cols.push({key:"cls:"+C.name, label:C.name, cls:C.name, dual:true}));
     (g.extra||[]).forEach(x=>cols.push(x));
     if(cols.length) groups.push({key:gk,label:g.label,short:g.short,cols});
   });
@@ -1679,15 +1713,20 @@ function rosterRender(){
   if(!ids.length){ T.innerHTML=`<div class="rosterempty">No cats match.</div>`; return; }
   const quickOpen=!rosterCollapsed.has("quick");
   const groups=rosterColumnModel(r);
-  const sortable=new Set(["name","id", ...groups.flatMap(g=>g.cols.map(c=>c.key))]);
+  const sortable=new Set(["name","id"]);
+  groups.forEach(g=>g.cols.forEach(c=>{ if(c.dual){ sortable.add("clslv:"+c.cls); sortable.add("clsfit:"+c.cls); } else sortable.add(c.key); }));
   let tids=ids;
   if(rosterSort && sortable.has(rosterSort.key)) tids=[...ids].sort(rosterCompare(r,cache,rosterSort.key,rosterSort.dir));
   const sortMeta=key=>{ const on=rosterSort&&rosterSort.key===key;
     return {aria:on?(rosterSort.dir>0?"ascending":"descending"):"none", arr:on?(rosterSort.dir>0?"▲":"▼"):"↕"}; };
   const pinTh=(key,label)=>{ const m=sortMeta(key);
     return `<th class="${key}" data-key="${key}" rowspan="2" aria-sort="${m.aria}" tabindex="0" role="button" title="Sort by ${label}">${label}<span class="arr" aria-hidden="true">${m.arr}</span></th>`; };
-  const subTh=leaf=>{ const m=sortMeta(leaf.key);
-    return `<th data-key="${esc(leaf.key)}" aria-sort="${m.aria}" tabindex="0" role="button" title="Sort by ${esc(leaf.label)}">${esc(leaf.label)}<span class="arr" aria-hidden="true">${m.arr}</span></th>`; };
+  const chip=(key,label,cls)=>{ const m=sortMeta(key);
+    return `<span class="cc-sort" data-key="${esc(key)}" role="button" tabindex="0" aria-sort="${m.aria}" title="Sort by ${esc(cls)} ${esc(label==='Lv'?'level':'fit %')}">${label}<span class="arr" aria-hidden="true">${m.arr}</span></span>`; };
+  const subTh=(leaf,first)=>{ const fc=first?" grp-start":"";
+    if(leaf.dual) return `<th class="classcol${fc}"><div class="cc-name">${esc(leaf.label)}</div><div class="cc-sorts">${chip("clslv:"+leaf.cls,"Lv",leaf.cls)}${chip("clsfit:"+leaf.cls,"Fit",leaf.cls)}</div></th>`;
+    const m=sortMeta(leaf.key);
+    return `<th class="${first?'grp-start':''}" data-key="${esc(leaf.key)}" aria-sort="${m.aria}" tabindex="0" role="button" title="Sort by ${esc(leaf.label)}">${esc(leaf.label)}<span class="arr" aria-hidden="true">${m.arr}</span></th>`; };
   const grpTh=(key,label,short,cols)=> rosterCollapsed.has(key)
     ? `<th class="grp collapsed" data-grp="${esc(key)}" rowspan="2" tabindex="0" role="button" aria-expanded="false" title="Show ${esc(label)}">${esc(short)} ▸</th>`
     : `<th class="grp" data-grp="${esc(key)}" ${cols?`colspan="${cols}"`:`rowspan="2"`} tabindex="0" role="button" aria-expanded="true" title="Collapse ${esc(label)}">◂ ${esc(label)}</th>`;
@@ -1696,7 +1735,7 @@ function rosterRender(){
   const row2=[];
   groups.forEach(g=>{
     row1.push(grpTh(g.key,g.label,g.short,g.cols.length));
-    if(!rosterCollapsed.has(g.key)) g.cols.forEach(leaf=>row2.push(subTh(leaf)));
+    if(!rosterCollapsed.has(g.key)) g.cols.forEach((leaf,i)=>row2.push(subTh(leaf, i===0)));
   });
   const head=`<tr>${row1.join("")}</tr><tr>${row2.join("")}</tr>`;
   // Quick View: the old list's at-a-glance, reordered (Appearance / Job / Class / Rec Job / Rec Class).
@@ -1716,26 +1755,29 @@ function rosterRender(){
     const cells=[`<td class="prev">${thumb}</td>`,
       `<td class="name"><a class="cat-ext" href="${esc(catUrl(id))}" target="_blank" rel="noopener"><b>${esc(c.name||("#"+id))}</b></a></td>`,
       `<td class="idcol">${esc(id)}</td>`,
-      quickOpen ? `<td class="qv">${quickCell(id)}</td>` : `<td class="strip" data-grp="quick" title="Show Quick View">⋯</td>`];
+      quickOpen ? `<td class="qv grp-start">${quickCell(id)}</td>` : `<td class="strip grp-start" data-grp="quick" title="Show Quick View">⋯</td>`];
     groups.forEach(g=>{
-      if(rosterCollapsed.has(g.key)){ cells.push(`<td class="strip" data-grp="${esc(g.key)}" title="Show ${esc(g.label)}">⋯</td>`); return; }
-      g.cols.forEach(leaf=>{
+      if(rosterCollapsed.has(g.key)){ cells.push(`<td class="strip grp-start" data-grp="${esc(g.key)}" title="Show ${esc(g.label)}">⋯</td>`); return; }
+      g.cols.forEach((leaf,ci)=>{
         const v=rosterCellValue(r,cache,id,leaf.key);
         const isData = leaf.key.indexOf("data:")===0;
-        let cell, tdcls="", tdtitle="";
-        if(leaf.key==="sugclass"||leaf.key==="sugjobs"||leaf.key==="sugclasspct"){ cell = v?`<span class="sug">${esc(v)}</span>`:"—"; }
+        let cell, tdcls=ci===0?"grp-start":"", tdtitle="";
+        const addcls=x=>{ tdcls=tdcls?(tdcls+" "+x):x; };
+        if(leaf.dual){
+          addcls("classcell");
+          const lvl=rosterCellValue(r,cache,id,"clslv:"+leaf.cls), fit=rosterCellValue(r,cache,id,"clsfit:"+leaf.cls);
+          cell = `<div><span class="qv-k">Lv:</span> ${lvl?esc(lvl):"—"}</div><div><span class="qv-k">Fit:</span> ${fit?`<span class="sug">${esc(fit)}</span>`:"—"}</div>`;
+        }
+        else if(leaf.key==="sugclass"||leaf.key==="sugjobs"||leaf.key==="sugclasspct"){ cell = v?`<span class="sug">${esc(v)}</span>`:"—"; }
         else if(g.key==="stats" && isData && attrLabels.has(leaf.key.slice(5))){
           const label=leaf.key.slice(5), base=(c.data||{})[label+" base"], gr=statGrade(parseInt(v,10));
-          if(gr){ tdcls=gr.cls; tdtitle=`${label}: ${gr.label} · ${gr.dice}`; }
-          const boosted = v!=="" && base!=null && base!=="" && String(base)!==String(v);
-          const valHtml = boosted
-            ? `<span class="trink" title="Boosted by a trinket (base ${esc(String(base))})">${esc(v)}</span><span class="trink-up" aria-hidden="true">▲</span>`
-            : esc(v);
-          cell = valHtml + (gr?`<span class="dice">${gr.dice}</span>`:"");
-        }
-        else if(g.key==="base" && isData){
-          const gr=statGrade(parseInt(v,10)); if(gr){ tdcls=gr.cls; tdtitle=gr.label; }
-          cell = esc(v);
+          if(gr){ addcls(gr.cls); tdtitle=`${label}: ${gr.label} · ${gr.dice}`; }
+          const dice = gr?`<span class="dice">${gr.dice}</span>`:"";
+          const adjusted = v!=="" && base!=null && base!=="" && String(base)!==String(v);
+          if(adjusted){
+            addcls("statsplit"); tdtitle=`${label}: ${gr?gr.label+" · "+gr.dice+" · ":""}adjusted ${esc(v)} / base ${esc(String(base))}`;
+            cell = `<div class="stat-adj"><span class="trink">${esc(v)}</span>${dice}</div><div class="stat-base" title="base (no trinket)">${esc(String(base))}</div>`;
+          } else cell = esc(v) + dice;
         }
         else if(leaf.key.indexOf("job:")===0){ cell = v?esc(v):"—"; }
         else cell = esc(v);
@@ -2652,14 +2694,14 @@ document.addEventListener("DOMContentLoaded", ()=>{
   $("#rosterTable").addEventListener("click", e=>{
     if(e.target.closest("a")) return;                       // name link → open the cat's page
     const grp=e.target.closest("[data-grp]"); if(grp){ toggleRosterGroup(grp.getAttribute("data-grp")); return; }
-    const th=e.target.closest("th[data-key]"); if(th){ toggleRosterSort(th.getAttribute("data-key")); return; }
+    const sk=e.target.closest("[data-key]"); if(sk){ toggleRosterSort(sk.getAttribute("data-key")); return; }
     const tr=e.target.closest("tr[data-id]"); if(tr) pickFromRoster(tr.getAttribute("data-id"));
   });
   $("#rosterTable").addEventListener("keydown", e=>{
     if(!(e.key==="Enter"||e.key===" ")) return;
     const grp=e.target.closest&&e.target.closest("[data-grp]"); if(grp){ e.preventDefault(); toggleRosterGroup(grp.getAttribute("data-grp")); return; }
-    const th=e.target.closest&&e.target.closest("th[data-key]");
-    if(th){ e.preventDefault(); toggleRosterSort(th.getAttribute("data-key")); }
+    const sk=e.target.closest&&e.target.closest("[data-key]");
+    if(sk){ e.preventDefault(); toggleRosterSort(sk.getAttribute("data-key")); }
   });
 
   // bulk-suggest across the shown cats (fetches each page, throttled)

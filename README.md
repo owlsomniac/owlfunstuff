@@ -32,17 +32,21 @@ a `base X · +N Item` breakdown.
 
 The roster itself is one **searchable, filterable, sortable table** (zebra-striped, with full-size portraits).
 **Preview, Name and ID stay on the left** (Name links to the cat's own page); every other column is grouped under a
-**collapsible header** — click a group (*Basic info · Appearance · Jobs · Adventure Classes · Personality · Stats ·
-Base stats*) to fold it away to the left. A collapsible **Quick View** column gives the at-a-glance summary
-(appearance, current job & class, recommended job/class). **Click any column sub-header to sort.** Highlights:
+**collapsible header** — click a group (*Basic info · Appearance · Jobs · Adventure Classes · Personality · Stats*)
+to fold it away to the left. Groups are separated by clear **3px dividers** so they never run together when expanded.
+A collapsible **Quick View** column gives the at-a-glance summary (appearance, current job & class, recommended
+job/class). **Click any column sub-header to sort.** Highlights:
 
 - **Appearance** — a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or *None*) and an **Accent**
   column (the game shows accent only when it's visible, so cats without a revealed accent read **Unknown**).
 - **Stats** — each total is tinted by its game **grade** (ROYGBP pastels: Poor · Average · Good · Very Good ·
-  Excellent · Exceptional) and shows its **dice pool** (1d6–9d6); a trinket-boosted total is bold with a ▲.
-- **Jobs** — one column per day job reading **`Lv. N (+M)`**: its level plus its governing attribute's modifier.
-- **Adventure Classes** — a **Fit %** column (how well the cat matches the recommended class's ideal —
-  `0.55 × attributes + 0.45 × personality`).
+  Excellent · Exceptional) and shows its **dice pool** (1d6–9d6). A trinket-adjusted stat **splits** the cell — the
+  adjusted total on top, the base value below — and sorts by the (higher) adjusted number.
+- **Jobs** — one column per day job (alphabetized) reading **`Lv. N (+M)`**: its level plus its governing
+  attribute's modifier.
+- **Adventure Classes** — one column per class (Fighter … Bard) reading **`Lv: N`** / **`Fit: X%`** (level defaults
+  to 1 when the page doesn't list it; Fit % is how well the cat matches that class's ideal, `0.55 × attributes +
+  0.45 × personality`). Each header has separate **Lv** and **Fit** sort buttons.
 
 **Suggest for shown cats** computes recommendations in bulk.
 
