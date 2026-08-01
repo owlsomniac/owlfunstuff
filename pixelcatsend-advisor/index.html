@@ -440,14 +440,77 @@ function extractSearchText(doc){
   return doc.body ? doc.body.textContent : "";
 }
 
+function numFrom(s){
+  const m = String(s==null?"":s).match(/-?\d+/);
+  return m ? parseInt(m[0],10) : null;
+}
+
+function parseStatboxes(doc, out){
+  // Real Pixel Cat's End pages render each stat as a structured box, e.g.:
+  //   <div class="statbox sb-exceptional" id="luck-box">
+  //     <p class="stat-name">Luck</p>
+  //     <p class="stat-main" id="luck-num">27</p>
+  //     <div class="stat-plusgroup"><p class="stat-dice">6d6</p><p class="stat-bonus">+7</p></div>
+  //     <p class="stat-descr">Exceptional</p></div>
+  // stat-main is the EFFECTIVE value (base + any equipped item). Reading these boxes
+  // directly is far more reliable than a text regex, which would otherwise grab an
+  // equipped item's "+N Luck" badge that appears elsewhere on the page first.
+  const boxes = doc.querySelectorAll('.statbox, div[id$="-box"]');
+  boxes.forEach(box=>{
+    const nameEl = box.querySelector('.stat-name');
+    const mainEl = box.querySelector('.stat-main');
+    if(!nameEl || !mainEl) return;
+    const name = (nameEl.textContent||"").trim().toLowerCase();
+    const val = numFrom(mainEl.textContent);
+    if(val==null) return;
+    const detail = {
+      dice:  (box.querySelector('.stat-dice')  ?.textContent||"").trim(),
+      bonus: (box.querySelector('.stat-bonus') ?.textContent||"").trim(),
+      descr: (box.querySelector('.stat-descr') ?.textContent||"").trim()
+    };
+    const attr = ATTRS.find(a=>a.label.toLowerCase()===name);
+    const per  = PERS.find(p=>p.label.toLowerCase()===name);
+    if(attr){ out.attributes[attr.key]=val; out.details[attr.key]=detail; }
+    else if(per){ out.personality[per.key]=val; out.details[per.key]=detail; }
+  });
+}
+
+function parseTrinkets(doc, out){
+  // Equipped items render as e.g.
+  //   <div class="trinket-group">Held Trinket:
+  //     <div class="trinket-subgroup"><div class="bio-group-label">Raw Essence Crystal <br>[Luck +3]</div></div></div>
+  // The "[Luck +3]" bracket is the stat effect; the text before "[" is the item name.
+  doc.querySelectorAll('.bio-group-label').forEach(el=>{
+    const txt = (el.textContent||"").replace(/\s+/g," ").trim();
+    if(txt.indexOf("[")<0) return;
+    const name = txt.split("[")[0].replace(/^(held\s+trinket|equipped|trinket)\s*:?\s*/i,"").trim();
+    const re = /\[([A-Za-z][A-Za-z ]*?)\s*([+\-]\s*\d+)\]/g;
+    let m;
+    while((m=re.exec(txt))!==null){
+      const label = m[1].trim().toLowerCase();
+      const bonus = parseInt(m[2].replace(/\s+/g,""),10);
+      if(isNaN(bonus)) continue;
+      const attr = ATTRS.find(a=>a.label.toLowerCase()===label);
+      const per  = PERS.find(p=>p.label.toLowerCase()===label);
+      const key = attr?attr.key : per?per.key : null;
+      if(!key) continue;
+      (out.equips[key]=out.equips[key]||[]).push({item:name||"Equipped item", bonus});
+    }
+  });
+}
+
 function parseCatHTML(html){
-  const out = {name:"", image:"", id:"", attributes:{}, personality:{}, warnings:[]};
+  const out = {name:"", image:"", id:"", attributes:{}, personality:{}, details:{}, equips:{}, warnings:[]};
   let doc;
   try{ doc = new DOMParser().parseFromString(html, "text/html"); }
   catch(e){ out.warnings.push("Could not parse the HTML."); return out; }
 
   // strip non-content nodes so their text can't pollute matches
   doc.querySelectorAll("script,style,noscript,svg").forEach(n=>n.remove());
+
+  // Preferred path: structured stat boxes (gives the effective total + dice/mod/rating).
+  parseStatboxes(doc, out);
+  parseTrinkets(doc, out);
 
   // --- name ---
   const og = doc.querySelector('meta[property="og:title"],meta[name="og:title"]');
@@ -471,17 +534,28 @@ function parseCatHTML(html){
   const idm = html.match(/cat&id=(\d+)/i);
   if(idm) out.id = idm[1];
 
-  // --- numbers: read collapsed body text ---
+  // Fallback for anything the stat boxes didn't cover (older/alternate layouts).
   // Join text nodes with spaces so adjacent elements (e.g. on a minified page)
   // don't glue into "GreatAgility", which would defeat the \bLabel\b anchors.
   const text = extractSearchText(doc).replace(/\s+/g," ");
   ATTRS.forEach(a=>{
+    if(out.attributes[a.key]!=null) return;
     const v = findLabeledNumber(text, a.label, 1, 40);
     if(v!=null) out.attributes[a.key]=v;
   });
   PERS.forEach(p=>{
+    if(out.personality[p.key]!=null) return;
     const v = findLabeledNumber(text, p.label, 0, 30);
     if(v!=null) out.personality[p.key]=v;
+  });
+
+  // derive base = effective total − sum of equipped bonuses, per stat
+  Object.keys(out.equips).forEach(key=>{
+    const total = (out.attributes[key]!=null) ? out.attributes[key] : out.personality[key];
+    if(total==null) return;
+    const sum = out.equips[key].reduce((s,e)=>s+e.bonus,0);
+    const d = out.details[key] = out.details[key] || {};
+    d.total = total; d.equipSum = sum; d.base = total - sum; d.equips = out.equips[key];
   });
 
   const gotA = Object.keys(out.attributes).length, gotP = Object.keys(out.personality).length;
@@ -649,6 +723,14 @@ const PLACEHOLDER_IMG = ("data:image/svg+xml;utf8,"+encodeURIComponent(
 
 function pct(v,max){ return v==null?0:clamp(Math.round(v/max*100),0,100); }
 
+function breakdownLine(d){
+  // "base 24 · +3 Raw Essence Crystal" — shown only when the stat carries an equip bonus
+  if(!d || !d.equips || !d.equips.length || d.base==null) return "";
+  const items = d.equips.map(e=>`${e.bonus>=0?"+":""}${e.bonus} ${esc(e.item)}`).join(", ");
+  const sign = d.equipSum>=0?"+":"";
+  return `<div class="rate" title="base ${d.base} ${sign}${d.equipSum} equip = ${d.total} total">base ${d.base} · ${items}</div>`;
+}
+
 function renderResults(cat){
   const classes = scoreClasses(cat);
   const jobsData = recommendJobs(cat);
@@ -658,10 +740,17 @@ function renderResults(cat){
 
   const attrRows = ATTRS.map(a=>{
     const v=cat.attributes[a.key], r=attrRating(v);
+    const d=(cat.details&&cat.details[a.key])||{};
+    const rating = d.descr || r.label;           // prefer the page's own rating word
+    const extras=[];
+    if(d.dice)  extras.push(esc(d.dice));         // adventuring dice pool
+    if(d.bonus) extras.push("job "+esc(d.bonus)); // day-job modifier
+    const extraLine = extras.length?`<div class="rate">${extras.join(" · ")}</div>`:"";
+    const breakdown = breakdownLine(d);           // "base 24 · +3 Raw Essence Crystal" when equipped
     return `<div class="stat-line">
       <div class="name">${a.label}<small>${a.short}</small></div>
       <div class="bar"><span style="width:${pct(v,ATTR_MAX)}%"></span></div>
-      <div><div class="val">${v??"—"}</div><div class="rate">${r.label}</div></div>
+      <div><div class="val">${v??"—"}</div><div class="rate">${esc(rating)}</div>${breakdown}${extraLine}</div>
     </div>`;
   }).join("");
 
@@ -671,10 +760,12 @@ function renderResults(cat){
       : lean==="high"? `<span class="pill g">${esc(p.high)}</span>`
       : lean==="low" ? `<span class="pill b">${esc(p.low)}</span>`
       : `<span class="pill n">Balanced</span>`;
+    const d=(cat.details&&cat.details[p.key])||{};
+    const breakdown = breakdownLine(d);
     return `<div class="stat-line">
       <div class="name">${p.label}<small>${esc(p.low)} ↔ ${esc(p.high)}</small></div>
       <div class="bar p"><span style="width:${pct(v,PERS_DISPLAY_MAX)}%"></span></div>
-      <div><div class="val">${v??"—"}</div><div class="rate">${tag}</div></div>
+      <div><div class="val">${v??"—"}</div><div class="rate">${tag}</div>${breakdown}</div>
     </div>`;
   }).join("");
 
@@ -822,6 +913,10 @@ function renderResults(cat){
     </table></div>
     <p>Bravery bonus = <code>min(5, floor(value ÷ 2))</code>. Energy, Extroversion and Dedication give
     <b>situational exploration advantages only</b> — the guide is explicit that they do not feed dedicated combat stats or scale heals.</p>
+    <h4>Effective totals &amp; equipment</h4>
+    <p>Each stat's big number is the <b>effective total</b> (base + equipped items), read straight from the cat's stat boxes.
+    When a held trinket boosts a stat, the row also shows <code>base · +N Item name</code> — e.g. <code>base 24 · +3 Raw Essence Crystal</code>
+    for an effective Luck of 27. Recommendations use the effective total.</p>
     <h4>Class fit</h4>
     <p>Each class scores <code>0.55 × attribute-fit + 0.45 × personality-fit</code>. Attribute-fit weights that class's core stat highest;
     personality-fit rewards the profile it wants (e.g. Fighter wants high Bravery, Thief wants low Benevolence + low Extroversion, Bard wants a polarised Benevolence).</p>
@@ -867,17 +962,34 @@ function fillSheet(cat){
   $("#sheetThumb").onerror = function(){ this.onerror=null; this.src=PLACEHOLDER_IMG; };
   ATTRS.forEach(a=>{ $("#in-"+a.key).value = (cat.attributes[a.key]??""); });
   PERS.forEach(p=>{ $("#in-"+p.key).value = (cat.personality[p.key]??""); });
+  currentDetails = cat.details || {};
+  currentEquips  = cat.equips  || {};
   const f = cat.warnings && cat.warnings.length ? "⚠ "+cat.warnings.join("  ") : "";
   $("#sheetFlags").textContent = f;
   $("#sheetCard").scrollIntoView({behavior:"smooth",block:"nearest"});
 }
 function readSheet(){
-  const cat={name:$("#sheetName").value.trim(), image:$("#sheetImg").value.trim(), id:currentId, attributes:{}, personality:{}, warnings:[]};
+  const cat={name:$("#sheetName").value.trim(), image:$("#sheetImg").value.trim(), id:currentId, attributes:{}, personality:{}, details:{}, equips:currentEquips, warnings:[]};
   ATTRS.forEach(a=>{ const raw=$("#in-"+a.key).value.trim(); if(raw!==""){ const n=parseInt(raw,10); if(!isNaN(n)) cat.attributes[a.key]=n; } });
   PERS.forEach(p=>{ const raw=$("#in-"+p.key).value.trim(); if(raw!==""){ const n=parseInt(raw,10); if(!isNaN(n)) cat.personality[p.key]=n; } });
+  // rebuild per-stat details: keep the page's dice/mod/rating, and recompute base
+  // from the (possibly hand-edited) effective total minus the equipped bonuses.
+  [...ATTRS, ...PERS].forEach(s=>{
+    const key=s.key, src=currentDetails[key]||{};
+    const total = (cat.attributes[key]!=null) ? cat.attributes[key] : cat.personality[key];
+    const det = {dice:src.dice, bonus:src.bonus, descr:src.descr};
+    const eq = currentEquips[key];
+    if(eq && eq.length && total!=null){
+      const sum = eq.reduce((s2,e)=>s2+e.bonus,0);
+      det.equips=eq; det.total=total; det.equipSum=sum; det.base=total-sum;
+    }
+    if(det.dice||det.bonus||det.descr||det.equips) cat.details[key]=det;
+  });
   return cat;
 }
 let currentId = "";
+let currentDetails = {};
+let currentEquips = {};
 
 /* =========================================================================
    6. UI WIRING
@@ -988,30 +1100,39 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
 /* Demo data + a realistic sample page for the paste parser */
 function DEMO_CAT(){
-  return {name:"Mochi", image:PLACEHOLDER_IMG, id:"430432", warnings:[],
-    attributes:{strength:19,agility:16,health:14,finesse:11,cleverness:9,perception:13,luck:12},
-    personality:{bravery:9,benevolence:12,energy:9,extroversion:8,dedication:8}};
+  // Derive the demo straight from the sample page so the two never drift apart.
+  const c = parseCatHTML(SAMPLE_HTML());
+  c.name = c.name || "Mochi"; c.id = "430432";
+  return c;
 }
 function SAMPLE_HTML(){
+  // Mirrors a real Pixel Cat's End profile: structured stat boxes + an equipped trinket.
+  // Luck shows 27 effective, and the Raw Essence Crystal grants +3, so base Luck is 24.
+  const box = (key,name,val,dice,bonus,descr,cls)=>
+    `<div class="statbox ${cls||''}" id="${key}-box"><p class="stat-name">${name}</p>`+
+    `<p class="stat-main" id="${key}-num">${val}</p>`+
+    (dice?`<div class="stat-plusgroup"><p class="stat-dice">${dice}</p><p class="stat-bonus">${bonus}</p></div>`:'')+
+    `<p class="stat-descr">${descr}</p></div>`;
   return `<!doctype html><html><head><title>Mochi | Cat's End</title>
-<meta property="og:title" content="Mochi | Cat's End">
-</head><body>
+<meta property="og:title" content="Mochi | Cat's End"></head><body>
 <h1>Mochi</h1>
+<div class="trinket-group">Held Trinket:
+  <div class="trinket-subgroup"><div class="bio-group-label">Raw Essence Crystal <br>[Luck +3]</div></div></div>
 <div class="stats">
-  <div class="stat">Strength &middot; 19 &nbsp; 5d6 &nbsp; +2 &nbsp; Great</div>
-  <div class="stat">Agility &middot; 16 &nbsp; 4d6 &nbsp; +1 &nbsp; Good</div>
-  <div class="stat">Health &middot; 14 &nbsp; 4d6 &nbsp; +1 &nbsp; Good</div>
-  <div class="stat">Finesse &middot; 11 &nbsp; 3d6 &nbsp; +0 &nbsp; Average</div>
-  <div class="stat">Cleverness &middot; 9 &nbsp; 3d6 &nbsp; +0 &nbsp; Average</div>
-  <div class="stat">Perception &middot; 13 &nbsp; 3d6 &nbsp; +0 &nbsp; Good</div>
-  <div class="stat">Luck &middot; 12 &nbsp; 3d6 &nbsp; +0 &nbsp; Average</div>
+  ${box("strength","Strength",19,"5d6","+2","Great","sb-great")}
+  ${box("agility","Agility",16,"4d6","+1","Good","sb-good")}
+  ${box("health","Health",14,"4d6","+1","Good","sb-good")}
+  ${box("finesse","Finesse",11,"3d6","+0","Average","sb-average")}
+  ${box("cleverness","Cleverness",9,"3d6","+0","Average","sb-average")}
+  ${box("perception","Perception",13,"3d6","+0","Good","sb-good")}
+  ${box("luck","Luck",27,"6d6","+7","Exceptional","sb-exceptional")}
 </div>
 <div class="personality">
-  <div>Bravery: 9</div>
-  <div>Benevolence: 12</div>
-  <div>Energy: 9</div>
-  <div>Extroversion: 8</div>
-  <div>Dedication: 8</div>
+  ${box("bravery","Bravery",9,"","","Fearless")}
+  ${box("benevolence","Benevolence",12,"","","Kindly")}
+  ${box("energy","Energy",9,"","","Energetic")}
+  ${box("extroversion","Extroversion",8,"","","Outgoing")}
+  ${box("dedication","Dedication",8,"","","Devoted")}
 </div>
 </body></html>`;
 }
