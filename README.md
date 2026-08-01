@@ -37,8 +37,9 @@ to fold it away to the left. Groups are separated by clear **3px dividers** so t
 A collapsible **Quick View** column gives the at-a-glance summary (appearance, current job & class, recommended
 job/class). **Click any column sub-header to sort.** Highlights:
 
-- **Appearance** — a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or *None*) and an **Accent**
-  column (the game shows accent only when it's visible, so cats without a revealed accent read **Unknown**).
+- **Appearance** — a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or *None*), a **Density** column
+  (the coat's colour density / dilution level, **1–4**, recovered from its colour) and an **Accent** column (the game
+  shows accent only when it's visible, so cats without a revealed accent read **Unknown**).
 - **Stats** — each total is tinted by its game **grade** (ROYGBP pastels: Poor · Average · Good · Very Good ·
   Excellent · Exceptional) and shows its **dice pool** (1d6–9d6). A trinket-adjusted stat **splits** the cell — the
   adjusted total on top, the base value below — and sorts by the (higher) adjusted number.
@@ -85,11 +86,15 @@ your cats with known genetics for ones that could produce it, ranked by the chan
 excluded). Offspring stats aren't genetically determined, so the two stat fields instead constrain the **parents** (only pair
 cats whose total attributes / personality meet a minimum). Click a result to load that pair into the predictor.
 
-Either way you get each kitten's odds for **coat colour** (standard / watercolor / tortoiseshell / snow, with swatches), **wind**,
-**fur length**, **pattern** (all 15 named combinations — Mackerel, Rosette, Karpati…), **white markings** (named per level &amp;
-type, e.g. *Bib &amp; Boots*), **accent colour** (Ruby, Amber, Teal…), and **species** — plus each parent's decoded phenotype
-(shown as **labelled facts** — Coat / Pattern / Wind / Fur / White / Accent / Species — with its name/#ID linking to the cat's
-page when picked from your roster). Parents and **every** possible kitten get **composited sprite previews** built from the
+Either way you get each kitten's odds for **coat colour** (standard / watercolor / tortoiseshell / snow, with swatches),
+**colour density** (1–4, the dilution level), **wind**, **fur length**, **pattern** (all 15 named combinations — Mackerel,
+Rosette, Karpati…), **white markings** (named per level &amp; type, e.g. *Bib &amp; Boots*), **accent colour** (Ruby, Amber,
+Teal…), and **species**. Under every outcome the possible **allele pairs** are listed (e.g. accent `[RR]` × `[LL]` →
+*Pink* `[RL] / [LR]`); colour alleles honour each parent's **wind** (which slot each donates), and traits that aren't a
+two-allele cross (species, white type & level, density) show a short inheritance note instead. A pattern only names its
+type when it's actually shown (a solid cat reads **Solid**, never a leaked hidden type), and an **unknown accent stays
+unknown** rather than defaulting to Ruby. Plus each parent's decoded phenotype (shown as **labelled facts** — Coat /
+Pattern / Wind / Fur / White / Accent / Species — with its name/#ID linking to the cat's page when picked from your roster). Parents and **every** possible kitten get **composited sprite previews** built from the
 game's own image layers, each **cropped to a single pose** (correct per-species offsets for Not-cats and Mercats) — pick
 **standing / sitting / playing / sleeping / upsidedown** from the pose selector. Kitten previews default to **no white**; a
 **white-marking picker** under the header lets you try each possible level & type on all of them at once. A missing layer

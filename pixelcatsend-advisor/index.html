@@ -355,6 +355,9 @@
   .dist-bar{height:9px;border-radius:99px;background:var(--panel2);overflow:hidden;border:1px solid var(--line-soft)}
   .dist-bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--violet),var(--violet-ink))}
   .dist-row .pctv{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:12.5px}
+  .geno-line{display:flex;flex-wrap:wrap;gap:5px;margin:1px 0 5px;padding-left:2px}
+  .geno{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.5px;color:inherit;background:var(--panel2);border:1px solid var(--line-soft);border-radius:5px;padding:0 5px;line-height:16px;opacity:.85}
+  .geno-note{font-size:11.5px;font-style:italic;color:var(--muted);margin:0 0 5px}
   .breed-warn{color:var(--warn-ink);font-size:13px;margin-top:8px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:var(--radius-sm);padding:8px 11px}
   .pheno-head{display:flex;gap:12px;align-items:flex-start;margin-top:6px}
   .catprev{position:relative;flex:0 0 auto;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--panel2)}
@@ -1605,6 +1608,7 @@ function rosterCellValue(r,cache,id,key){
   if(key==="id")   return id;
   if(key==="white") return catWhiteText(r.cats[id].data);
   if(key==="accent") return catAccentText(r.cats[id]);
+  if(key==="density") return catDensity(r.cats[id]);
   if(key==="sugclass")    return (cache[id]&&cache[id].className)||"";
   if(key==="sugclasspct") return (cache[id]&&cache[id].classPct)?cache[id].classPct+"%":"";
   if(key==="sugjobs")     return (cache[id]&&cache[id].jobs||[]).join(", ");
@@ -1706,7 +1710,8 @@ function rosterColumnModel(r){
     const cols=[];
     if(extrasFirst) (g.extra||[]).forEach(x=>cols.push(x));
     sortByPref(bucket[gk], g.pref).forEach(h=>cols.push({key:"data:"+h,label:h}));
-    if(gk==="appear"){ if(hasWhite) cols.push({key:"white",label:"White"});
+    if(gk==="appear"){ if(cols.length) cols.push({key:"density",label:"Density"});   // colour density / dilution level (1–4)
+      if(hasWhite) cols.push({key:"white",label:"White"});
       if(cols.length) cols.push({key:"accent",label:"Accent"}); }   // Accent after White
     if(gk==="jobs" && hasJobData) JOB_SKILLS.forEach(js=>cols.push({key:"job:"+js.job, label:js.job}));
     // Adventure Classes: one dual (Lv + Fit%) column per class, in class order.
@@ -1922,6 +1927,21 @@ function catAccentText(cat){
   if(revealed && cat.genes){ const g=parseGeneString(cat.genes); if(!g.error){ const a=phenotype(g).accent; if(a) return a; } }
   return "Unknown";
 }
+// A roster cat's coat-colour density (1–4) — the "dilution level" of its shade.
+// Read from its genetic string when we have one, else recovered from the displayed
+// colour name (each colour word pins a group + dilute + density).
+function catDensity(cat){
+  cat=cat||{}; const data=cat.data||{};
+  if(cat.genes){ const g=parseGeneString(cat.genes); if(!g.error && g.density>=1 && g.density<=4) return String(g.density); }
+  const cname=String(data["Color"]||data["Colour"]||"").toLowerCase()
+    .replace(/\b(standard|solid)\b/g,"").replace(/tortoiseshell|tortie|watercolou?r/g,"").trim();
+  if(cname){
+    const first=cname.split(/[-\s/]+/).filter(Boolean)[0];   // "black-red" tortie → main colour word
+    const c=COLOR_REV[first]||COLOR_REV[cname];
+    if(c && c.density) return String(c.density);
+  }
+  return "";
+}
 
 function windName(a,b){
   const hasN=(a==="N"||b==="N"), hasS=(a==="S"||b==="S");
@@ -1984,7 +2004,7 @@ function phenotype(g){
     wind, fur, dilute,
     color: color.label, colorHex: color.hex, colorHex2: color.hex2||null, coatType: color.coatType,
     colorPrimary: color.colors[0], colors: color.colors,
-    pattern: patterned ? patternBase : "Solid ("+patternBase+" hidden)",
+    pattern: patterned ? patternBase : "Solid",
     patterned, patternBase,
     whiteLevel: g.whiteLevel, whiteType: g.whiteType, showsWhite,
     white: showsWhite ? ("White "+g.whiteLevel+" · "+(whiteMarkName(g.whiteType,g.whiteLevel)||WHITE_TYPE[g.whiteType]||g.whiteType)) : "No-white",
@@ -2008,6 +2028,26 @@ function displayedColor(wind, x, y, dilute, density){
 function mapAdd(m,k,p){ m.set(k,(m.get(k)||0)+p); }
 function donate(pair){ return pair[0]===pair[1] ? [[pair[0],1]] : [[pair[0],0.5],[pair[1],0.5]]; }
 function toSorted(dist){ return [...dist.entries()].sort((a,b)=>b[1]-a[1]); }
+
+// Possible offspring genotypes for a simple 2-allele locus (one allele donated by
+// each parent), grouped by the phenotype they produce. Order carries no meaning
+// here, so a heterozygote is shown both ways ([xy] / [yx]) and a homozygote once.
+// Returns Map(phenotypeLabel -> array of allele-pair chip strings).
+function genoPairsSym(pairA, pairB, nameOf){
+  const a=[...new Set((pairA||[]).filter(Boolean))], b=[...new Set((pairB||[]).filter(Boolean))];
+  const byPheno=new Map();   // pheno -> Map(sortedKey -> ordered "xy" with A's allele first)
+  a.forEach(x=>b.forEach(y=>{
+    const ph=nameOf(x,y), key=[x,y].sort().join("");
+    if(!byPheno.has(ph)) byPheno.set(ph,new Map());
+    if(!byPheno.get(ph).has(key)) byPheno.get(ph).set(key, x+y);   // parent A's allele first
+  }));
+  const out=new Map();
+  byPheno.forEach((m,ph)=>out.set(ph,[...m.values()].map(pr=>{
+    const x=pr[0],y=pr[1];
+    return x===y ? ("["+x+x+"]") : ("["+x+y+"] / ["+y+x+"]");
+  })));
+  return out;
+}
 
 function windDist(A,B){
   const m=new Map();
@@ -2084,7 +2124,7 @@ function coatColorDist(A,B){
     const map={A,B};
     assignments.push({w:1, s1:alleleDist(map[roles.s1]), s2:alleleDist(map[roles.s2])});
   }
-  const out=new Map(); const hexOf=new Map();
+  const out=new Map(); const hexOf=new Map(); const genoSet=new Map();
   wD.forEach((pw,wind)=>{
     assignments.forEach(asg=>{
       asg.s1.forEach(([x,px])=>asg.s2.forEach(([y,py])=>{
@@ -2095,12 +2135,17 @@ function coatColorDist(A,B){
             const c=displayedColor(wind,x,y,dil==="Dilute",den);
             mapAdd(out,c.label,p);
             if(!hexOf.has(c.label)) hexOf.set(c.label,c.hex);
+            // the coat-allele pair, in slot order (slot1=north/main, slot2=south/trade).
+            // Snow ignores the colour alleles entirely, so record nothing there.
+            if(wind!=="Null"){ if(!genoSet.has(c.label)) genoSet.set(c.label,new Set()); genoSet.get(c.label).add(x+y); }
           });
         });
       }));
     });
   });
-  return {dist:out, hex:hexOf};
+  const genos=new Map();
+  genoSet.forEach((set,label)=>genos.set(label,[...set].map(k=>"["+k+"]")));
+  return {dist:out, hex:hexOf, genos};
 }
 
 /* ---------- full litter prediction ---------- */
@@ -2237,15 +2282,19 @@ function phenotypeToGeneString(t){
     else guessed.push("white");
   } else guessed.push("white");
 
-  let accent=["R","R"];
+  // Accent shows only when it's visible in-game. If it's unknown/hidden, OMIT the
+  // accent section entirely (→ a 7-section string) so breeding treats accent as
+  // unknown instead of silently defaulting it to Ruby.
+  let accent=null;
   const aName=norm(t.accent).toLowerCase();
-  if(aName && aName!=="hidden"){ const ar=ACCENT_REV[aName]; if(ar){ accent=ar; resolved.push("accent"); } else guessed.push("accent"); }
+  if(aName && !/^(hidden|unknown|n\/a|none|-)$/.test(aName)){ const ar=ACCENT_REV[aName]; if(ar){ accent=ar; resolved.push("accent"); } else guessed.push("accent"); }
   else guessed.push("accent");
 
   const coat=color[0]+color[1]+dil[0]+dil[1]+density;
   const pattern=patVis[0]+patVis[1]+pat[0]+pat[1];
   const white=whiteVis[0]+whiteVis[1]+whiteLevel+whiteType;
-  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB] [${accent.join("")}]`;
+  const base=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB]`;
+  const str=accent ? (base+` [${accent.join("")}]`) : base;
   return { str, resolved, guessed };
 }
 
@@ -2317,7 +2366,8 @@ function phenoLabelToGeneString(p){
   const coat=color[0]+color[1]+dil[0]+dil[1]+density;
   const pattern=patVis[0]+patVis[1]+pat[0]+pat[1];
   const white=whiteVis[0]+whiteVis[1]+whiteLevel+whiteType;
-  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB] [RR]`;
+  // aria-labels never expose accent → omit the accent section (unknown, not Ruby).
+  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB]`;
   return { str, resolved, guessed };
 }
 
@@ -2472,16 +2522,21 @@ function runFinder(w){
 /* ---------- breeding render ---------- */
 function distRows(dist, opts){
   opts = opts || {};
+  const genos = opts.genos && opts.genos.get ? opts.genos : null;   // Map(distKey -> [chip,...])
+  const note = opts.note ? `<div class="geno-note">${esc(opts.note)}</div>` : "";
   const entries = [...dist.entries()].sort((a,b)=>b[1]-a[1]);
-  return entries.map(([k,p])=>{
+  const rows = entries.map(([k,p])=>{
     const pctv = p*100;
     const label = opts.map ? (opts.map[k]||k) : k;
     const hex = opts.hex && opts.hex.get ? opts.hex.get(k) : null;
     const sw = hex ? `<span class="swatch" style="background:${esc(hex)}"></span>` : "";
+    const gk = genos ? genos.get(k) : null;
+    const genoLine = (gk && gk.length) ? `<div class="geno-line">${gk.map(g=>`<span class="geno">${esc(g)}</span>`).join("")}</div>` : "";
     return `<div class="dist-row"><div class="lab">${sw}<span class="nm">${esc(label)}</span></div>`+
       `<div class="dist-bar"><span style="width:${Math.max(2,Math.round(pctv))}%"></span></div>`+
-      `<div class="pctv">${pctv<9.95?pctv.toFixed(1):Math.round(pctv)}%</div></div>`;
+      `<div class="pctv">${pctv<9.95?pctv.toFixed(1):Math.round(pctv)}%</div></div>`+genoLine;
   }).join("");
+  return note + rows;
 }
 function parentCard(title, g, meta){
   const who = (meta&&meta.name)
@@ -2565,8 +2620,16 @@ function renderBreeding(strA, strB){
   const warn = R.compatible ? "" :
     `<div class="breed-warn">These two can't have biological kittens — ${esc(phenotype(A).wind)} × ${esc(phenotype(B).wind)} winds are incompatible (same North/North, same South/South, or a Null-wind cat). The odds below assume they could.</div>`;
   const cc = R.color;
+  const DENSITY_MAP = {1:"1 – palest",2:"2",3:"3",4:"4 – deepest"};
   const colorBlock = cc.error ? `<div class="breed-warn">${esc(cc.error)}</div>`
-    : `<div class="dist-block"><h3>Coat colour</h3>${distRows(cc.dist,{hex:cc.hex})}</div>`;
+    : `<div class="dist-block"><h3>Coat colour</h3>${distRows(cc.dist,{hex:cc.hex, genos:cc.genos})}</div>`;
+  // allele-pair possibilities for each simple two-allele locus (shown beneath every outcome)
+  const gWind    = genoPairsSym(A.wind,B.wind, windName);
+  const gFur     = genoPairsSym(A.fur,B.fur, (x,y)=>(x==="L"&&y==="L")?"Longhair":"Shorthair");
+  const gPatVis  = genoPairsSym(A.patVis,B.patVis, (x,y)=>(x==="N"&&y==="N")?"Solid":"Patterned");
+  const gPattern = genoPairsSym(A.pat,B.pat, patternName);
+  const gWhiteV  = genoPairsSym(A.whiteVis,B.whiteVis, (x,y)=>(x==="N"&&y==="N")?"No-white":"White");
+  const gAccent  = (A.accent&&A.accent.length===2&&B.accent&&B.accent.length===2) ? genoPairsSym(A.accent,B.accent, accentName) : null;
   out.innerHTML = `<div class="card">
     ${posePicker()}
     <div class="breed-parents">${parentCard("Parent A",A,breedMeta.A)}${parentCard("Parent B",B,breedMeta.B)}</div>
@@ -2574,20 +2637,21 @@ function renderBreeding(strA, strB){
     ${kittenGallery(R)}
     <div class="grid2" style="margin-top:6px">
       <div>${colorBlock}
-        <div class="dist-block"><h3>Wind</h3>${distRows(R.wind)}</div>
-        <div class="dist-block"><h3>Fur length</h3>${distRows(R.fur)}</div>
-        <div class="dist-block"><h3>Species</h3>${distRows(R.species,{map:{C:"Not-cat",M:"Mercat"}})}</div>
+        <div class="dist-block"><h3>Colour density</h3>${distRows(rangeDist(A.density,B.density),{map:DENSITY_MAP, note:"Colour density (dilution level) — lands on any value between the parents'."})}</div>
+        <div class="dist-block"><h3>Wind</h3>${distRows(R.wind,{genos:gWind})}</div>
+        <div class="dist-block"><h3>Fur length</h3>${distRows(R.fur,{genos:gFur})}</div>
+        <div class="dist-block"><h3>Species</h3>${distRows(R.species,{map:{C:"Not-cat",M:"Mercat"}, note:"Inherited whole from one parent (50/50)."})}</div>
       </div>
       <div>
-        <div class="dist-block"><h3>Pattern shown?</h3>${distRows(R.patternVisible)}</div>
-        <div class="dist-block"><h3>Pattern type</h3>${distRows(R.pattern)}</div>
-        <div class="dist-block"><h3>White shown?</h3>${distRows(R.whiteVisible)}</div>
-        <div class="dist-block"><h3>White level</h3>${distRows(R.whiteLevel)}</div>
-        <div class="dist-block"><h3>White type</h3>${distRows(R.whiteType,{map:WHITE_TYPE})}</div>
-        ${R.accent?`<div class="dist-block"><h3>Accent colour</h3>${distRows(R.accent)}</div>`:""}
+        <div class="dist-block"><h3>Pattern shown?</h3>${distRows(R.patternVisible,{genos:gPatVis})}</div>
+        <div class="dist-block"><h3>Pattern type</h3>${distRows(R.pattern,{genos:gPattern})}</div>
+        <div class="dist-block"><h3>White shown?</h3>${distRows(R.whiteVisible,{genos:gWhiteV})}</div>
+        <div class="dist-block"><h3>White level</h3>${distRows(R.whiteLevel,{note:"Lands on any level between the parents'."})}</div>
+        <div class="dist-block"><h3>White type</h3>${distRows(R.whiteType,{map:WHITE_TYPE, note:"Inherited whole from one parent (50/50)."})}</div>
+        ${R.accent?`<div class="dist-block"><h3>Accent colour</h3>${distRows(R.accent,{genos:gAccent})}</div>`:""}
       </div>
     </div>
-    <p class="sub" style="margin-top:12px">Exact Mendelian odds per kitten. Colour density &amp; white level land anywhere between the parents' numbers; species &amp; white type are a 50/50 pick from either parent. Swatches approximate the coat — the game renders the real layered sprite. Pattern names shown for confirmed allele combos; others are labelled by their alleles.</p>
+    <p class="sub" style="margin-top:12px">Exact Mendelian odds per kitten, with the possible <b>allele pairs</b> under each outcome (colour alleles honour each parent's wind). Colour density &amp; white level land anywhere between the parents' numbers; species &amp; white type are a 50/50 pick from either parent. Swatches approximate the coat — the game renders the real layered sprite.</p>
   </div>`;
   out.scrollIntoView({behavior:"smooth",block:"nearest"});
 }
