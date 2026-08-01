@@ -99,13 +99,15 @@ inheritance note instead. A pattern only names its type when it's actually shown
 hidden type). **Accent** is handled honestly per Pixel Cat's End's rules: Not-cats never display it, so a parent with a hidden
 accent reads **Accent: Unknown**, and a kitten's accent is listed as the genotypes it could inherit — e.g. a known `[BR]` parent
 over a hidden one gives **`[B?]` or `[R?]`** (Mercats reveal accent on their tails, so theirs resolve to full genotypes). Plus
-each parent's decoded phenotype (shown as **labelled facts** — Coat / Pattern / Wind / Fur / White / Accent / Species — with its
-name/#ID linking to the cat's page when picked from your roster). Parents and **every** possible kitten get **composited sprite previews** built from the
-game's own image layers, each **cropped to a single pose** (correct per-species offsets for Not-cats and Mercats) — pick
-**standing / sitting / playing / sleeping / upsidedown** from the pose selector. Above the kitten gallery a row of three
-**dropdowns — Wind · Pattern · White** — each lists **only outcomes this pairing can actually produce**; picking any of them
-narrows the previews and rewrites every kitten's % to the **true overall chance** of a kitten with that coat *and* the chosen
-wind/pattern/white (independent loci multiply in, and a wind pick isolates the exact coat-and-wind pair). Each kitten also
+each parent's decoded phenotype (shown as **labelled facts** in the same order as the search inputs — Species / Wind / Fur /
+Coat / Pattern / White / Accent — with its name/#ID linking to the cat's page when picked from your roster). Parents and
+**every** possible kitten get **composited sprite previews** built from the game's own image layers, each **cropped to a single
+pose** (correct per-species offsets for Not-cats and Mercats) — pick **standing / sitting / playing / sleeping / upsidedown**
+from the pose selector. Above the kitten gallery a row of four **dropdowns — Species · Wind · Pattern · White** — each lists
+**only outcomes this pairing can actually produce** (Species toggles the previews between Not-cat and Mercat sprites); picking
+any of them narrows the previews and rewrites every kitten's % to the **true overall chance** of a kitten with that coat *and*
+the chosen
+species/wind/pattern/white (independent loci multiply in, and a wind pick isolates the exact coat-and-wind pair). Each kitten also
 carries a **click-to-copy genetic string** (small, wrapping button) that marks every allele the game keeps hidden with a
 single **`?`**: a shown-dominant trait reads `[D?]` (the second copy could be a hidden recessive), a shown-recessive trait
 reads `[rr]` (both copies known), and a fully-hidden slot (a North/South cat's off-wind colour allele) reads `[??]` — never a

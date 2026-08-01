@@ -2541,7 +2541,7 @@ const POSE_Y = {
   m: {sitting:-11, standing:-8, playing:-2, sleeping:0, upsidedown:0}
 };
 let previewPose = "standing";
-let previewSel = {wind:"any", pattern:"any", white:"any"};   // kitten-gallery pickers (default: Any)
+let previewSel = {species:"any", wind:"any", pattern:"any", white:"any"};   // kitten-gallery pickers (default: Any)
 function poseOffset(species, fur, pose){
   pose = (POSE_X[pose]!=null) ? pose : "standing";
   const sp = /mer/i.test(species||"") ? "m" : "c";
@@ -2693,14 +2693,15 @@ function parentCard(title, g, meta){
     ? `${esc(whiteMarkName(ph.whiteType,ph.whiteLevel)||"White")} <span class="pf-sub">(${esc(wtName)}, Lv ${ph.whiteLevel})</span>`
     : "None";
   const fact=(k,v)=>`<div><span class="pf-k">${k}</span><span>${v}</span></div>`;
+  // Facts are ordered to match the finder inputs / result breakdown (Species first).
   const facts = `<div class="pheno-facts">
-    ${fact("Coat", "<b>"+esc(ph.color)+"</b>")}
-    ${fact("Pattern", esc(ph.pattern))}
+    ${fact("Species", esc(ph.species))}
     ${fact("Wind", esc(ph.wind))}
     ${fact("Fur", esc(ph.fur))}
+    ${fact("Coat", "<b>"+esc(ph.color)+"</b>")}
+    ${fact("Pattern", esc(ph.pattern))}
     ${fact("White", whiteVal)}
     ${fact("Accent", ph.accent?esc(ph.accent):`<span class="pf-unknown">Unknown</span>`)}
-    ${fact("Species", esc(ph.species))}
   </div>`;
   return `<div class="statset parent-card"><h3>${who}</h3>
     <div class="pheno-head">${portrait}${facts}</div>
@@ -2742,22 +2743,26 @@ function offspringGeneString(o){
 function kittenGallery(R,A,B){
   const cc=R.color; if(cc.error) return "";
   const colors=[...cc.dist.entries()].sort((a,b)=>b[1]-a[1]);
-  const species = ([...R.species.entries()].sort((a,b)=>b[1]-a[1])[0]||["C"])[0]==="M"?"Mercat":"Not-cat";
   const fur = ([...R.fur.entries()].sort((a,b)=>b[1]-a[1])[0]||["Shorthair"])[0];
 
   // possible visible outcomes (each sums to 1)
+  const speciesOut = [...R.species.entries()].map(([k,p])=>[k==="M"?"Mercat":"Not-cat", p]).filter(([,p])=>p>0).sort((a,b)=>b[1]-a[1]);
   const windOut  = [...R.wind.entries()].filter(([w,p])=>p>0).sort((a,b)=>b[1]-a[1]);
   const patOut   = [...patternOutcomeDist(R).entries()].sort((a,b)=>b[1]-a[1]);
   const whiteOut = [...whiteOutcomeDist(R).entries()].sort((a,b)=>b[1]-a[1]);
-  const patMap=new Map(patOut), whiteMap=new Map(whiteOut);
+  const speciesMap=new Map(speciesOut), patMap=new Map(patOut), whiteMap=new Map(whiteOut);
 
   // keep the current selection valid for this pairing
+  if(previewSel.species!=="any" && !speciesMap.has(previewSel.species))         previewSel.species="any";
   if(previewSel.wind!=="any"    && !windOut.some(([w])=>w===previewSel.wind))   previewSel.wind="any";
   if(previewSel.pattern!=="any" && !patMap.has(previewSel.pattern))             previewSel.pattern="any";
   if(previewSel.white!=="any"   && !whiteMap.has(previewSel.white))             previewSel.white="any";
 
-  const patFactor   = previewSel.pattern==="any" ? 1 : (patMap.get(previewSel.pattern)||0);
-  const whiteFactor = previewSel.white==="any"   ? 1 : (whiteMap.get(previewSel.white)||0);
+  const speciesFactor = previewSel.species==="any" ? 1 : (speciesMap.get(previewSel.species)||0);
+  const patFactor     = previewSel.pattern==="any" ? 1 : (patMap.get(previewSel.pattern)||0);
+  const whiteFactor   = previewSel.white==="any"   ? 1 : (whiteMap.get(previewSel.white)||0);
+  // which species the previews render (picked, else most-likely)
+  const species = previewSel.species!=="any" ? previewSel.species : (speciesOut[0]?speciesOut[0][0]:"Not-cat");
 
   // what the previews render (most-likely when the picker is on "Any")
   const topPatEntry = patOut.filter(([k])=>k!=="Solid").sort((a,b)=>b[1]-a[1])[0];
@@ -2776,7 +2781,7 @@ function kittenGallery(R,A,B){
 
   const cells=colors.map(([label,p])=>{
     const windP = previewSel.wind==="any" ? p : ((cc.windJoint.get(label)||new Map()).get(previewSel.wind)||0);
-    const prob  = windP * patFactor * whiteFactor;
+    const prob  = windP * speciesFactor * patFactor * whiteFactor;
     if(prob<=0) return "";                          // impossible under the current picks
     const pct=prob*100;
     const hex=cc.hex.get(label);
@@ -2799,13 +2804,14 @@ function kittenGallery(R,A,B){
     opts.map(([v,lab])=>`<option value="${esc(v)}"${cur===v?" selected":""}>${esc(lab)}</option>`).join("")+
     `</select></label>`;
   const controls = `<div class="kitten-controls">
+    ${sel({label:"Species",k:"species-pick"}, previewSel.species, speciesOut.map(([s])=>[s,s]))}
     ${sel({label:"Wind",k:"wind-pick"},    previewSel.wind,    windOut.map(([w])=>[w,w]))}
     ${sel({label:"Pattern",k:"pat-pick"},  previewSel.pattern, patOut.map(([k])=>[k,k]))}
     ${sel({label:"White",k:"white-pick"},  previewSel.white,   whiteOut.map(([k])=>[k,whiteOutcomeLabel(k)]))}
   </div>`;
 
-  const picked=[previewSel.wind!=="any"?previewSel.wind:null, previewSel.pattern!=="any"?previewSel.pattern:null,
-    previewSel.white!=="any"?whiteOutcomeLabel(previewSel.white):null].filter(Boolean);
+  const picked=[previewSel.species!=="any"?previewSel.species:null, previewSel.wind!=="any"?previewSel.wind:null,
+    previewSel.pattern!=="any"?previewSel.pattern:null, previewSel.white!=="any"?whiteOutcomeLabel(previewSel.white):null].filter(Boolean);
   return `<div class="dist-block"><h3>Likely kittens</h3>
     ${controls}
     <div class="kitten-gallery">${cells||`<p class="hint">No kitten matches the current picks.</p>`}</div>
@@ -2843,7 +2849,7 @@ function breedLoad(){ try{ return JSON.parse(localStorage.getItem(BREED_KEY)||"n
 function restoreBreeding(){
   const st=breedLoad(); if(!st) return;
   if(st.pose) previewPose=st.pose;
-  if(st.sel && typeof st.sel==="object") previewSel={wind:st.sel.wind||"any", pattern:st.sel.pattern||"any", white:st.sel.white||"any"};
+  if(st.sel && typeof st.sel==="object") previewSel={species:st.sel.species||"any", wind:st.sel.wind||"any", pattern:st.sel.pattern||"any", white:st.sel.white||"any"};
   if(st.metaA) breedMeta.A=st.metaA; if(st.metaB) breedMeta.B=st.metaB;
   const setV=(s,val)=>{ const el=$(s); if(el) el.value=val||""; };
   setV("#pA",st.a); setV("#pB",st.b); setV("#pickA",st.pickA); setV("#pickB",st.pickB);
@@ -3137,6 +3143,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     const t=e.target;
     if(!t||!t.classList) return;
     if(t.classList.contains("pose-pick")){ previewPose=t.value; reBreed(); rosterRender(); }
+    else if(t.classList.contains("species-pick")){ previewSel.species=t.value; reBreed(); }
     else if(t.classList.contains("wind-pick")){ previewSel.wind=t.value; reBreed(); }
     else if(t.classList.contains("pat-pick")){ previewSel.pattern=t.value; reBreed(); }
     else if(t.classList.contains("white-pick")){ previewSel.white=t.value; reBreed(); }
@@ -3251,7 +3258,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     ["#pA","#pB","#pickA","#pickB"].forEach(s=>{ const el=$(s); if(el) el.value=""; });
     $("#noteA").textContent=""; $("#noteB").textContent="";
     breedMeta.A=null; breedMeta.B=null; lastBreed=null;
-    previewSel={wind:"any", pattern:"any", white:"any"};
+    previewSel={species:"any", wind:"any", pattern:"any", white:"any"};
     $("#breedResults").innerHTML=""; setStatus($("#breedStatus"),"","");
     try{ localStorage.removeItem(BREED_KEY); }catch(e){}
   });
