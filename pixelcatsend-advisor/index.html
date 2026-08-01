@@ -830,6 +830,15 @@ function extractCatTabUrls(html){
   return {tabs:[...new Set(tabs)], traveling:travEl?abs(travEl.getAttribute("href")):null};
 }
 function dedupeCats(arr){ const seen=new Set(), out=[]; (arr||[]).forEach(c=>{ if(c&&!seen.has(c.id)){ seen.add(c.id); out.push(c); } }); return out; }
+// Tabs can span multiple pages (a .pagination block). Grab the other pages'
+// URLs (excluding the current page) so the crawl can fetch them too.
+function extractPaginationUrls(html){
+  let doc; try{ doc=new DOMParser().parseFromString(html,"text/html"); }catch(e){ return []; }
+  const abs=u=>{ if(!u) return null; try{ return new URL(u, CAT_ORIGIN).href; }catch(e){ return u; } };
+  return [...doc.querySelectorAll('.pagination a[href]')]
+    .filter(a=>!a.classList.contains('current-pagination'))
+    .map(a=>abs(a.getAttribute('href'))).filter(Boolean);
+}
 
 // Pull every cat your profile page links to. Structure-agnostic: it scans for
 // cat links (cat&id= / cat?id= / /cat/NNNN), so it works whatever the layout is.
@@ -2201,28 +2210,27 @@ document.addEventListener("DOMContentLoaded", ()=>{
     const valid=b=>/catjail|cat[&?]id=/i.test(b);
     try{
       prog("Fetching your cats (#"+id+")…");
-      const first=await fetchViaRelays(catsPageUrl(id), prog, valid);
+      const start=catsPageUrl(id);
+      const done=new Set([start]), queue=[];
+      const enqueue=u=>{ if(u && !done.has(u)){ done.add(u); queue.push(u); } };
+      // every Cats page carries the tab bar, the Traveling link and (when a tab
+      // spans pages) a pagination block — discover all of them from each page.
+      const discover=html=>{ const t=extractCatTabUrls(html); t.tabs.forEach(enqueue); if(t.traveling) enqueue(t.traveling); extractPaginationUrls(html).forEach(enqueue); };
+      const first=await fetchViaRelays(start, prog, valid);
       let all=parseCatsPage(first);
-      const done=new Set([catsPageUrl(id)]);
-      const queue=[]; const push=u=>{ if(u&&!done.has(u)){ done.add(u); queue.push(u); } };
-      const firstTabs=extractCatTabUrls(first);
-      firstTabs.tabs.forEach(push);
-      const trav=firstTabs.traveling;
-      if(trav && !done.has(trav)){
-        try{ prog("Finding traveling cats…"); const th=await fetchViaRelays(trav, null, valid); done.add(trav); all=all.concat(parseCatsPage(th)); extractCatTabUrls(th).tabs.forEach(push); }catch(e){}
-      }
-      const CAP=24; let n=0, failed=0;
-      for(const url of queue){
-        if(n>=CAP) break; n++;
-        prog("Reading tab "+n+" of "+Math.min(queue.length,CAP)+"… ("+dedupeCats(all).length+" cats so far)");
-        try{ const h=await fetchViaRelays(url, null, valid); all=all.concat(parseCatsPage(h)); }
+      discover(first);
+      const CAP=60; let n=0, failed=0;
+      while(queue.length && n<CAP){
+        const url=queue.shift(); n++;
+        prog("Reading page "+n+"… ("+dedupeCats(all).length+" cats so far)");
+        try{ const h=await fetchViaRelays(url, null, valid); all=all.concat(parseCatsPage(h)); discover(h); }
         catch(e){ failed++; }
         await sleep(700);
       }
       const uniq=dedupeCats(all);
       if(!uniq.length){ setStatus($("#profileStatus"),"Fetched the page but found no cats on it. Open your in-game Cats page, view source, and paste it into the box below instead.","err"); return; }
       mergeCatsPageCats(uniq); afterRosterChange();
-      const tabNote="Pulled "+uniq.length+" cats across "+(n+1)+" tab"+(n?"s":"")+(failed?(" ("+failed+" tab"+(failed>1?"s":"")+" failed)"):"")+". ";
+      const tabNote="Pulled "+uniq.length+" cats from "+(n+1)+" page"+(n?"s":"")+(failed?(" ("+failed+" failed)"):"")+". ";
       // Second pass (same click): open each cat's page for attributes, jobs & class levels.
       bulkRunning=true; bulkStop=false; $("#suggestStopBtn").classList.remove("hide");
       const res=await enrichCats(uniq.map(c=>c.id), (m,c)=>setStatus($("#profileStatus"), tabNote+m, "busy"));
