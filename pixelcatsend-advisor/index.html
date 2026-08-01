@@ -254,10 +254,17 @@
   .rosterempty{padding:16px;color:var(--muted);font-size:13px;text-align:center}
   #rosterTable table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
   #rosterTable th,#rosterTable td{border:1px solid var(--line-soft);padding:6px 9px;text-align:left;white-space:nowrap}
-  #rosterTable th{background:var(--panel2);position:sticky;top:0}
-  #rosterTable tr{cursor:pointer}
+  #rosterTable th{background:var(--panel2);position:sticky;top:0;cursor:pointer;user-select:none}
+  #rosterTable th:hover{background:var(--brand-soft)}
+  #rosterTable th .arr{color:var(--muted);font-size:10px;margin-left:4px;opacity:.55}
+  #rosterTable th[aria-sort="ascending"] .arr,#rosterTable th[aria-sort="descending"] .arr{color:var(--brand-ink);opacity:1}
+  #rosterTable tbody tr{cursor:pointer}
   #rosterTable tbody tr:hover{background:var(--brand-soft)}
   #rosterTable .sug{color:var(--good-ink);font-weight:700}
+  /* ---- roster input helpers ---- */
+  .profilebox{margin-top:12px;border:1px solid var(--line);background:var(--panel2);border-radius:var(--radius-sm);padding:12px 14px}
+  .or-divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;margin:16px 0 4px}
+  .or-divider::before,.or-divider::after{content:"";height:1px;background:var(--line-soft);flex:1 1 auto}
 
   /* ---- breeding ---- */
   .breed-parents{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -314,7 +321,21 @@
 
     <!-- My cats (roster) -->
     <div class="panelbody" id="pane-mycats" role="tabpanel" aria-labelledby="tab-mycats" hidden>
-      <p class="sub">Your Village Manager (<code>pixelcatsend.com/village/cats/manager</code>) is a private, logged-in page, so I can't open it — you paste its <b>HTML</b> once and I remember the roster <b>on this device</b>. <b>Paste the page's source, not its web address.</b> Paste each view to capture more: the <b>Basic</b> view gives names/occupation/current class; <b>Adventuring Levels</b> / <b>Day Job Bonuses</b> add class &amp; job levels; the <b>Appearances</b> view adds colour/pattern/wind so the Breeding tab can look these cats up by name.</p>
+      <p class="sub">Two ways to build your roster. <b>Fastest:</b> just give your <b>profile</b> ID or link and I'll pull every cat it lists — no pasting. Or paste your <b>Village Manager</b> page for the most complete list (it's the only place traveling cats and class/job levels live).</p>
+
+      <div class="profilebox">
+        <label class="fld" for="profileId">🪄 Pull my cats from my profile</label>
+        <div class="row">
+          <div class="grow"><input type="text" id="profileId" placeholder="Profile ID or link — e.g. 16075  or  pixelcatsend.com/profile&amp;id=16075" autocomplete="off"></div>
+          <button class="btn" id="pullProfileBtn" type="button">Pull my cats</button>
+        </div>
+        <div class="status" id="profileStatus" role="status" aria-live="polite"></div>
+        <p class="hint">Reads your <b>public</b> profile through a relay and grabs every cat it links to, then you can click each to fetch full stats. Relays can be flaky — if it fails, view the profile source (Ctrl/⌘+U) and paste it into the big box below; I'll pull the cats from that too.</p>
+      </div>
+
+      <div class="or-divider"><span>or paste a page</span></div>
+
+      <p class="sub">Your Village Manager (<code>pixelcatsend.com/village/cats/manager</code>) is a private, logged-in page, so I can't open it — you paste its <b>HTML</b> once and I remember the roster <b>on this device</b>. <b>Paste the page's source, not its web address.</b> Paste each view to capture more: the <b>Basic</b> view gives names/occupation/current class; <b>Adventuring Levels</b> / <b>Day Job Bonuses</b> add class &amp; job levels; the <b>Appearances</b> view adds colour/pattern/wind so the Breeding tab can look these cats up by name. (A profile page pasted here works too.)</p>
       <p class="sub" style="margin-top:6px">How to grab it: open the Manager while logged in, then <b>Ctrl+U</b> (<b>⌘+⌥+U</b> on Mac) to view the page source → <b>Ctrl/⌘+A</b> to select all → <b>Ctrl/⌘+C</b> to copy → paste below. (Or use the one-click bookmarklet.)</p>
       <label class="fld" for="rosterPaste" style="margin-top:10px">Paste the Village Manager page's HTML (not the URL)</label>
       <textarea id="rosterPaste" placeholder="Paste the page source here — starts with &lt;!doctype html&gt; or &lt;html…&gt;" spellcheck="false"></textarea>
@@ -692,8 +713,9 @@ function withTimeout(promise, ms){
     promise.then(v=>{clearTimeout(t);res(v);},e=>{clearTimeout(t);rej(e);});
   });
 }
-async function fetchCatById(id, onProgress){
-  const target = catUrl(id);
+// Fetch any pixelcatsend URL through the rotating public relays.
+// `validate(body)` returns true if the body looks like the expected page.
+async function fetchViaRelays(target, onProgress, validate){
   let lastErr;
   for(let i=0;i<PROXIES.length;i++){
     try{
@@ -702,12 +724,38 @@ async function fetchCatById(id, onProgress){
       if(!res.ok) throw new Error("HTTP "+res.status);
       const body = await res.text();
       if(!body || body.length<200) throw new Error("empty response");
-      // crude sanity: the page should mention at least one known label
-      if(!/Strength|Bravery|Agility|Perception/i.test(body)) throw new Error("unexpected content");
+      if(validate && !validate(body)) throw new Error("unexpected content");
       return body;
     }catch(e){ lastErr=e; }
   }
   throw lastErr || new Error("all relays failed");
+}
+function fetchCatById(id, onProgress){
+  return fetchViaRelays(catUrl(id), onProgress, b=>/Strength|Bravery|Agility|Perception/i.test(b));
+}
+const profileUrl = id => CAT_ORIGIN + "/profile&id=" + id;
+
+// Pull every cat your profile page links to. Structure-agnostic: it scans for
+// cat links (cat&id= / cat?id= / /cat/NNNN), so it works whatever the layout is.
+function extractCatIdsFromProfile(html){
+  const found = new Map(); // id -> name
+  let doc; try{ doc=new DOMParser().parseFromString(html,"text/html"); }catch(e){ doc=null; }
+  const add=(id,name)=>{
+    id=String(id||"").replace(/\D/g,""); if(!id) return;
+    name=(name||"").replace(/\s+/g," ").trim();
+    if(!found.has(id) || (!found.get(id) && name)) found.set(id, name);
+  };
+  if(doc){
+    doc.querySelectorAll("a[href]").forEach(a=>{
+      const href=a.getAttribute("href")||"";
+      const m=href.match(/(?:cat[&?]id=|\/cat\/)(\d+)/i);
+      if(m) add(m[1], a.textContent);
+    });
+  }
+  // regex fallback over raw text (covers non-anchor references / minified markup)
+  const re=/(?:cat[&?]id=|\/cat\/)(\d{2,})/gi; let mm;
+  while((mm=re.exec(html))!==null) add(mm[1], "");
+  return [...found.entries()].map(([id,name])=>({id, name}));
 }
 
 /* =========================================================================
@@ -1194,8 +1242,34 @@ function computeSuggestion(cat){
 }
 function cacheSuggestion(id,cat){ if(!id) return; const c=suggestLoad(); c[id]=computeSuggestion(cat); suggestSave(c); }
 
-let rosterFilter="all", rosterView="list", bulkStop=false, bulkRunning=false;
+let rosterFilter="all", rosterView="list", rosterSort=null, bulkStop=false, bulkRunning=false;
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function rosterCellValue(r,cache,id,key){
+  if(key==="name") return r.cats[id].name||"";
+  if(key==="id")   return id;
+  if(key==="sugclass") return (cache[id]&&cache[id].className)||"";
+  if(key==="sugjobs")  return (cache[id]&&cache[id].jobs||[]).join(", ");
+  if(key.indexOf("data:")===0) return (r.cats[id].data||{})[key.slice(5)]||"";
+  return "";
+}
+function rosterCompare(r,cache,key,dir){
+  const numish=v=>v!=="" && /^\s*-?[\d.,]+\s*%?\s*$/.test(v);
+  return (a,b)=>{
+    const va=String(rosterCellValue(r,cache,a,key)), vb=String(rosterCellValue(r,cache,b,key));
+    if(va===""&&vb!=="") return 1;      // blanks always sink to the bottom
+    if(vb===""&&va!=="") return -1;
+    let c;
+    if(key==="id") c=(parseInt(va,10)||0)-(parseInt(vb,10)||0);
+    else if(numish(va)&&numish(vb)) c=parseFloat(va.replace(/[,%\s]/g,""))-parseFloat(vb.replace(/[,%\s]/g,""));
+    else c=va.localeCompare(vb,undefined,{numeric:true,sensitivity:"base"});
+    return c*dir;
+  };
+}
+function toggleRosterSort(key){
+  if(rosterSort&&rosterSort.key===key) rosterSort.dir*=-1;
+  else rosterSort={key,dir:1};
+  rosterRender();
+}
 function rosterVisibleIds(r){
   let ids=Object.keys(r.cats);
   if(rosterFilter!=="all"){ const s=new Set(r.sets[rosterFilter]||[]); ids=ids.filter(id=>s.has(id)); }
@@ -1232,8 +1306,18 @@ function rosterRender(){
     $("#rosterList").classList.add("hide"); $("#rosterTable").classList.remove("hide");
     if(!ids.length){ $("#rosterTable").innerHTML=`<div class="rosterempty">No cats match.</div>`; return; }
     const cols=(r.headers||[]).filter(h=>!/^(name|id)$/i.test(h));
-    const head=`<tr><th>Name</th><th>ID</th>${cols.map(h=>`<th>${esc(h)}</th>`).join("")}<th>Suggested class</th><th>Suggested jobs</th></tr>`;
-    const body=ids.slice(0,400).map(id=>{
+    const colDefs=[{key:"name",label:"Name"},{key:"id",label:"ID"}]
+      .concat(cols.map(h=>({key:"data:"+h,label:h})))
+      .concat([{key:"sugclass",label:"Suggested class"},{key:"sugjobs",label:"Suggested jobs"}]);
+    let tids=ids;
+    if(rosterSort && colDefs.some(cd=>cd.key===rosterSort.key)) tids=[...ids].sort(rosterCompare(r,cache,rosterSort.key,rosterSort.dir));
+    const head=`<tr>${colDefs.map(cd=>{
+      const on=rosterSort&&rosterSort.key===cd.key;
+      const aria=on?(rosterSort.dir>0?"ascending":"descending"):"none";
+      const arr=on?(rosterSort.dir>0?"▲":"▼"):"↕";
+      return `<th data-key="${esc(cd.key)}" aria-sort="${aria}" tabindex="0" role="button" title="Sort by ${esc(cd.label)}">${esc(cd.label)}<span class="arr" aria-hidden="true">${arr}</span></th>`;
+    }).join("")}</tr>`;
+    const body=tids.slice(0,400).map(id=>{
       const c=r.cats[id], s=cache[id]||{};
       const tds=cols.map(h=>`<td>${esc(c.data[h]||"")}</td>`).join("");
       const sc=s.className?`<span class="sug">${esc(s.className)}${s.classPct?(" "+s.classPct+"%"):""}</span>`:"—";
@@ -1759,23 +1843,55 @@ document.addEventListener("DOMContentLoaded", ()=>{
     catch(e){ window.prompt("Copy this, then paste it as a new bookmark's URL:", ROSTER_BOOKMARKLET); }
   });
 
+  // Merge a plain list of {id,name} (from a profile page) into the roster.
+  function mergeCatIdRows(rows){ rosterMerge({view:"all", headers:[], rows:rows.map(c=>({id:c.id, name:c.name||"", data:{}}))}); }
+  function afterRosterChange(){ $("#rosterUI").classList.remove("hide"); fillBreedRosterDatalist(); rosterRender(); }
+
+  // Pull cats straight from a public profile page (fetch by ID/URL through relays).
+  async function pullProfile(){
+    const raw=($("#profileId").value||"").trim();
+    const id=(raw.match(/(\d{2,})/)||[])[1];
+    if(!id){ setStatus($("#profileStatus"),"Enter your profile ID (a number) or your profile link.","err"); return; }
+    const btn=$("#pullProfileBtn"); btn.disabled=true;
+    setStatus($("#profileStatus"),"Fetching profile #"+id+"…","busy");
+    try{
+      const html=await fetchViaRelays(profileUrl(id), m=>setStatus($("#profileStatus"),m,"busy"), b=>/cat[&?]id=|\/cat\//i.test(b));
+      const cats=extractCatIdsFromProfile(html);
+      if(!cats.length){ setStatus($("#profileStatus"),"Fetched the profile but found no cats linked on it. If your cats aren't shown there, use the Village Manager paste below instead.","err"); return; }
+      mergeCatIdRows(cats); afterRosterChange();
+      const named=cats.filter(c=>c.name).length;
+      setStatus($("#profileStatus"),"Pulled "+cats.length+" cats"+(named?(" ("+named+" named)"):"")+". Click any cat to fetch its full stats, or “✨ Suggest for shown cats” to do them all.","ok");
+    }catch(e){
+      setStatus($("#profileStatus"),"Couldn't fetch the profile through a relay ("+(e.message||e)+"). Open your profile, view source (Ctrl/⌘+U), copy all, and paste it into the box below — I'll pull the cats from that.","err");
+    }finally{ btn.disabled=false; }
+  }
+  $("#pullProfileBtn").addEventListener("click", pullProfile);
+  $("#profileId").addEventListener("keydown", e=>{ if(e.key==="Enter") pullProfile(); });
+
   $("#loadRosterBtn").addEventListener("click", ()=>{
     const raw=$("#rosterPaste").value, t=raw.trim();
     if(/^https?:\/\/\S+$/i.test(t) || t.length<50){
       setStatus($("#rosterStatus"),"That looks like the page's address, not its HTML. I can't open your private Manager page — I need the page source. On the Village Manager, press Ctrl+U (⌘+⌥+U on Mac), select all, copy, and paste it here — or use the ⭐ bookmarklet above.","err"); return;
     }
     const parsed=parseRoster(raw);
-    if(!parsed.rows.length){ setStatus($("#rosterStatus"),"Couldn't find a cat table in that. Make sure you copied the whole Village Manager page source (village/cats/manager…), not just part of it.","err"); return; }
-    rosterMerge(parsed);
-    $("#rosterUI").classList.remove("hide");
-    $("#rosterPaste").value="";
-    fillBreedRosterDatalist();
-    setStatus($("#rosterStatus"),"Loaded "+parsed.rows.length+" cats from the “"+parsed.view+"” view. Paste other views (Basic / Appearances / Adventuring…) to add more columns &amp; filters.","ok");
-    rosterRender();
+    if(parsed.rows.length){
+      rosterMerge(parsed);
+      $("#rosterPaste").value=""; afterRosterChange();
+      setStatus($("#rosterStatus"),"Loaded "+parsed.rows.length+" cats from the “"+parsed.view+"” view. Paste other views (Basic / Appearances / Adventuring…) to add more columns &amp; filters.","ok");
+      return;
+    }
+    // No manager table — maybe it's a profile page. Pull cat links from it.
+    const cats=extractCatIdsFromProfile(raw);
+    if(cats.length){
+      mergeCatIdRows(cats); $("#rosterPaste").value=""; afterRosterChange();
+      setStatus($("#rosterStatus"),"No manager table there, but I found "+cats.length+" cats linked on the page. Click any to fetch its full stats.","ok");
+      return;
+    }
+    setStatus($("#rosterStatus"),"Couldn't find a cat table or any cat links in that. Make sure you copied the whole Village Manager (or profile) page source, not just part of it.","err");
   });
   $("#clearRosterBtn").addEventListener("click", ()=>{
     try{ localStorage.removeItem(ROSTER_KEY); }catch(e){}
-    rosterFilter="all"; $("#rosterUI").classList.add("hide");
+    rosterFilter="all"; rosterSort=null; $("#rosterUI").classList.add("hide");
     fillBreedRosterDatalist();
     setStatus($("#rosterStatus"),"Roster cleared from this device.","ok"); rosterRender();
   });
@@ -1785,7 +1901,14 @@ document.addEventListener("DOMContentLoaded", ()=>{
   $("#rosterSearch").addEventListener("input", rosterRender);
   function pickFromRoster(id){ if(!id) return; $("#catId").value=id; switchTab("id"); loadCatById(id); }
   $("#rosterList").addEventListener("click", e=>{ const b=e.target.closest(".rostercat"); if(b) pickFromRoster(b.getAttribute("data-id")); });
-  $("#rosterTable").addEventListener("click", e=>{ const tr=e.target.closest("tr[data-id]"); if(tr) pickFromRoster(tr.getAttribute("data-id")); });
+  $("#rosterTable").addEventListener("click", e=>{
+    const th=e.target.closest("th[data-key]"); if(th){ toggleRosterSort(th.getAttribute("data-key")); return; }
+    const tr=e.target.closest("tr[data-id]"); if(tr) pickFromRoster(tr.getAttribute("data-id"));
+  });
+  $("#rosterTable").addEventListener("keydown", e=>{
+    const th=e.target.closest&&e.target.closest("th[data-key]");
+    if(th && (e.key==="Enter"||e.key===" ")){ e.preventDefault(); toggleRosterSort(th.getAttribute("data-key")); }
+  });
 
   // bulk-suggest across the shown cats (fetches each page, throttled)
   $("#suggestStopBtn").addEventListener("click", ()=>{ bulkStop=true; });

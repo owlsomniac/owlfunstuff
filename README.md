@@ -15,13 +15,20 @@ combined profile. All analysis runs in your browser; nothing leaves the page.
 
 Load a cat one of four ways — they all land on an editable sheet, so you can fix anything before analyzing:
 
-1. **My cats (roster)** — paste your **Village Manager** page's **HTML** once (it's a private, logged-in page, so
-   it can't be auto-loaded, and pasting the *address* won't work — you need the page **source**). Grab it with
-   **Ctrl+U → Ctrl+A → Ctrl+C** (⌘+⌥+U on Mac), or use the one-click **bookmarklet** in that tab. The tool parses
-   the whole table into a **searchable, filterable** list saved on your device; click a cat to fetch and analyze
-   it. Paste more manager views (Basic, Adventuring Levels, Day Job Bonuses, Appearances, Active/Traveling) and
-   their columns/filters merge into the same roster. A **Table** view shows every cat with all captured columns
-   plus suggested class/jobs, and **Suggest for shown cats** computes suggestions in bulk.
+1. **My cats (roster)** — two ways to build it:
+   - **Fastest — from your profile:** type your **profile ID or link** and hit **Pull my cats**. It reads your
+     *public* profile through a relay and grabs every cat it links to (no pasting). Then click a cat to fetch its
+     full stats, or **Suggest for shown cats** to do them all.
+   - **Most complete — Village Manager:** paste that page's **HTML** once (it's a private, logged-in page, so it
+     can't be auto-loaded, and pasting the *address* won't work — you need the page **source**). Grab it with
+     **Ctrl+U → Ctrl+A → Ctrl+C** (⌘+⌥+U on Mac), or use the one-click **bookmarklet** in that tab. This is the only
+     source for traveling cats and class/job levels. Paste more views (Basic, Adventuring Levels, Day Job Bonuses,
+     Appearances, Active/Traveling) and their columns/filters merge into the same roster. (A profile page pasted
+     here also works.)
+
+   Either way the roster is a **searchable, filterable** list saved on your device. A **Table** view shows every cat
+   with all captured columns plus suggested class/jobs — **click any column header to sort** (numeric-aware, click
+   again to reverse) — and **Suggest for shown cats** computes suggestions in bulk.
 2. **By cat ID** — paste an ID (e.g. `430432`) or a profile URL, press **Fetch cat**. Routed through public
    CORS relays because the game blocks direct cross-site reads; relays can be flaky, so:
 3. **Paste page HTML** — open the profile, view source (Ctrl/Cmd+U), copy all, paste. Always works.
