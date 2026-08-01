@@ -384,6 +384,13 @@
   .finder{margin:12px 0 4px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel2);padding:0 12px}
   .finder>summary{cursor:pointer;font-weight:700;color:var(--brand-ink);padding:11px 0;font-size:14px}
   .finder[open]{padding-bottom:12px}
+  .go-body{font-size:13px;line-height:1.55;color:var(--ink-soft)}
+  .go-body p{margin:8px 0}
+  .go-body ul{margin:6px 0 8px;padding-left:20px}
+  .go-body li{margin:3px 0}
+  .go-body code{font-size:12px;background:var(--panel);border:1px solid var(--line-soft);border-radius:4px;padding:0 4px}
+  .go-cross li{font-size:13px}
+  .go-note{margin-top:10px;padding:8px 10px;border-left:3px solid var(--brand);background:var(--panel);border-radius:0 6px 6px 0;font-size:12.5px;color:var(--muted)}
   .finder-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px 12px;margin-top:6px}
   .finder-grid label{display:flex;flex-direction:column;gap:3px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
   .finder-grid select,.finder-grid input{font-family:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);text-transform:none;letter-spacing:0}
@@ -513,6 +520,45 @@
         <li><code>[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]</code></li>
         <li>Old dash/pipe strings work too — e.g. <code>[C-NN-SS-BBFF4-YYTT-YY0C-BA-YR]</code></li>
       </ul>
+
+      <details class="finder genetics-overview">
+        <summary>🧬 Quick Genetics Overview</summary>
+        <div class="go-body">
+          <p>Every trait comes from a <b>pair of genes</b> — one from each parent. Some genes are <b>dominant</b> (they show
+          whenever a cat carries even one copy) and some are <b>recessive</b> (they only show when a cat carries two copies).</p>
+
+          <p><b>Why some genes are unknown.</b> Pixel Cat's End cats — even Generation 1 (starters, Nestor, business-card cats) —
+          are <i>not</i> always homozygous. A cat showing a dominant trait may quietly carry a hidden recessive underneath. Unless
+          a cat's full genetic string is revealed in-game, those hidden copies aren't visible.</p>
+
+          <p><b>How this tool handles it.</b></p>
+          <ul>
+            <li>For a cat with <b>no revealed string</b>, it assumes the simplest genotype (homozygous) to turn the visible colour,
+              pattern, wind, etc. into odds. Listing every hidden possibility would explode the number of strings and isn't practical.</li>
+            <li>In a <b>kitten's genetic string</b>, a <code>?</code> is a single placeholder for an allele that <i>could</i> be a
+              hidden recessive. We can't know which recessive is hiding, so we don't guess — one <code>?</code>, nothing more.</li>
+          </ul>
+
+          <p><b>Reading the placeholder:</b></p>
+          <ul>
+            <li><code>[D?]</code> — shows the <b>dominant</b> trait; the second copy is unknown (dominant, or a hidden recessive).</li>
+            <li><code>[rr]</code> — shows the <b>recessive</b> trait, so <b>both</b> copies are known.</li>
+            <li><code>[??]</code> — the gene is fully hidden (e.g. an accent colour the game never displays).</li>
+          </ul>
+
+          <p><b>How a pair passes down</b> (each parent gives one copy):</p>
+          <ul class="go-cross">
+            <li><code>[rr] × [rr]</code> → every kitten <code>[rr]</code> — fully known.</li>
+            <li><code>[D?] × [DD]</code> → <code>[DD]</code> or <code>[D?]</code> — always shows dominant; may or may not carry the hidden copy.</li>
+            <li><code>[D?] × [D?]</code> → <code>[DD]</code>, <code>[D?]</code>, or <code>[??]</code> — the last is fully unknown (it could even turn out <code>[rr]</code>), so it stays <code>??</code>.</li>
+            <li><code>[??] × [??]</code> → <code>[??]</code> — nothing to go on.</li>
+          </ul>
+
+          <p class="go-note">Once you can <i>see</i> a kitten's trait in its preview, the tool resolves it to <code>[D?]</code> or
+          <code>[rr]</code>; only genuinely hidden genes stay <code>[??]</code>. Either way, outcomes are a close <b>approximation</b> —
+          visible-trait percentages are exact given these assumptions, but hidden recessives mean a kitten can occasionally surprise you.</p>
+        </div>
+      </details>
 
       <details class="finder" id="finderPanel">
         <summary>🔎 Find a pairing for a desired kitten</summary>
@@ -1500,8 +1546,10 @@ function rosterCatFur(c){
 function rosterCatToGeneString(cat){
   const gs=(col(cat,/genetic\s*string/i)||"").trim();
   if(gs){ const p=parseGeneString(gs); if(!p.error) return {str:gs, source:"string", resolved:["revealed genetic string"], guessed:[]}; }
-  // genotype derived from the Cats-page aria-label (accurate: main+trade colours, pattern, white)
-  if(cat.genes){ const p=parseGeneString(cat.genes); if(!p.error) return {str:cat.genes, source:"page", resolved:(cat.geneInfo&&cat.geneInfo.resolved)||["from your Cats page"], guessed:(cat.geneInfo&&cat.geneInfo.guessed)||[]}; }
+  // genotype derived from the Cats-page aria-label (accurate: main+trade colours, pattern, white).
+  // The aria-label never exposes accent, so pin the accent to what we actually know
+  // (a page-shown colour, else "??") — this also scrubs any stale [RR] from an old pull.
+  if(cat.genes){ const p=parseGeneString(cat.genes); if(!p.error) return {str:withKnownAccent(cat.genes, cat), source:"page", resolved:(cat.geneInfo&&cat.geneInfo.resolved)||["from your Cats page"], guessed:(cat.geneInfo&&cat.geneInfo.guessed)||[]}; }
   const t={
     species:    notNA(col(cat,/species/i)),
     wind:       notNA(col(cat,/wind/i)),
@@ -1517,7 +1565,7 @@ function rosterCatToGeneString(cat){
   const any=Object.keys(t).some(k=>t[k] && String(t[k]).trim());
   if(!any) return {error:"No appearance columns saved for this cat. In 🐈 My cats, Pull My Whole Roster (or fetch the cat with Single Cat Look-Up) to capture its colour / pattern / wind, or paste a genetic string below."};
   const d=phenotypeToGeneString(t);
-  return {str:d.str, source:"derived", resolved:d.resolved, guessed:d.guessed};
+  return {str:withKnownAccent(d.str, cat), source:"derived", resolved:d.resolved, guessed:d.guessed};
 }
 
 // Bookmarklet that copies the (private) Village Manager page's HTML to the clipboard.
@@ -1709,7 +1757,12 @@ function rosterColumnModel(r){
     const cols=[];
     if(extrasFirst) (g.extra||[]).forEach(x=>cols.push(x));
     sortByPref(bucket[gk], g.pref).forEach(h=>cols.push({key:"data:"+h,label:h}));
-    if(gk==="appear"){ if(cols.length) cols.push({key:"density",label:"Density"});   // colour density / dilution level (1–4)
+    if(gk==="appear"){
+      if(cols.length){                                    // colour density / dilution level (1–4), placed right after Color
+        const densCol={key:"density",label:"Density"};
+        const ci=cols.findIndex(c=>/^data:colou?r$/i.test(c.key||""));
+        if(ci>=0) cols.splice(ci+1,0,densCol); else cols.push(densCol);
+      }
       if(hasWhite) cols.push({key:"white",label:"White"});
       if(cols.length) cols.push({key:"accent",label:"Accent"}); }   // Accent after White
     if(gk==="jobs" && hasJobData) JOB_SKILLS.forEach(js=>cols.push({key:"job:"+js.job, label:js.job}));
@@ -1844,7 +1897,8 @@ const CGROUPS = {
 };
 const SNOW = ["Snow","#f4f0ea"];
 function colorInfo(group, dilute, density){
-  const g=CGROUPS[group][dilute?"dilute":"full"]; const d=Math.max(1,Math.min(4,density||1));
+  const grp=CGROUPS[group]; if(!grp) return {name:"Unknown", hex:"#9a9aa2"};   // e.g. a "?" placeholder allele
+  const g=grp[dilute?"dilute":"full"]; const d=Math.max(1,Math.min(4,density||1));
   const c=g[d]; return {name:c[0], hex:c[1]};
 }
 const ALLELE_NAME = {T:"Stripe",S:"Spot",M:"Marble",P:"Point",A:"Agouti"};
@@ -1857,6 +1911,7 @@ const PATTERN_NAME = {
   AT:"Ticked",   AM:"Ripple",    AS:"Agouti",  AP:"Karpati", AA:"Freckle"
 };
 function patternName(x,y){
+  if(!x||!y||x==="?"||y==="?") return "";                // hidden pattern (solid cat) — unknown alleles
   const key=[x,y].sort().join("");
   if(PATTERN_NAME[key]) return PATTERN_NAME[key];
   return ALLELE_NAME[x]+"×"+ALLELE_NAME[y];   // fallback (unknown/blank allele)
@@ -1928,6 +1983,22 @@ function catAccentText(cat){
   if(revealed && cat.genes){ const g=parseGeneString(cat.genes); if(!g.error){ const a=phenotype(g).accent; if(a) return a; } }
   return "Unknown";
 }
+// The two accent alleles we actually know for a roster cat, or null if unknown.
+function catAccentAlleles(cat){
+  const txt=catAccentText(cat);
+  if(!txt || /^unknown$/i.test(String(txt).trim())) return null;
+  return ACCENT_REV[String(txt).toLowerCase()] || null;
+}
+// Force a gene string's accent section to what we actually know (real alleles, or
+// "??" when unknown) — so a stale cached string can never assert a made-up accent.
+function withKnownAccent(str, cat){
+  const secs=[...String(str||"").matchAll(/\[([^\]]*)\]/g)].map(m=>m[1]);
+  if(secs.length<7) return str;
+  const al=catAccentAlleles(cat);
+  secs[7]=al ? al.join("") : "??";
+  for(let i=0;i<secs.length;i++) if(secs[i]==null) secs[i]="AB";
+  return secs.map(s=>"["+s+"]").join(" ");
+}
 // A roster cat's coat-colour density (1–4) — the "dilution level" of its shade.
 // Read from its genetic string when we have one, else recovered from the displayed
 // colour name (each colour word pins a group + dilute + density).
@@ -1976,18 +2047,19 @@ function parseGeneString(raw){
   const wh=secs[5]||""; g.whiteVis=[wh[0],wh[1]]; g.whiteType=wh.slice(-1); g.whiteLevel=parseInt(wh.slice(2,-1),10);
   g.growth=(secs[6]||"").split("").slice(0,2);
   g.accent=(secs[7]||"").split("").slice(0,2);
-  // validation
+  // validation. "?" is a tolerated placeholder for an unknown allele (a recessive
+  // that might be hiding under a dominant, an accent the game never shows, etc.).
   const errs=[];
-  if(!/^[NSO]{2}$/.test(g.wind.join(""))) errs.push("wind");
-  if(!/^[SL]{2}$/.test(g.fur.join(""))) errs.push("fur length");
-  if(!/^[BO]{2}$/.test(g.color.join(""))) errs.push("coat colour");
-  if(!/^[FD]{2}$/.test(g.dil.join(""))) errs.push("dilution");
+  if(!/^[NSO?]{2}$/.test(g.wind.join(""))) errs.push("wind");
+  if(!/^[SL?]{2}$/.test(g.fur.join(""))) errs.push("fur length");
+  if(!/^[BO?]{2}$/.test(g.color.join(""))) errs.push("coat colour");
+  if(!/^[FD?]{2}$/.test(g.dil.join(""))) errs.push("dilution");
   if(!(g.density>=1&&g.density<=4)) errs.push("density");
-  if(!/^[YN]{2}$/.test(g.patVis.join(""))) errs.push("pattern visibility");
-  if(!/^[TSMPA]{2}$/.test(g.pat.join(""))) errs.push("pattern");
-  if(!/^[YN]{2}$/.test(g.whiteVis.join(""))) errs.push("white visibility");
+  if(!/^[YN?]{2}$/.test(g.patVis.join(""))) errs.push("pattern visibility");
+  if(!/^[TSMPA?]{2}$/.test(g.pat.join(""))) errs.push("pattern");
+  if(!/^[YN?]{2}$/.test(g.whiteVis.join(""))) errs.push("white visibility");
   if(!(g.whiteLevel>=0&&g.whiteLevel<=10)) errs.push("white level");
-  if(!WHITE_TYPE[g.whiteType]) errs.push("white type");
+  if(!WHITE_TYPE[g.whiteType] && g.whiteType!=="?") errs.push("white type");
   if(errs.length) return {error:"Couldn't read: "+errs.join(", ")+". Check the string format.", partial:g};
   return g;
 }
@@ -2603,6 +2675,34 @@ function parentCard(title, g, meta){
     <div class="pheno-head">${portrait}${facts}</div>
     <div class="pheno-line"><code style="font-size:11px;color:var(--muted)">${esc(g.raw||"")}</code></div></div>`;
 }
+// Build a kitten's genetic string from its VISIBLE traits, marking every allele the
+// game keeps hidden with "?" (see the Quick Genetics Overview). A trait shown as
+// dominant is "[D?]" (the second copy could be a hidden recessive); a recessive
+// trait is "[rr]" (both copies known); a fully-hidden gene is "[??]".
+function offspringGeneString(o){
+  const sp = o.species==="Mercat" ? "M" : "C";
+  const windSec = o.wind==="North"?"N?" : o.wind==="South"?"S?" : o.wind==="Trade"?"NS" : "OO";
+  const furSec = o.fur==="Longhair" ? "LL" : "S?";
+  let coatSec;
+  if(o.coatType==="snow" || o.wind==="Null"){ coatSec="??F?1"; }            // colour genes hidden under snow
+  else {
+    const pc=COLOR_REV[String(primaryColorWord(o.label)||"").toLowerCase()];
+    const sc=COLOR_REV[String(secondaryColorWord(o.label)||"").toLowerCase()];
+    const dilute = pc ? pc.dilute : false, density = pc ? pc.density : 1;
+    let col;
+    if(o.coatType==="tortoiseshell" && pc && sc) col = pc.group+sc.group;   // both slots shown
+    else if(o.coatType==="watercolor" && pc)     col = pc.group+pc.group;   // homozygous, shown
+    else if(pc)                                  col = o.wind==="South" ? ("?"+pc.group) : (pc.group+"?"); // standard: hidden slot
+    else col="??";
+    coatSec = col + (dilute?"DD":"F?") + density;
+  }
+  let patSec;
+  if(o.patterned){ const pr=PATTERN_REV[String(o.patName||"").toLowerCase()]; patSec="Y?"+(pr?pr.join(""):"??"); }
+  else patSec="NN??";
+  const whiteSec = (o.wLevel>0) ? ("Y?"+o.wLevel+(o.wType||"C")) : "NN0?";
+  const accSec = (o.accAlleles && o.accAlleles!=="??") ? o.accAlleles : "??";
+  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [AB] [${accSec}]`;
+}
 // A gallery of every possible kitten coat, with a row of Wind / Pattern / White
 // dropdowns (each listing only outcomes this pairing can produce). Picking any of
 // them narrows the previews and rewrites every % to the TRUE overall chance of a
@@ -2638,7 +2738,6 @@ function kittenGallery(R,A,B){
   if(previewSel.white!=="any" && previewSel.white!=="none"){ const m=String(previewSel.white).match(/^w:(\d+):([CPLRIT])$/); if(m){ wLevel=parseInt(m[1],10); wType=m[2]; } }
 
   const accAlleles = offspringAccentAlleles(A,B);   // "RL" when fixed, else "??"
-  const accName = accAlleles==="??" ? "" : accentName(accAlleles[0],accAlleles[1]);
 
   const cells=colors.map(([label,p])=>{
     const windP = previewSel.wind==="any" ? p : ((cc.windJoint.get(label)||new Map()).get(previewSel.wind)||0);
@@ -2651,8 +2750,7 @@ function kittenGallery(R,A,B){
       patternName:patName, patterned, species, whiteType:wType, whiteLevel:wLevel, hex, fur, size:96, title:label});
     const windForStr = previewSel.wind!=="any" ? previewSel.wind
       : coatType==="tortoiseshell"||coatType==="watercolor" ? "Trade" : coatType==="snow" ? "Null" : "North";
-    const gstr=phenotypeToGeneString({species, wind:windForStr, color:label, colortype:coatType,
-      pattern:patterned?patName:"Solid", whiteLevel:String(wLevel), whiteType:WHITE_TYPE[wType]||"Classic", accent:accName}).str;
+    const gstr=offspringGeneString({species, wind:windForStr, coatType, label, patterned, patName, fur, wLevel, wType, accAlleles});
     return `<figure class="kitten">${img}
       <figcaption><span class="knm">${esc(label)}</span><span class="kpct">${pct<9.95?pct.toFixed(1):Math.round(pct)}%</span></figcaption>
       <button type="button" class="gene-copy" data-gene="${esc(gstr)}" title="Copy this genetic string">${esc(gstr)}</button>
@@ -2675,7 +2773,7 @@ function kittenGallery(R,A,B){
   return `<div class="dist-block"><h3>Likely kittens</h3>
     ${controls}
     <div class="kitten-gallery">${cells||`<p class="hint">No kitten matches the current picks.</p>`}</div>
-    <p class="hint">Each % is the <b>true overall chance</b> of a kitten with that coat${picked.length?(" and "+esc(picked.join(" · "))):""}. Previews are composited from the game's own sprite layers; a missing layer falls back to a colour swatch. Tap a genetic string to copy it — <code>??</code> marks alleles the game keeps hidden.</p></div>`;
+    <p class="hint">Each % is the <b>true overall chance</b> of a kitten with that coat${picked.length?(" and "+esc(picked.join(" · "))):""}. Previews are composited from the game's own sprite layers; a missing layer falls back to a colour swatch. Tap a genetic string to copy it — a <code>?</code> marks an allele the game keeps hidden (a recessive that might be lurking, or an accent it never shows); see the <b>Quick Genetics Overview</b>.</p></div>`;
 }
 // One-click copy of a kitten's genetic string; flashes "Copied!" immediately.
 function copyGeneString(btn){

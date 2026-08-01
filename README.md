@@ -100,8 +100,14 @@ game's own image layers, each **cropped to a single pose** (correct per-species 
 **dropdowns — Wind · Pattern · White** — each lists **only outcomes this pairing can actually produce**; picking any of them
 narrows the previews and rewrites every kitten's % to the **true overall chance** of a kitten with that coat *and* the chosen
 wind/pattern/white (independent loci multiply in, and a wind pick isolates the exact coat-and-wind pair). Each kitten also
-carries a **click-to-copy full genetic string** (small, wrapping button) — alleles the game keeps hidden read as **`?`** (e.g.
-an unrevealed accent shows `[??]`, never a guessed colour). A missing layer falls back to a colour swatch.
+carries a **click-to-copy full genetic string** (small, wrapping button) that marks every allele the game keeps hidden with a
+single **`?`**: a shown-dominant trait reads `[D?]` (the second copy could be a hidden recessive), a shown-recessive trait
+reads `[rr]` (both copies known), and a fully-hidden gene (a North/South cat's off-wind colour slot, an unrevealed accent)
+reads `[??]` — never a guessed value. A collapsible **🧬 Quick Genetics Overview** on the tab explains the homozygous
+assumption for un-revealed cats, the `?` convention, and how gene pairs pass down (`[rr] × [rr]` → `[rr]`; `[D?] × [DD]` →
+`[DD]`/`[D?]`; `[D?] × [D?]` → `[DD]`/`[D?]`/`[??]`), with the reminder that outcomes are a close approximation. A missing
+layer falls back to a colour swatch. (Accent is only ever asserted when actually revealed — a cat's roster data is the
+authority, so a stale cached string can never make one up.)
 The genetics engine follows the Not-Wiki's [Genetics](https://pixelcatsend.miraheze.org/wiki/Genetics) rules (Mendelian
 inheritance, recessive dilute/no-white/longhair, number-range colour density &amp; white level, positional colour by wind) with
 the pattern/accent/white-marking name tables from Apocracy's community *Cat Genetics 6* spreadsheet, and is unit-tested against
