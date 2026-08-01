@@ -1,14 +1,15 @@
 # owlfunstuff
 
 Small self-contained web tools. Everything here is a single static HTML file — no build step, no server.
+The root page (`index.html`) is a simple hub linking to each tool.
 
-## Pixel Cat's End — Adventuring Advisor (`index.html`)
+## Pixel Cat's End — Adventuring Advisor (`pixelcatsend-advisor/`)
 
 Pull a [Pixel Cat's End](https://www.pixelcatsend.com) cat's **attributes** and **personality traits** by ID,
 see the **bonuses** each stat grants, and get an **adventuring class** + **day-job** recommendation from the
 combined profile. All analysis runs in your browser; nothing leaves the page.
 
-**Live:** once GitHub Pages is enabled for this repo → **https://owlsomniac.github.io/owlfunstuff/**
+**Live** (once GitHub Pages is enabled): **https://owlsomniac.github.io/owlfunstuff/pixelcatsend-advisor/**
 
 ### Using it
 
@@ -36,3 +37,8 @@ Diplomat/Spite Bard, Adventurous Mayor).
 
 Fan-made; not affiliated with Pixel Cat's End. Bonus rules follow the supplied Adventuring Guide; attribute/job/class
 data cross-checked against the community [Not-Wiki](https://pixelcatsend.miraheze.org/wiki/Attributes).
+
+## Hosting
+
+GitHub **Settings → Pages → Deploy from a branch → `main` / `/ (root)`**. The hub is then at
+`https://owlsomniac.github.io/owlfunstuff/` and the advisor at `…/pixelcatsend-advisor/`.
