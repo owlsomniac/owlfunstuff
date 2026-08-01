@@ -69,6 +69,12 @@ Predict a litter **two ways**:
 - **Paste a genetic string** directly (e.g. `[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]`; old dash/pipe strings work too)
   when you have one revealed.
 
+Or work backwards with **🔎 Find a pairing for a desired kitten**: choose the traits you want — coat type/colour, pattern,
+wind, fur, **white type & level (min/max)**, **colour density (min/max)**, species, accent — and it searches every pair of
+your cats with known genetics for ones that could produce it, ranked by the chance per kitten (incompatible-wind pairs are
+excluded). Offspring stats aren't genetically determined, so the two stat fields instead constrain the **parents** (only pair
+cats whose total attributes / personality meet a minimum). Click a result to load that pair into the predictor.
+
 Either way you get each kitten's odds for **coat colour** (standard / watercolor / tortoiseshell / snow, with swatches), **wind**,
 **fur length**, **pattern** (all 15 named combinations — Mackerel, Rosette, Karpati…), **white markings** (named per level &amp;
 type, e.g. *Bib &amp; Boots*), **accent colour** (Ruby, Amber, Teal…), and **species** — plus each parent's decoded phenotype

@@ -310,6 +310,21 @@
   .kitten figcaption{margin-top:5px;display:flex;flex-direction:column;gap:1px}
   .kitten .knm{font-size:11px;color:var(--ink-soft);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .kitten .kpct{font-size:12px;font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums}
+  .finder{margin:12px 0 4px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel2);padding:0 12px}
+  .finder>summary{cursor:pointer;font-weight:700;color:var(--brand-ink);padding:11px 0;font-size:14px}
+  .finder[open]{padding-bottom:12px}
+  .finder-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px 12px;margin-top:6px}
+  .finder-grid label{display:flex;flex-direction:column;gap:3px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  .finder-grid select,.finder-grid input{font-family:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);text-transform:none;letter-spacing:0}
+  .finder-range{display:flex;gap:6px;align-items:center}
+  .finder-range input{width:100%;min-width:0}
+  .finder-sub{grid-column:1/-1;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);border-top:1px solid var(--line-soft);padding-top:8px;margin-top:2px}
+  .finder-pairs{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+  .finder-pair{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:8px 11px;cursor:pointer;font-family:inherit}
+  .finder-pair:hover{border-color:var(--brand);background:var(--brand-soft)}
+  .finder-pair .fp-names{font-weight:600;font-size:13.5px;flex:1 1 auto;min-width:0}
+  .finder-pair .fp-id{color:var(--muted);font-weight:400;font-size:11px}
+  .finder-pair .fp-pct{font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums;flex:0 0 auto}
   .breed-note{font-size:12px;line-height:1.45;color:var(--muted);margin-top:6px;min-height:1px}
   .breed-note.ok{color:var(--ink-soft)}
   .breed-note.warn{color:var(--warn-ink)}
@@ -402,6 +417,20 @@
     <!-- Breeding -->
     <div class="panelbody" id="pane-breed" role="tabpanel" aria-labelledby="tab-breed" hidden>
       <p class="sub">Predict a litter two ways: <b>pick each parent from your cats</b> by name/ID (I build the genetics from their visible colour, pattern, wind, etc.), or paste a full <b>genetic string</b> if you have one revealed. Format: <code>[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]</code> (old dash/pipe strings work too). The roster picker needs cats loaded in <b>🐈 My cats</b> — paste the <b>Appearances</b> view there for the richest data.</p>
+
+      <details class="finder" id="finderPanel">
+        <summary>🔎 Find a pairing for a desired kitten</summary>
+        <p class="sub" style="margin-top:8px">Choose the traits you want, then I'll search every pair of your cats (that have known genetics) for ones that could produce it — ranked by the chance per kitten. Leave a field on <b>Any</b> to ignore it.</p>
+        <div id="finderForm" class="finder-grid"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn" id="finderBtn" type="button">🔎 Search my cats</button>
+          <button class="btn ghost sm" id="finderClearBtn" type="button">Reset</button>
+          <span class="rmeta" id="finderMeta"></span>
+        </div>
+        <div class="status" id="finderStatus" role="status" aria-live="polite"></div>
+        <div id="finderResults"></div>
+      </details>
+
       <div class="breed-parents" style="margin-top:12px">
         <div>
           <label class="fld" for="pickA">Parent A</label>
@@ -2070,6 +2099,72 @@ function posePicker(){
     <select class="pose-pick">${PREVIEW_POSES.map(p=>`<option value="${p}"${p===previewPose?" selected":""}>${p[0].toUpperCase()+p.slice(1)}</option>`).join("")}</select></label>`;
 }
 
+/* ---------- desired-outcome pair finder ----------
+   Search every pair of roster cats (with known genetics) for ones that could
+   produce a kitten matching the chosen traits, ranked by chance per kitten.
+   Only physical/genetic traits are predictable — offspring stats aren't, so
+   the stat fields constrain the PARENTS instead. */
+function catStatTotals(rc){
+  const d=(rc&&rc.data)||{}; let attr=0,ha=false,pers=0,hp=false;
+  ATTRS.forEach(a=>{ const v=parseInt(d[a.label],10); if(!isNaN(v)){ attr+=v; ha=true; } });
+  PERS.forEach(p=>{ const v=parseInt(d[p.label],10); if(!isNaN(v)){ pers+=v; hp=true; } });
+  return {attr, pers, hasAttr:ha, hasPers:hp};
+}
+function eligibleGeneCats(){
+  const r=rosterLoad(), out=[];
+  Object.keys(r.cats).forEach(id=>{ const c=r.cats[id]; if(c&&c.genes){ const g=parseGeneString(c.genes); if(!g.error) out.push({id, name:c.name||("#"+id), g, img:c.img||null, cat:c}); } });
+  return out;
+}
+function coatTypeOf(label){ return /tortoiseshell/i.test(label)?"tortoiseshell":/watercolou?r/i.test(label)?"watercolor":/snow/i.test(label)?"snow":"standard"; }
+function pairMatchProb(A,B,w){
+  if(!colorRoles(phenotype(A).wind, phenotype(B).wind)) return 0;   // can't actually breed
+  let p=1; const mul=v=>{ if(!(v>0)) return false; p*=v; return true; };
+  if(w.wind && !mul(windDist(A,B).get(w.wind)||0)) return 0;
+  if(w.fur && !mul(furDist(A,B).get(w.fur)||0)) return 0;
+  if(w.species && !mul(speciesDist(A,B).get(w.species==="Mercat"?"M":"C")||0)) return 0;
+  if(w.pattern){
+    if(w.pattern==="Solid"){ if(!mul(patVisDist(A,B).get("Solid")||0)) return 0; }
+    else if(!mul((patVisDist(A,B).get("Patterned")||0)*(patternDist(A,B).get(w.pattern)||0))) return 0;
+  }
+  if(w.coatType || w.color){
+    const cc=coatColorDist(A,B); if(cc.error) return 0;
+    let s=0; cc.dist.forEach((prob,label)=>{
+      const ctOk=!w.coatType || coatTypeOf(label)===w.coatType;
+      const colOk=!w.color || primaryColorWord(label).toLowerCase()===w.color;
+      if(ctOk&&colOk) s+=prob;
+    });
+    if(!mul(s)) return 0;
+  }
+  if(w.densMin!=null || w.densMax!=null){
+    const lo=w.densMin==null?1:w.densMin, hi=w.densMax==null?4:w.densMax;
+    let s=0; rangeDist(A.density,B.density).forEach((prob,d)=>{ if(d>=lo&&d<=hi) s+=prob; });
+    if(!mul(s)) return 0;
+  }
+  if(w.white==="none"){ if(!mul(whiteVisDist(A,B).get("No-white")||0)) return 0; }
+  else if(w.white==="any"){ if(!mul(whiteVisDist(A,B).get("White")||0)) return 0; }
+  else if(w.white){ if(!mul((whiteVisDist(A,B).get("White")||0)*(whiteTypeDist(A,B).get(w.white)||0))) return 0; }
+  if(w.wlMin!=null || w.wlMax!=null){
+    const lo=w.wlMin==null?0:w.wlMin, hi=w.wlMax==null?10:w.wlMax;
+    let s=0; rangeDist(A.whiteLevel,B.whiteLevel).forEach((prob,l)=>{ if(l>=lo&&l<=hi) s+=prob; });
+    if(lo>=1) s*=(whiteVisDist(A,B).get("White")||0);   // a visible level needs white shown
+    if(!mul(s)) return 0;
+  }
+  if(w.accent){ const ad=accentDist(A,B); if(!ad || !mul(ad.get(w.accent)||0)) return 0; }
+  return p;
+}
+function runFinder(w){
+  let cats=eligibleGeneCats(); const total=cats.length;
+  if(w.minAttr!=null) cats=cats.filter(c=>{ const t=catStatTotals(c.cat); return t.hasAttr && t.attr>=w.minAttr; });
+  if(w.minPers!=null) cats=cats.filter(c=>{ const t=catStatTotals(c.cat); return t.hasPers && t.pers>=w.minPers; });
+  const res=[];
+  for(let i=0;i<cats.length;i++) for(let j=i+1;j<cats.length;j++){
+    const p=pairMatchProb(cats[i].g, cats[j].g, w);
+    if(p>0) res.push({a:cats[i], b:cats[j], p});
+  }
+  res.sort((x,y)=>y.p-x.p);
+  return {total, eligible:cats.length, matches:res.length, top:res.slice(0,40)};
+}
+
 /* ---------- breeding render ---------- */
 function distRows(dist, opts){
   opts = opts || {};
@@ -2422,6 +2517,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     const r=rosterLoad();
     const ids=Object.keys(r.cats).sort((a,b)=>(r.cats[a].name||"").localeCompare(r.cats[b].name||""));
     dl.innerHTML = ids.map(id=>`<option value="${esc((r.cats[id].name||"Cat")+" #"+id)}"></option>`).join("");
+    if(typeof updateFinderMeta==="function") updateFinderMeta();
   }
   // Resolve a picker's value to a roster cat and fill the genetic-string box.
   function resolvePick(slot, pickSel, targetSel, noteSel){
@@ -2469,6 +2565,88 @@ document.addEventListener("DOMContentLoaded", ()=>{
     const b=e.target.closest && e.target.closest(".wl");
     if(b){ previewWhite.level=parseInt(b.getAttribute("data-wl"),10)||0; reBreed(); }
   });
+
+  // ----- Desired-outcome pair finder -----
+  const patternNames = [...new Set(Object.values(PATTERN_NAME))].sort();
+  const accentNames  = [...new Set(Object.values(ACCENT_NAME))];
+  const finderSelects = [
+    {k:"coatType", label:"Coat type", opts:[["","Any"],["standard","Standard"],["watercolor","Watercolor"],["tortoiseshell","Tortoiseshell"],["snow","Snow"]]},
+    {k:"color",    label:"Base colour", opts:[["","Any"]].concat(SPRITE_COLORS.map(c=>[c[0].toLowerCase(), c[0]])).concat([["snow","Snow"]])},
+    {k:"pattern",  label:"Pattern", opts:[["","Any"],["Solid","Solid"]].concat(patternNames.map(n=>[n,n]))},
+    {k:"wind",     label:"Wind", opts:[["","Any"],["North","North"],["South","South"],["Trade","Trade"],["Null","Null"]]},
+    {k:"fur",      label:"Fur", opts:[["","Any"],["Shorthair","Shorthair"],["Longhair","Longhair"]]},
+    {k:"species",  label:"Species", opts:[["","Any"],["Not-cat","Not-cat"],["Mercat","Mercat"]]},
+    {k:"white",    label:"White markings", opts:[["","Any"],["none","No white"],["any","Has white (any)"]].concat(["C","P","L","R","I","T"].map(t=>[t, WHITE_TYPE[t]]))},
+    {k:"accent",   label:"Accent", opts:[["","Any"]].concat(accentNames.map(n=>[n,n]))}
+  ];
+  function buildFinderForm(){
+    const box=$("#finderForm"); if(!box) return;
+    const sel=(k,label,opts)=>`<label>${esc(label)}<select id="f-${k}">${opts.map(([v,t])=>`<option value="${esc(v)}">${esc(t)}</option>`).join("")}</select></label>`;
+    const rng=(k,label,lo,hi)=>`<label>${esc(label)}<span class="finder-range"><input type="number" id="f-${k}Min" min="${lo}" max="${hi}" placeholder="min"><span>–</span><input type="number" id="f-${k}Max" min="${lo}" max="${hi}" placeholder="max"></span></label>`;
+    box.innerHTML = finderSelects.map(f=>sel(f.k,f.label,f.opts)).join("")
+      + rng("dens","Colour density (1–4)",1,4) + rng("wl","White level (0–10)",0,10)
+      + `<div class="finder-sub">Only pair cats where <b>both</b> parents have at least…</div>`
+      + `<label>Total attributes ≥<input type="number" id="f-minAttr" min="0" placeholder="any"></label>`
+      + `<label>Total personality ≥<input type="number" id="f-minPers" min="0" placeholder="any"></label>`;
+  }
+  function readFinderWant(){
+    const v=id=>{ const el=$("#f-"+id); return el?String(el.value).trim():""; };
+    const numOr=id=>{ const s=v(id); return s===""?null:parseInt(s,10); };
+    const w={};
+    finderSelects.forEach(f=>{ const val=v(f.k); if(val) w[f.k]=(f.k==="color")?val.toLowerCase():val; });
+    w.densMin=numOr("densMin"); w.densMax=numOr("densMax");
+    w.wlMin=numOr("wlMin");     w.wlMax=numOr("wlMax");
+    w.minAttr=numOr("minAttr"); w.minPers=numOr("minPers");
+    return w;
+  }
+  function wantIsEmpty(w){
+    return !finderSelects.some(f=>w[f.k]) && ["densMin","densMax","wlMin","wlMax","minAttr","minPers"].every(k=>w[k]==null);
+  }
+  function usePair(idA, idB){
+    const r=rosterLoad();
+    const load=(slot,id,tgt,pick,note)=>{
+      const c=r.cats[id]; if(!c) return;
+      const res=rosterCatToGeneString(c);
+      $(tgt).value=res.str||""; $(pick).value=(c.name||"")+" #"+id;
+      breedMeta[slot]={name:c.name||("#"+id), id, img:c.img||null};
+      $(note).className="breed-note ok"; $(note).textContent="Loaded "+(c.name||"#"+id)+".";
+    };
+    load("A",idA,"#pA","#pickA","#noteA");
+    load("B",idB,"#pB","#pickB","#noteB");
+    setStatus($("#breedStatus"),"","");
+    renderBreeding($("#pA").value, $("#pB").value);
+  }
+  function renderFinderResults(out){
+    const box=$("#finderResults");
+    if(out.total<2){ box.innerHTML=`<div class="rosterempty">I need at least two cats with known genetics. In 🐈 My cats, <b>Pull my cats</b> first.</div>`; return; }
+    if(!out.matches){ box.innerHTML=`<div class="rosterempty">No pair among your ${out.eligible} eligible cats can produce that — try loosening a filter.</div>`; return; }
+    box.innerHTML=`<div class="finder-pairs">${out.top.map(m=>{
+      const pct=m.p*100;
+      return `<button class="finder-pair" type="button" data-a="${esc(m.a.id)}" data-b="${esc(m.b.id)}">
+        <span class="fp-names">${esc(m.a.name)} <span class="fp-id">#${esc(m.a.id)}</span> × ${esc(m.b.name)} <span class="fp-id">#${esc(m.b.id)}</span></span>
+        <span class="fp-pct">${pct<9.95?pct.toFixed(1):Math.round(pct)}%</span></button>`;
+    }).join("")}</div>`;
+  }
+  function updateFinderMeta(){
+    const m=$("#finderMeta"); if(!m) return;
+    const n=eligibleGeneCats().length;
+    m.textContent = n ? (n+" cats with known genetics") : "No cats with genetics yet — Pull my cats first.";
+  }
+  buildFinderForm();
+  $("#finderBtn").addEventListener("click", ()=>{
+    const w=readFinderWant();
+    if(wantIsEmpty(w)){ setStatus($("#finderStatus"),"Pick at least one desired trait first.","err"); $("#finderResults").innerHTML=""; return; }
+    setStatus($("#finderStatus"),"Searching your cats…","busy");
+    setTimeout(()=>{
+      let out; try{ out=runFinder(w); }catch(e){ setStatus($("#finderStatus"),"Search error: "+(e.message||e),"err"); return; }
+      renderFinderResults(out);
+      setStatus($("#finderStatus"), out.matches? ("Showing top "+out.top.length+" of "+out.matches+" matching pair"+(out.matches===1?"":"s")+" (from "+out.eligible+" eligible cats). Click one to load it below."):"", out.matches?"ok":"");
+    }, 20);
+  });
+  $("#finderClearBtn").addEventListener("click", ()=>{ buildFinderForm(); $("#finderResults").innerHTML=""; setStatus($("#finderStatus"),"",""); updateFinderMeta(); });
+  $("#finderResults").addEventListener("click", e=>{ const b=e.target.closest && e.target.closest(".finder-pair"); if(b) usePair(b.getAttribute("data-a"), b.getAttribute("data-b")); });
+  $("#finderPanel").addEventListener("toggle", ()=>{ if($("#finderPanel").open) updateFinderMeta(); });
+
   fillBreedRosterDatalist();
 
   $("#breedBtn").addEventListener("click", ()=>{
