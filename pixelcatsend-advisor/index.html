@@ -244,12 +244,15 @@
   .rf:disabled{opacity:.4;cursor:not-allowed}
   .rmeta{color:var(--muted);font-size:12px;margin-left:auto}
   .rosterlist{margin-top:10px;max-height:360px;overflow-y:auto;border:1px solid var(--line-soft);border-radius:var(--radius-sm);background:var(--panel2)}
-  .rostercat{display:flex;gap:10px;align-items:baseline;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line-soft);background:transparent;color:var(--ink);padding:10px 12px;cursor:pointer;font-family:inherit}
+  .rostercat{display:flex;gap:10px;align-items:center;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line-soft);background:transparent;color:var(--ink);padding:9px 12px;cursor:pointer;font-family:inherit}
   .rostercat:last-child{border-bottom:0}
   .rostercat:hover{background:var(--brand-soft)}
+  .rostercat .catprev{flex:0 0 auto;border-radius:8px}
+  .rostercat .rc-body{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
+  .rostercat .rc-top{display:flex;gap:8px;align-items:baseline}
   .rostercat .rc-name{font-weight:700;font-size:14px}
   .rostercat .rc-id{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
-  .rostercat .rc-meta{color:var(--ink-soft);font-size:12px;margin-left:auto;text-align:right;flex:1 1 auto}
+  .rostercat .rc-meta{color:var(--ink-soft);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rostercat .rc-sug{color:var(--good-ink);font-weight:700}
   .rosterempty{padding:16px;color:var(--muted);font-size:13px;text-align:center}
   #rosterTable table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
@@ -339,7 +342,7 @@
           <button class="btn" id="pullProfileBtn" type="button">Pull my cats</button>
         </div>
         <div class="status" id="profileStatus" role="status" aria-live="polite"></div>
-        <p class="hint">Reads your <b>public</b> profile through a relay and grabs every cat it links to, then you can click each to fetch full stats. Relays can be flaky — if it fails, view the profile source (Ctrl/⌘+U) and paste it into the big box below; I'll pull the cats from that too.</p>
+        <p class="hint">Reads your public <b>Cats</b> page through a relay and pulls each cat's <b>name, colour, pattern, white markings, genetics and real portrait</b> straight from the page — ready for the Breeding tab, no per-cat fetching. Relays can be flaky; if it fails, open your in-game <b>Cats</b> page, view source (Ctrl/⌘+U), and paste it into the big box below. (One page = one tab of active cats; paste more tabs or the Village Manager to add the rest.)</p>
       </div>
 
       <div class="or-divider"><span>or paste a page</span></div>
@@ -743,6 +746,37 @@ function fetchCatById(id, onProgress){
   return fetchViaRelays(catUrl(id), onProgress, b=>/Strength|Bravery|Agility|Perception/i.test(b));
 }
 const profileUrl = id => CAT_ORIGIN + "/profile&id=" + id;
+const catsPageUrl = id => CAT_ORIGIN + "/village/cats&id=" + id;
+
+// Parse a Village-Cats / profile page into rich cat records. Each rendered cat
+// is a `.catjail` with a role=img aria-label describing its whole phenotype in
+// words, plus the exact sprite-layer <img>s. From that we get name, an accurate
+// genetic string, and the real image — no per-cat fetch needed.
+function parseCatsPage(html){
+  let doc; try{ doc=new DOMParser().parseFromString(html,"text/html"); }catch(e){ return []; }
+  const out=[], seen=new Set();
+  doc.querySelectorAll(".catjail").forEach(jail=>{
+    const link=jail.querySelector("a[href*='cat&id='],a[href*='cat?id=']");
+    if(!link) return;
+    const m=(link.getAttribute("href")||"").match(/cat[&?]id=(\d+)/); if(!m) return;
+    const id=m[1]; if(seen.has(id)) return; seen.add(id);
+    const roleImg=jail.querySelector("[role='img']");
+    const label=roleImg?(roleImg.getAttribute("aria-label")||""):"";
+    const pheno=parsePhenoLabel(label);
+    // name: aria-label prefix, else a sibling .cat-head link
+    let name=pheno.name||"";
+    if(!name){ const host=link.closest(".shifting-flex,.comment-avatar,.fiveacross")||jail.parentElement; const h=host&&host.querySelector(".cat-head a,.user-head a"); if(h) name=(h.textContent||"").replace(/\s+/g," ").trim(); }
+    // occupation from the neighbouring .cat-head .grey (first line)
+    let occupation=""; const host=link.closest(".shifting-flex,.comment-avatar,.fiveacross")||jail.parentElement;
+    const grey=host&&host.querySelector(".cat-head .grey"); if(grey){ occupation=(grey.textContent||"").split("(")[0].replace(/\s+/g," ").trim(); }
+    // real sprite layers (base/trade/accent/white/eyes); skip clothing & blanks
+    const imgLayers=[...jail.querySelectorAll("img")].map(i=>i.getAttribute("src")).filter(Boolean)
+      .filter(u=>/\/images\/cats\//.test(u));
+    const g=phenoLabelToGeneString(pheno);
+    out.push({id, name, occupation, label, pheno, imgLayers, genes:g.str, geneInfo:{resolved:g.resolved,guessed:g.guessed}});
+  });
+  return out;
+}
 
 // Pull every cat your profile page links to. Structure-agnostic: it scans for
 // cat links (cat&id= / cat?id= / /cat/NNNN), so it works whatever the layout is.
@@ -1215,6 +1249,31 @@ function rosterMerge(parsed){
   const hs=new Set(r.headers||[]); parsed.headers.forEach(h=>hs.add(h)); r.headers=[...hs];
   r.ts=nowTs(); rosterSave(r); return r;
 }
+// Merge rich records from a Cats/profile page: real image layers, a derived
+// genetic string, and phenotype columns — everything the game shows, no fetch.
+function mergeCatsPageCats(cats){
+  const r=rosterLoad();
+  const set=new Set(r.sets.all||[]);
+  cats.forEach(c=>{
+    const cur=r.cats[c.id]||{id:c.id,name:c.name,data:{}};
+    if(c.name) cur.name=c.name;
+    if(c.imgLayers&&c.imgLayers.length) cur.img=c.imgLayers;
+    if(c.genes){ cur.genes=c.genes; cur.geneInfo=c.geneInfo||null; }
+    const p=c.pheno||{};
+    const setc=(k,v)=>{ if(v!=null&&v!=="") cur.data[k]=v; };
+    setc("Species",p.species);
+    if(c.occupation) setc("Occupation",c.occupation);
+    if(p.fur) setc("Fur", p.fur[0].toUpperCase()+p.fur.slice(1));
+    if(p.pattern) setc("Pattern", p.pattern[0].toUpperCase()+p.pattern.slice(1));
+    if(p.mainColor){ const mc=colorFromToken(p.mainColor); setc("Color", (mc?mc.name:p.mainColor)+(p.hasTrade?(" "+((colorFromToken(p.tradeColor)||{}).name||p.tradeColor)):"")); }
+    if(p.hasTrade) setc("Wind","Trade");
+    if(typeof p.whiteLevel==="number"){ setc("White Level",String(p.whiteLevel)); setc("White Type", WHITE_TYPE[p.whiteType]||"Classic"); }
+    r.cats[c.id]=cur; set.add(c.id);
+  });
+  r.sets.all=[...set];
+  const hs=new Set(r.headers||[]); ["Species","Occupation","Wind","Fur","Color","Pattern","White Level","White Type"].forEach(h=>hs.add(h)); r.headers=[...hs];
+  r.ts=nowTs(); rosterSave(r); return cats.length;
+}
 function col(cat,re){ const k=Object.keys(cat.data||{}).find(h=>re.test(h)); return k?cat.data[k]:""; }
 const notNA = v => (v && String(v).toLowerCase()!=="n/a") ? v : "";
 
@@ -1224,6 +1283,8 @@ const notNA = v => (v && String(v).toLowerCase()!=="n/a") ? v : "";
 function rosterCatToGeneString(cat){
   const gs=(col(cat,/genetic\s*string/i)||"").trim();
   if(gs){ const p=parseGeneString(gs); if(!p.error) return {str:gs, source:"string", resolved:["revealed genetic string"], guessed:[]}; }
+  // genotype derived from the Cats-page aria-label (accurate: main+trade colours, pattern, white)
+  if(cat.genes){ const p=parseGeneString(cat.genes); if(!p.error) return {str:cat.genes, source:"page", resolved:(cat.geneInfo&&cat.geneInfo.resolved)||["from your Cats page"], guessed:(cat.geneInfo&&cat.geneInfo.guessed)||[]}; }
   const t={
     species:    notNA(col(cat,/species/i)),
     wind:       notNA(col(cat,/wind/i)),
@@ -1305,11 +1366,13 @@ function rosterRender(){
     if(!ids.length){ $("#rosterList").innerHTML=`<div class="rosterempty">No cats match.</div>`; return; }
     $("#rosterList").innerHTML = ids.slice(0,400).map(id=>{
       const c=r.cats[id];
-      const meta2=[notNA(col(c,/occupation/i)), notNA(col(c,/adventuring|class/i)), notNA(col(c,/personality/i))].filter(Boolean).join(" · ");
+      const meta2=[notNA(col(c,/occupation/i)), notNA(col(c,/^colou?r$/i)), notNA(col(c,/pattern/i)), notNA(col(c,/adventuring|class/i))].filter(Boolean).join(" · ");
       const s=cache[id]; const sug = (s&&s.className)?`<span class="rc-sug">→ ${esc(s.className)}</span>`:"";
+      const thumb = (c.img&&c.img.length)?catImgFromLayers(c.img,40,c.name):"";
       return `<button class="rostercat" type="button" data-id="${esc(id)}">
-        <span class="rc-name">${esc(c.name)}</span> <span class="rc-id">#${esc(id)}</span>
-        <span class="rc-meta">${esc(meta2)} ${sug}</span></button>`;
+        ${thumb}
+        <span class="rc-body"><span class="rc-top"><span class="rc-name">${esc(c.name)}</span> <span class="rc-id">#${esc(id)}</span></span>
+        <span class="rc-meta">${esc(meta2)} ${sug}</span></span></button>`;
     }).join("");
   }else{
     $("#rosterList").classList.add("hide"); $("#rosterTable").classList.remove("hide");
@@ -1718,38 +1781,127 @@ function phenotypeToGeneString(t){
   return { str, resolved, guessed };
 }
 
+/* ---------- sprite colour tokens + aria-label parsing ----------
+   A rendered Pixel Cat's End cat exposes layered PNGs
+   (/images/cats/{c|m}/{token}_main_{pattern}.png + _trade_ + _accent_ +
+   white_{type}_{level}.png + eyes_{expr}.png) and a plain-English aria-label.
+   Colour tokens are abbreviated (charc=Charcoal, choco=Chocolate, aprico=Apricot)
+   and are a prefix of the full colour name. */
+const SPRITE_COLORS = [
+  ["Black","black","B",false,4],["Chocolate","choco","B",false,3],["Brown","brown","B",false,2],["Tan","tan","B",false,1],
+  ["Charcoal","charc","B",true,4],["Grey","grey","B",true,3],["Smoke","smoke","B",true,2],["Silver","silver","B",true,1],
+  ["Red","red","O",false,4],["Ginger","ginger","O",false,3],["Orange","orange","O",false,2],["Apricot","aprico","O",false,1],
+  ["Buff","buff","O",true,4],["Cream","cream","O",true,3],["Almond","almond","O",true,2],["Beige","beige","O",true,1]
+];
+const NAME_TO_TOKEN = {}; SPRITE_COLORS.forEach(([n,t])=>NAME_TO_TOKEN[n.toLowerCase()]=t);
+function spriteColorToken(name){ return NAME_TO_TOKEN[String(name||"").toLowerCase()] || String(name||"").toLowerCase().replace(/[^a-z]/g,""); }
+function colorFromToken(tok){
+  tok=String(tok||"").toLowerCase().replace(/[^a-z]/g,""); if(!tok) return null;
+  for(const [name,token,group,dilute,density] of SPRITE_COLORS){ if(token===tok) return {name,group,dilute,density}; }
+  for(const [name,token,group,dilute,density] of SPRITE_COLORS){ if(name.toLowerCase().startsWith(tok)) return {name,group,dilute,density}; }
+  return null;
+}
+function parsePhenoLabel(label){
+  const s=String(label||"").replace(/\s+/g," ").trim();
+  const out={raw:s};
+  const nameM=s.match(/^([^:]+):/); if(nameM) out.name=nameM[1].trim();
+  out.species = /\bmercat\b/i.test(s) ? "Mercat" : "Not-cat";
+  const pose=s.match(/:\s*(\w+)\s+(?:Not-cat|Mercat)/i); if(pose) out.pose=pose[1].toLowerCase();
+  const coat=s.match(/with an? (\w+) (\w+) (shorthair|longhair) coat/i);
+  if(coat){ out.mainColor=coat[1].toLowerCase(); out.pattern=coat[2].toLowerCase(); out.fur=coat[3].toLowerCase(); }
+  const trade=s.match(/and (\w+) \w+ trade markings/i);
+  if(trade){ out.tradeColor=trade[1].toLowerCase(); out.hasTrade=true; }
+  if(/no white markings/i.test(s)){ out.whiteLevel=0; out.whiteType="C"; }
+  else { const w=s.match(/\b([CPLRIT])(\d{1,2}) white markings/i); if(w){ out.whiteType=w[1].toUpperCase(); out.whiteLevel=parseInt(w[2],10); } }
+  return out;
+}
+function phenoLabelToGeneString(p){
+  p=p||{};
+  const resolved=[], guessed=[];
+  const sp = p.species==="Mercat" ? "M" : "C";
+  if(p.species) resolved.push("species");
+  let fur=["S","S"];
+  if(p.fur==="longhair"){ fur=["L","L"]; resolved.push("fur"); }
+  else if(p.fur==="shorthair"){ fur=["S","S"]; resolved.push("fur"); guessed.push("longhair carrier?"); }
+  else guessed.push("fur");
+  let wind=["N","N"], color=["B","B"], dil=["F","F"], density=1;
+  const main=p.mainColor?colorFromToken(p.mainColor):null;
+  if(main){
+    if(p.hasTrade && p.tradeColor){
+      const trade=colorFromToken(p.tradeColor);
+      wind=["N","S"]; resolved.push("wind","colour");
+      color=[main.group, trade?trade.group:main.group];
+      dil=[main.dilute?"D":"F", main.dilute?"D":"F"]; density=main.density;
+    } else {
+      wind=["N","N"]; color=[main.group,main.group];
+      dil=[main.dilute?"D":"F", main.dilute?"D":"F"]; density=main.density;
+      resolved.push("colour"); guessed.push("wind (North/South render alike)");
+      if(!main.dilute) guessed.push("dilute carrier?");
+    }
+  } else guessed.push("colour");
+  let patVis=["N","N"], pat=["T","T"];
+  if(p.pattern && p.pattern!=="solid"){ const pr=PATTERN_REV[p.pattern]; if(pr){ pat=pr; patVis=["Y","Y"]; resolved.push("pattern"); guessed.push("pattern carrier?"); } else guessed.push("pattern"); }
+  else if(p.pattern==="solid"){ patVis=["N","N"]; resolved.push("pattern"); }
+  else guessed.push("pattern");
+  let whiteVis=["N","N"], whiteLevel=0, whiteType="C";
+  if(typeof p.whiteLevel==="number"){ whiteLevel=Math.max(0,Math.min(10,p.whiteLevel)); whiteType=WHITE_TYPE[p.whiteType]?p.whiteType:"C"; whiteVis=whiteLevel>0?["Y","Y"]:["N","N"]; resolved.push("white"); if(whiteLevel>0) guessed.push("white carrier?"); }
+  else guessed.push("white");
+  const coat=color[0]+color[1]+dil[0]+dil[1]+density;
+  const pattern=patVis[0]+patVis[1]+pat[0]+pat[1];
+  const white=whiteVis[0]+whiteVis[1]+whiteLevel+whiteType;
+  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB] [RR]`;
+  return { str, resolved, guessed };
+}
 
 /* ---------- layered cat-image preview ----------
-   The game composites a cat from stacked PNG layers inside `.catjail`
-   (base coat + trade + accent + white + eyes). We can build the base coat
-   (colour + pattern, baked into one file) and eyes with confidence; the
-   trade/white/accent overlay URLs aren't documented yet, so we layer what we
-   can and fall back to a colour swatch if a layer 404s. Approximate but real. */
+   Two sources: real captured layers (from a cat's rendered avatar — exact), or
+   layers built from a phenotype (base coat + trade for tortie/watercolor + white
+   + eyes). A layer that 404s hides itself; the container's colour swatch shows
+   through, so it degrades gracefully. */
 const IMG_ORIGIN = "https://www.pixelcatsend.com";
-const spriteToken = s => String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
-function spriteBaseUrl(colorName, patternName, patterned, species){
-  const sp = species==="Mercat" ? "m" : "c";
-  const color = spriteToken(colorName);
-  const pat = patterned ? spriteToken(patternName) : "solid";
-  if(!color) return null;
-  return IMG_ORIGIN+"/images/cats/"+sp+"/"+color+"_main_"+pat+".png";
-}
-// primary base colour word out of a coat-colour label ("Red-Black tortoiseshell" -> "Red")
 function primaryColorWord(label){
   const s=String(label).replace(/\b(standard|solid|watercolou?r|tortoiseshell|tortie)\b/ig,"").trim();
   return s.split(/[-–—/&]|,/)[0].trim();
 }
+function secondaryColorWord(label){
+  const s=String(label).replace(/\b(standard|solid|watercolou?r|tortoiseshell|tortie)\b/ig,"").trim();
+  const parts=s.split(/[-–—/&]|,/).map(x=>x.trim()).filter(Boolean);
+  return parts[1]||parts[0]||"";
+}
+function _layerTag(src,z){ return src?`<img class="cpl" style="z-index:${z}" src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:""; }
+function catImgFromLayers(layers, size, title){
+  size=size||72;
+  const html=(layers||[]).map((u,i)=>_layerTag(u,i+2)).join("");
+  return `<div class="catprev" title="${esc(title||"")}" style="width:${size}px;height:${size}px">${html}</div>`;
+}
+// Build sprite layer URLs from a phenotype description.
+function spritePhenoLayers(opts){
+  // opts: {colorName, colorName2, coatType, patternName, patterned, species, whiteType, whiteLevel}
+  const sp = opts.species==="Mercat" ? "m" : "c";
+  const pat = opts.patterned ? spriteColorTokenPat(opts.patternName) : "solid";
+  const layers=[];
+  const base=IMG_ORIGIN+"/images/cats/"+sp+"/";
+  const isSnow=/snow/i.test(opts.colorName||"");
+  const mainTok=spriteColorToken(opts.colorName);
+  if(mainTok && !isSnow) layers.push(base+mainTok+"_main_"+pat+".png");
+  if((opts.coatType==="tortoiseshell"||opts.coatType==="watercolor") && opts.colorName2){
+    layers.push(base+spriteColorToken(opts.colorName2)+"_trade_"+pat+".png");
+  }
+  if(opts.whiteLevel>0){ layers.push(base+"white_"+(WHITE_TYPE[opts.whiteType]||"Classic").toLowerCase()+"_"+opts.whiteLevel+".png"); }
+  layers.push(IMG_ORIGIN+"/images/cats/eyes_neutral.png");
+  return layers;
+}
+function spriteColorTokenPat(name){ return String(name||"").toLowerCase().replace(/[^a-z]/g,"") || "solid"; }
 function catPreview(opts){
-  // opts: {colorName, patternName, patterned, species, hex, size, title}
   const size=opts.size||88;
-  const base=spriteBaseUrl(opts.colorName, opts.patternName, opts.patterned, opts.species);
-  const eyes=IMG_ORIGIN+"/images/cats/eyes_neutral.png";
-  const layer=(src,z)=> src?`<img class="cpl" style="z-index:${z}" src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:"";
-  return `<div class="catprev" title="${esc(opts.title||"")}" style="width:${size}px;height:${size}px;background:${esc(opts.hex||"var(--panel2)")}">`+
-    layer(base,2)+layer(eyes,6)+`</div>`;
+  const layers=spritePhenoLayers(opts);
+  const html=layers.map((u,i)=>_layerTag(u,i+2)).join("");
+  return `<div class="catprev" title="${esc(opts.title||"")}" style="width:${size}px;height:${size}px;background:${esc(opts.hex||"var(--panel2)")}">${html}</div>`;
 }
 function catPreviewFor(ph, size){
-  return catPreview({colorName:ph.colorPrimary, patternName:ph.patternBase, patterned:ph.patterned, species:ph.species, hex:ph.colorHex, size, title:ph.color+" · "+ph.pattern});
+  return catPreview({colorName:ph.colorPrimary, colorName2:(ph.colors&&ph.colors[1])||null, coatType:ph.coatType,
+    patternName:ph.patternBase, patterned:ph.patterned, species:ph.species,
+    whiteType:ph.whiteType, whiteLevel:ph.showsWhite?ph.whiteLevel:0, hex:ph.colorHex, size, title:ph.color+" · "+ph.pattern});
 }
 
 /* ---------- breeding render ---------- */
@@ -1770,9 +1922,10 @@ function parentCard(title, g, meta){
   const who = (meta&&meta.name) ? `${esc(title)} · ${esc(meta.name)} <span class="rc-id">#${esc(meta.id||"")}</span>` : esc(title);
   if(g.error) return `<div class="statset parent-card"><h3>${who}</h3><div class="breed-warn">${esc(g.error)}</div></div>`;
   const ph = phenotype(g);
+  const portrait = (meta&&meta.img&&meta.img.length) ? catImgFromLayers(meta.img, 84, ph.color) : catPreviewFor(ph, 84);
   return `<div class="statset parent-card"><h3>${who}</h3>
     <div class="pheno-head">
-      ${catPreviewFor(ph, 84)}
+      ${portrait}
       <div>
         <div class="pheno-line"><b>${esc(ph.color)}</b> · ${esc(ph.pattern)}</div>
         <div class="pheno-line">${esc(ph.wind)} wind · ${esc(ph.fur)}</div>
@@ -1791,14 +1944,20 @@ function kittenGallery(R){
   const topPat = pats[0]?pats[0][0]:"Mackerel";
   const patterned = pPatterned>=0.5;
   const species = ([...R.species.entries()].sort((a,b)=>b[1]-a[1])[0]||["C"])[0]==="M"?"Mercat":"Not-cat";
+  // most-likely white overlay (level + type) for the previews
+  const topWhiteShown = ([...R.whiteVisible.entries()].sort((a,b)=>b[1]-a[1])[0]||["No-white"])[0]==="White";
+  const topLevel = topWhiteShown ? (([...R.whiteLevel.entries()].sort((a,b)=>b[1]-a[1])[0]||[0])[0]) : 0;
+  const topWType = ([...R.whiteType.entries()].sort((a,b)=>b[1]-a[1])[0]||["C"])[0];
   const cells=colors.map(([label,p])=>{
     const hex=cc.hex.get(label);
-    const img=catPreview({colorName:primaryColorWord(label), patternName:topPat, patterned, species, hex, size:84, title:label});
+    const coatType=/tortoiseshell/i.test(label)?"tortoiseshell":/watercolou?r/i.test(label)?"watercolor":/snow/i.test(label)?"snow":"standard";
+    const img=catPreview({colorName:primaryColorWord(label), colorName2:secondaryColorWord(label), coatType,
+      patternName:topPat, patterned, species, whiteType:topWType, whiteLevel:topLevel, hex, size:84, title:label});
     const pct=p*100;
     return `<figure class="kitten">${img}<figcaption><span class="knm">${esc(label)}</span><span class="kpct">${pct<9.95?pct.toFixed(1):Math.round(pct)}%</span></figcaption></figure>`;
   }).join("");
   return `<div class="dist-block"><h3>Likely kittens</h3><div class="kitten-gallery">${cells}</div>
-    <p class="hint">Coat previews composited from the game's sprite layers (base colour + ${patterned?("most-likely pattern, "+esc(topPat)):"solid"} + eyes). White markings, tortoiseshell blends &amp; accents aren't overlaid yet. A missing image falls back to a colour swatch.</p></div>`;
+    <p class="hint">Coat previews composited from the game's own sprite layers — base colour${patterned?(" + "+esc(topPat)+" pattern"):""}${topLevel>0?(" + "+esc((whiteMarkName(topWType,topLevel)||"white"))):""} + eyes — showing the most-likely pattern &amp; white for the litter. A missing layer falls back to a colour swatch.</p></div>`;
 }
 let breedMeta = {A:null, B:null};
 function renderBreeding(strA, strB){
@@ -1929,22 +2088,23 @@ document.addEventListener("DOMContentLoaded", ()=>{
   function mergeCatIdRows(rows){ rosterMerge({view:"all", headers:[], rows:rows.map(c=>({id:c.id, name:c.name||"", data:{}}))}); }
   function afterRosterChange(){ $("#rosterUI").classList.remove("hide"); fillBreedRosterDatalist(); rosterRender(); }
 
-  // Pull cats straight from a public profile page (fetch by ID/URL through relays).
+  // Pull cats straight from your public Cats page (fetch by ID/URL through relays).
+  // The Cats page renders each cat with a full descriptive aria-label + sprite,
+  // so we get name, image and an accurate genotype without any per-cat fetch.
   async function pullProfile(){
     const raw=($("#profileId").value||"").trim();
     const id=(raw.match(/(\d{2,})/)||[])[1];
     if(!id){ setStatus($("#profileStatus"),"Enter your profile ID (a number) or your profile link.","err"); return; }
     const btn=$("#pullProfileBtn"); btn.disabled=true;
-    setStatus($("#profileStatus"),"Fetching profile #"+id+"…","busy");
+    setStatus($("#profileStatus"),"Fetching your cats (#"+id+")…","busy");
     try{
-      const html=await fetchViaRelays(profileUrl(id), m=>setStatus($("#profileStatus"),m,"busy"), b=>/cat[&?]id=|\/cat\//i.test(b));
-      const cats=extractCatIdsFromProfile(html);
-      if(!cats.length){ setStatus($("#profileStatus"),"Fetched the profile but found no cats linked on it. If your cats aren't shown there, use the Village Manager paste below instead.","err"); return; }
-      mergeCatIdRows(cats); afterRosterChange();
-      const named=cats.filter(c=>c.name).length;
-      setStatus($("#profileStatus"),"Pulled "+cats.length+" cats"+(named?(" ("+named+" named)"):"")+". Click any cat to fetch its full stats, or “✨ Suggest for shown cats” to do them all.","ok");
+      const html=await fetchViaRelays(catsPageUrl(id), m=>setStatus($("#profileStatus"),m,"busy"), b=>/catjail|cat[&?]id=/i.test(b));
+      const cats=parseCatsPage(html);
+      if(!cats.length){ setStatus($("#profileStatus"),"Fetched the page but found no cats on it. Open your Cats page (the “Cats” link in-game), view source, and paste it into the box below instead.","err"); return; }
+      mergeCatsPageCats(cats); afterRosterChange();
+      setStatus($("#profileStatus"),"Pulled "+cats.length+" cats with their colours, patterns &amp; genetics — ready for the Breeding tab. This is one tab of your active cats; paste other tabs (or the Village Manager) below to add the rest.","ok");
     }catch(e){
-      setStatus($("#profileStatus"),"Couldn't fetch the profile through a relay ("+(e.message||e)+"). Open your profile, view source (Ctrl/⌘+U), copy all, and paste it into the box below — I'll pull the cats from that.","err");
+      setStatus($("#profileStatus"),"Couldn't fetch through a relay ("+(e.message||e)+"). Open your Cats page (in-game “Cats” link), view source (Ctrl/⌘+U), copy all, and paste it into the box below — I'll read the cats from that.","err");
     }finally{ btn.disabled=false; }
   }
   $("#pullProfileBtn").addEventListener("click", pullProfile);
@@ -1955,6 +2115,14 @@ document.addEventListener("DOMContentLoaded", ()=>{
     if(/^https?:\/\/\S+$/i.test(t) || t.length<50){
       setStatus($("#rosterStatus"),"That looks like the page's address, not its HTML. I can't open your private Manager page — I need the page source. On the Village Manager, press Ctrl+U (⌘+⌥+U on Mac), select all, copy, and paste it here — or use the ⭐ bookmarklet above.","err"); return;
     }
+    // A Cats/profile page carries rendered cats (aria-labels + sprites) — richest source.
+    const rich=parseCatsPage(raw);
+    if(rich.length){
+      mergeCatsPageCats(rich); $("#rosterPaste").value=""; afterRosterChange();
+      setStatus($("#rosterStatus"),"Read "+rich.length+" cats from that page — colours, patterns, genetics &amp; real portraits included. Paste more tabs to add the rest.","ok");
+      return;
+    }
+    // Otherwise a Village Manager table.
     const parsed=parseRoster(raw);
     if(parsed.rows.length){
       rosterMerge(parsed);
@@ -1962,14 +2130,14 @@ document.addEventListener("DOMContentLoaded", ()=>{
       setStatus($("#rosterStatus"),"Loaded "+parsed.rows.length+" cats from the “"+parsed.view+"” view. Paste other views (Basic / Appearances / Adventuring…) to add more columns &amp; filters.","ok");
       return;
     }
-    // No manager table — maybe it's a profile page. Pull cat links from it.
+    // Last resort: just cat links.
     const cats=extractCatIdsFromProfile(raw);
     if(cats.length){
       mergeCatIdRows(cats); $("#rosterPaste").value=""; afterRosterChange();
-      setStatus($("#rosterStatus"),"No manager table there, but I found "+cats.length+" cats linked on the page. Click any to fetch its full stats.","ok");
+      setStatus($("#rosterStatus"),"Found "+cats.length+" cats linked on that page. Click any to fetch its full stats.","ok");
       return;
     }
-    setStatus($("#rosterStatus"),"Couldn't find a cat table or any cat links in that. Make sure you copied the whole Village Manager (or profile) page source, not just part of it.","err");
+    setStatus($("#rosterStatus"),"Couldn't find any cats in that. Make sure you copied the whole Cats or Village Manager page source, not just part of it.","err");
   });
   $("#clearRosterBtn").addEventListener("click", ()=>{
     try{ localStorage.removeItem(ROSTER_KEY); }catch(e){}
@@ -2040,7 +2208,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     if(res.error){ note.className="breed-note warn"; note.textContent=res.error; breedMeta[slot]=null; return; }
     $(targetSel).value=res.str;
     const nm=r.cats[id].name||("#"+id);
-    breedMeta[slot]={name:nm, id:id};
+    breedMeta[slot]={name:nm, id:id, img:r.cats[id].img||null};
     if(res.source==="string"){ note.className="breed-note ok"; note.textContent="Loaded "+nm+"’s revealed genetic string."; }
     else{
       const g=res.guessed && res.guessed.length ? " Hidden genes assumed: "+res.guessed.join(", ")+"." : "";

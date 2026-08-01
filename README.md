@@ -16,19 +16,21 @@ combined profile. All analysis runs in your browser; nothing leaves the page.
 Load a cat one of four ways — they all land on an editable sheet, so you can fix anything before analyzing:
 
 1. **My cats (roster)** — two ways to build it:
-   - **Fastest — from your profile:** type your **profile ID or link** and hit **Pull my cats**. It reads your
-     *public* profile through a relay and grabs every cat it links to (no pasting). Then click a cat to fetch its
-     full stats, or **Suggest for shown cats** to do them all.
+   - **Fastest — from your Cats page:** type your **profile ID or link** and hit **Pull my cats**. It reads your
+     public **Cats** page through a relay and pulls each cat's **name, colour, pattern, white markings, genetics and
+     real portrait** straight from the page — no per-cat fetching. Each Cats page is one tab of active cats; paste
+     more tabs (or the Manager) to add the rest.
    - **Most complete — Village Manager:** paste that page's **HTML** once (it's a private, logged-in page, so it
      can't be auto-loaded, and pasting the *address* won't work — you need the page **source**). Grab it with
      **Ctrl+U → Ctrl+A → Ctrl+C** (⌘+⌥+U on Mac), or use the one-click **bookmarklet** in that tab. This is the only
-     source for traveling cats and class/job levels. Paste more views (Basic, Adventuring Levels, Day Job Bonuses,
-     Appearances, Active/Traveling) and their columns/filters merge into the same roster. (A profile page pasted
-     here also works.)
+     source for traveling cats and class/job levels. Paste more views and their columns/filters merge in.
 
-   Either way the roster is a **searchable, filterable** list saved on your device. A **Table** view shows every cat
-   with all captured columns plus suggested class/jobs — **click any column header to sort** (numeric-aware, click
-   again to reverse) — and **Suggest for shown cats** computes suggestions in bulk.
+   Pasting a **Cats page** into the box reads each cat's rendered avatar — its descriptive `aria-label` gives an
+   accurate genotype (main + trade colours → standard/watercolor/tortoiseshell, pattern, white level & type) and its
+   sprite layers give the **real portrait**. Either way the roster is a **searchable, filterable** list saved on your
+   device, with thumbnails. A **Table** view shows every cat with all captured columns plus suggested class/jobs —
+   **click any column header to sort** (numeric-aware, click again to reverse) — and **Suggest for shown cats**
+   computes suggestions in bulk.
 2. **By cat ID** — paste an ID (e.g. `430432`) or a profile URL, press **Fetch cat**. Routed through public
    CORS relays because the game blocks direct cross-site reads; relays can be flaky, so:
 3. **Paste page HTML** — open the profile, view source (Ctrl/Cmd+U), copy all, paste. Always works.
@@ -58,9 +60,10 @@ data cross-checked against the community [Not-Wiki](https://pixelcatsend.mirahez
 Predict a litter **two ways**:
 
 - **Pick each parent from your cats** by name or `#ID` (autocompletes from your roster). Most cats never reveal their
-  genetic string, so the tool **derives a best-effort genotype from their visible traits** — colour, pattern, wind, fur,
-  white markings, accent — filling the editable string box and telling you which hidden recessives it had to assume.
-  Load cats in **🐈 My cats** first (the **Appearances** manager view carries the richest data).
+  genetic string, so the tool **derives the genotype from what the game displays** — for cats pulled from your Cats page
+  that means reading the rendered avatar's description (main + trade colours, pattern, white level & type, fur, species),
+  which pins the coat genetics down accurately; it fills the editable string box and notes any hidden recessives it had
+  to assume. Parents picked from the roster show their **real in-game portrait**.
 - **Paste a genetic string** directly (e.g. `[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]`; old dash/pipe strings work too)
   when you have one revealed.
 
