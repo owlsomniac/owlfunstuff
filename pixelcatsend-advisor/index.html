@@ -814,12 +814,15 @@ function withTimeout(promise, ms){
 }
 // Fetch any pixelcatsend URL through the rotating public relays.
 // `validate(body)` returns true if the body looks like the expected page.
+let relayRotation = 0;
 async function fetchViaRelays(target, onProgress, validate){
   let lastErr;
-  for(let i=0;i<PROXIES.length;i++){
+  const start = (relayRotation++) % PROXIES.length;   // spread concurrent fetches across relays
+  for(let k=0;k<PROXIES.length;k++){
+    const i=(start+k)%PROXIES.length;
     try{
-      onProgress && onProgress("Contacting relay "+(i+1)+" of "+PROXIES.length+"…");
-      const res = await withTimeout(fetch(PROXIES[i](target), {redirect:"follow"}), 15000);
+      onProgress && onProgress("Contacting relay "+(k+1)+" of "+PROXIES.length+"…");
+      const res = await withTimeout(fetch(PROXIES[i](target), {redirect:"follow"}), 12000);
       if(!res.ok) throw new Error("HTTP "+res.status);
       const body = await res.text();
       if(!body || body.length<200) throw new Error("empty response");
@@ -2419,7 +2422,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
         prog("Reading page "+n+"… ("+dedupeCats(all).length+" cats so far)");
         try{ const h=await fetchViaRelays(url, null, valid); all=all.concat(parseCatsPage(h)); discover(h); }
         catch(e){ failed++; }
-        await sleep(700);
+        await sleep(300);
       }
       const uniq=dedupeCats(all);
       if(!uniq.length){ setStatus($("#profileStatus"),"Fetched the page but found no cats on it. Open your in-game Cats page, view source, and paste it into the box below instead.","err"); return; }
@@ -2489,18 +2492,26 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
   // bulk-suggest across the shown cats (fetches each page, throttled)
   $("#suggestStopBtn").addEventListener("click", ()=>{ bulkStop=true; });
-  // Shared enrichment loop: fetch each cat's page and fold stats/jobs/class
-  // levels/genetics into the roster. Used by "Pull my cats" and the button.
+  // Shared enrichment: fetch each cat's page and fold stats/jobs/class levels
+  // into the roster. Runs several fetches CONCURRENTLY (a pool of workers) so a
+  // 50-cat roster takes ~30s instead of minutes of one-at-a-time relay round-trips.
   async function enrichCats(ids, statusFn){
-    let done=0, ok=0, fail=0;
-    for(const id of ids){
-      if(bulkStop) break;
-      statusFn("Fetching stats "+(++done)+"/"+ids.length+"… (#"+id+") — attributes, jobs &amp; class levels", "busy", done, ids.length);
-      try{ const html=await fetchCatById(id); const cat=parseCatHTML(html); cacheSuggestion(id, cat); rosterEnrichFromCat(id, cat); ok++; }
-      catch(e){ fail++; }
-      rosterRender();
-      await sleep(900);
+    const CONCURRENCY = 6;
+    let next=0, done=0, ok=0, fail=0, lastPaint=0;
+    const paint=()=>{ const t=Date.now(); if(t-lastPaint>250){ lastPaint=t; rosterRender(); } };
+    async function worker(){
+      while(next < ids.length && !bulkStop){
+        const id = ids[next++];
+        try{ const html=await fetchCatById(id); const cat=parseCatHTML(html); cacheSuggestion(id, cat); rosterEnrichFromCat(id, cat); ok++; }
+        catch(e){ fail++; }
+        done++;
+        statusFn("Fetching stats "+done+"/"+ids.length+"… ("+ok+" done"+(fail?(", "+fail+" to retry"):"")+")", "busy", done, ids.length);
+        paint();
+        await sleep(120);   // small politeness gap per worker
+      }
     }
+    await Promise.all(Array.from({length:Math.min(CONCURRENCY, ids.length)}, ()=>worker()));
+    rosterRender();
     return {ok, fail, stopped:bulkStop};
   }
   $("#suggestAllBtn").addEventListener("click", async ()=>{
