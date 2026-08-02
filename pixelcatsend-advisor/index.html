@@ -532,6 +532,14 @@
           <button class="btn ghost sm" id="clearRosterBtn" type="button">Clear roster</button>
           <span class="rmeta" style="margin-left:auto">Tip: click a group header to collapse its columns · click a name to open the cat</span>
         </div>
+        <div class="rfilters" style="margin-top:10px" role="group" aria-label="Save and restore your roster">
+          <span class="rmeta">Backup:</span>
+          <button class="btn ghost sm" id="exportRosterBtn" type="button" title="Save your whole roster + manual edits + last breeding to a file you keep — survives a PC restart">⬇️ Export to file</button>
+          <button class="btn ghost sm" id="importRosterBtn" type="button" title="Load a roster file you exported earlier (replaces your current roster)">⬆️ Import from file</button>
+          <input type="file" id="importRosterInput" accept="application/json,.json" class="hide" aria-hidden="true">
+          <button class="btn ghost sm hide" id="autoSaveBtn" type="button" title="Chrome/Edge only: keep a file in sync automatically as you edit, so nothing is ever lost">🔗 Auto-save to file…</button>
+          <span class="rmeta" id="autoSaveStatus"></span>
+        </div>
         <div class="status" id="suggestStatus" role="status" aria-live="polite"></div>
         <div class="status" id="rosterStatus" role="status" aria-live="polite"></div>
         <div class="ratingkey" aria-label="Stat grade colours">
@@ -1500,8 +1508,77 @@ let currentEquips = {};
 const ROSTER_KEY="pce-roster-v1", SUGGEST_KEY="pce-suggest-v1";
 function nowTs(){ try{ return Date.now(); }catch(e){ return 0; } }
 function lsGet(k,def){ try{ const v=JSON.parse(localStorage.getItem(k)||"null"); return v==null?def:v; }catch(e){ return def; } }
-function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} scheduleAutoSave(); }
 function rosterLoad(){ const r=lsGet(ROSTER_KEY,null); return (r&&r.cats)?r:{cats:{},sets:{all:[],active:[],travel:[]},headers:[],ts:0}; }
+
+/* ---- Backup: export/import a save file (+ optional Chrome/Edge auto-save) ----------
+   Some setups wipe localStorage on a PC restart (clear-on-exit, managed/shared machines),
+   so the roster — plus your manual edits and last breeding — can be saved to a real file
+   that survives anything, and on Chromium can be kept in sync automatically. */
+let saveFileHandle=null, autoSaveTimer=null;
+// Snapshot every "pce*" localStorage key (roster, breeding, suggestions) into one object.
+function collectState(){
+  const data={};
+  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i);
+    if(k && k.indexOf("pce")===0){ const raw=localStorage.getItem(k); try{ data[k]=JSON.parse(raw); }catch(e){ data[k]=raw; } } }
+  let when=""; try{ when=new Date().toISOString(); }catch(e){}
+  return {app:"pixelcatsend-advisor", kind:"backup", version:1, savedAt:when, data};
+}
+function applyState(obj){
+  if(!obj || obj.app!=="pixelcatsend-advisor" || !obj.data || typeof obj.data!=="object") return false;
+  Object.keys(obj.data).forEach(k=>{ if(k.indexOf("pce")!==0) return; const v=obj.data[k];
+    try{ localStorage.setItem(k, typeof v==="string"?v:JSON.stringify(v)); }catch(e){} });
+  return true;
+}
+function backupBlob(){ return new Blob([JSON.stringify(collectState(),null,2)], {type:"application/json"}); }
+function exportBackup(){
+  const url=URL.createObjectURL(backupBlob());
+  const a=document.createElement("a"); a.href=url; a.download="pce-advisor-backup.json";
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ try{URL.revokeObjectURL(url);}catch(e){} },1000);
+}
+// Validate + load a backup's text. Returns {ok, msg} — does NOT re-render (caller does).
+function importBackupText(txt){
+  let obj; try{ obj=JSON.parse(txt); }catch(e){ return {ok:false, msg:"That file isn't valid JSON."}; }
+  if(!obj || obj.app!=="pixelcatsend-advisor") return {ok:false, msg:"That doesn't look like an advisor backup file."};
+  if(!applyState(obj)) return {ok:false, msg:"Couldn't read that backup."};
+  return {ok:true, msg:"Roster restored from your backup."};
+}
+/* --- Option 3: Chrome/Edge File System Access auto-save (feature-detected) --- */
+function fsSupported(){ try{ return typeof window!=="undefined" && typeof window.showSaveFilePicker==="function"; }catch(e){ return false; } }
+// The picked file handle isn't serialisable, so it's stashed in a tiny IndexedDB store.
+function idbHandle(mode,val){ return new Promise((res,rej)=>{
+  let req; try{ req=indexedDB.open("pce-fs",1); }catch(e){ return rej(e); }
+  req.onupgradeneeded=()=>{ try{ req.result.createObjectStore("h"); }catch(e){} };
+  req.onerror=()=>rej(req.error);
+  req.onsuccess=()=>{ const db=req.result; let tx;
+    try{ tx=db.transaction("h", mode==="get"?"readonly":"readwrite"); }catch(e){ return rej(e); }
+    const st=tx.objectStore("h");
+    const r = mode==="get"?st.get("save") : mode==="set"?st.put(val,"save") : st.delete("save");
+    r.onsuccess=()=>res(mode==="get"?r.result:true); r.onerror=()=>rej(r.error); }; }); }
+async function writeSaveFile(){
+  if(!saveFileHandle) return false;
+  try{ const w=await saveFileHandle.createWritable(); await w.write(backupBlob()); await w.close(); return true; }
+  catch(e){ return false; } }
+function scheduleAutoSave(){ if(!saveFileHandle) return; clearTimeout(autoSaveTimer); autoSaveTimer=setTimeout(writeSaveFile, 700); }
+function autoSaveLabel(on){ const b=$("#autoSaveBtn"), s=$("#autoSaveStatus"); if(b){ b.textContent=on?"🔗 Auto-save on":"🔗 Auto-save to file…"; if(b.dataset) delete b.dataset.reconnect; } if(s) s.textContent=on?"saving to your file automatically":""; }
+async function linkSaveFile(){
+  if(!fsSupported()) return;
+  try{
+    saveFileHandle=await window.showSaveFilePicker({suggestedName:"pce-advisor-save.json",
+      types:[{description:"Advisor save", accept:{"application/json":[".json"]}}]});
+    await writeSaveFile(); try{ await idbHandle("set", saveFileHandle); }catch(e){}
+    autoSaveLabel(true);
+    if($("#rosterStatus")) setStatus($("#rosterStatus"), "Auto-save linked — your roster now saves to that file automatically.", "ok");
+  }catch(e){ /* user cancelled the picker */ } }
+async function initAutoSave(){
+  if(!fsSupported()) return;                       // Firefox/Safari: leave the button hidden
+  const btn=$("#autoSaveBtn"); if(btn) btn.classList.remove("hide");
+  let h=null; try{ h=await idbHandle("get"); }catch(e){}
+  if(!h) return;
+  try{ const perm=await h.queryPermission({mode:"readwrite"});
+    if(perm==="granted"){ saveFileHandle=h; autoSaveLabel(true); }
+    else if(btn){ btn.textContent="🔗 Reconnect auto-save file"; btn.dataset.reconnect="1"; }
+  }catch(e){} }
 function rosterSave(r){ lsSet(ROSTER_KEY,r); }
 function suggestLoad(){ return lsGet(SUGGEST_KEY,{}); }
 function suggestSave(c){ lsSet(SUGGEST_KEY,c); }
@@ -1952,8 +2029,11 @@ function openCatEditor(id){
   const wLevel = wm?parseInt(wm[1],10):0, wType = wm?wm[2]:"C";
   const opt=(list,sel)=>list.map(v=>`<option value="${esc(v)}"${v===sel?" selected":""}>${esc(v)}</option>`).join("");
   const patterns=["Solid",...new Set(Object.values(PATTERN_NAME))];
-  const accents=["Unknown",...new Set(Object.values(ACCENT_NAME))];
-  const accentSel=accents.includes(cur.accent)?cur.accent:"Unknown";
+  // accent options: value stays the colour name, but the label shows its genotype too
+  // (e.g. "Green (BY)", "Indigo (BL)") so you can match what the sandbox revealed.
+  const accentOptsList=[["Unknown","Unknown"]].concat(Object.keys(ACCENT_NAME).map(k=>[ACCENT_NAME[k], ACCENT_NAME[k]+" ("+k+")"]));
+  const accentSel=accentOptsList.some(o=>o[0]===cur.accent)?cur.accent:"Unknown";
+  const accentOptsHtml=accentOptsList.map(([v,lab])=>`<option value="${esc(v)}"${v===accentSel?" selected":""}>${esc(lab)}</option>`).join("");
   const lvls=Array.from({length:11},(_,i)=>i);
   const html=`<div class="rc-modal-back" id="rcModalBack"><div class="rc-modal" role="dialog" aria-modal="true" aria-label="Edit cat">
     <h3>Edit ${esc(c.name||("#"+id))}<span class="rc-sub">#${esc(id)} — updates this cat's genotype &amp; its breeding predictions.</span></h3>
@@ -1965,7 +2045,7 @@ function openCatEditor(id){
       <label for="rcWhiteType">White</label>
       <div class="rc-white-lvl"><select id="rcWhiteType">${Object.keys(WHITE_TYPE).map(k=>`<option value="${k}"${k===wType?" selected":""}>${esc(WHITE_TYPE[k])}</option>`).join("")}</select>
         <select id="rcWhiteLevel" title="White level 0–10">${lvls.map(n=>`<option value="${n}"${n===wLevel?" selected":""}>Lv ${n}</option>`).join("")}</select></div>
-      <label for="rcAccent">Accent</label><select id="rcAccent">${opt(accents,accentSel)}</select>
+      <label for="rcAccent">Accent</label><select id="rcAccent">${accentOptsHtml}</select>
       <div class="rc-hint">A Not-cat's accent isn't on its page. Test it by breeding her with a homozygous Mercat (Black / Ruby / Blue / Gold) in the sandbox and reading the offspring colours, then set it here. "Unknown" keeps it as <code>[??]</code>.</div>
     </div>
     <div class="rc-actions"><button type="button" class="rc-cancel" id="rcCancel">Cancel</button><button type="button" class="rc-save" id="rcSave">Save</button></div>
@@ -3216,6 +3296,34 @@ document.addEventListener("DOMContentLoaded", ()=>{
     fillBreedRosterDatalist();
     setStatus($("#rosterStatus"),"Roster cleared from this device.","ok"); rosterRender();
   });
+  // ---- Backup: export / import a save file (+ optional Chrome/Edge auto-save) ----
+  $("#exportRosterBtn").addEventListener("click", ()=>{
+    exportBackup();
+    setStatus($("#rosterStatus"),"Saved a backup file — keep it somewhere safe (it survives a PC restart). Re-import it any time to restore.","ok");
+  });
+  $("#importRosterBtn").addEventListener("click", ()=>$("#importRosterInput").click());
+  $("#importRosterInput").addEventListener("change", e=>{
+    const f=e.target.files && e.target.files[0]; if(!f){ return; }
+    if(!window.confirm("Import will REPLACE your current roster, manual edits and last breeding with the backup's contents. Continue?")){ e.target.value=""; return; }
+    const rd=new FileReader();
+    rd.onload=()=>{ const res=importBackupText(String(rd.result||""));
+      setStatus($("#rosterStatus"), res.msg, res.ok?"ok":"err");
+      if(res.ok){ rosterFilter="all"; rosterSort=null; afterRosterChange(); restoreBreeding(); }
+      e.target.value=""; };
+    rd.onerror=()=>{ setStatus($("#rosterStatus"),"Couldn't read that file.","err"); e.target.value=""; };
+    rd.readAsText(f);
+  });
+  $("#autoSaveBtn").addEventListener("click", async ()=>{
+    const btn=$("#autoSaveBtn");
+    if(btn.dataset && btn.dataset.reconnect){          // re-grant permission to a remembered file
+      let h=null; try{ h=await idbHandle("get"); }catch(e){}
+      let ok=false; if(h){ try{ ok=(await h.requestPermission({mode:"readwrite"}))==="granted"; }catch(e){} }
+      if(ok){ saveFileHandle=h; autoSaveLabel(true); await writeSaveFile();
+        setStatus($("#rosterStatus"),"Reconnected — auto-saving to your file again.","ok"); return; }
+    }
+    linkSaveFile();
+  });
+  initAutoSave();
   ["all","active","travel"].forEach(k=>$("#rf-"+k).addEventListener("click", ()=>{ if($("#rf-"+k).disabled) return; rosterFilter=k; rosterRender(); }));
   $("#rosterSearch").addEventListener("input", rosterRender);
   function pickFromRoster(id){ if(!id) return; $("#catId").value=id; loadCatById(id); }

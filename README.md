@@ -41,7 +41,8 @@ job/class). **Click any column sub-header to sort.** Highlights:
   (the coat's colour density / dilution level, **1–4**, recovered from its colour) and an **Accent** column (the game
   shows accent only when it's visible, so cats without a revealed accent read **Unknown**).
 - **Edit any cat** — a **✏️ pencil** on each row opens a quick editor for its **Name, Species, Fur, Pattern, White**
-  and **Accent** (a 10-colour dropdown, or *Unknown*). Edits rewrite just those genome sections — colour & wind, which
+  and **Accent** (a 10-colour dropdown that shows each colour's genotype — *Green (BY)*, *Indigo (BL)* … — or *Unknown*).
+  Edits rewrite just those genome sections — colour & wind, which
   the game's own description never mis-reads, are left untouched — and flow straight into breeding predictions. This is
   how you **record a hidden accent** once you've revealed it: a Not-cat's accent isn't on its page, so test it in the
   breeding sandbox against a homozygous Mercat, then set it here so every future cross is exact.
@@ -56,6 +57,14 @@ job/class). **Click any column sub-header to sort.** Highlights:
   cat's stats). Each of these headers has separate sort buttons for its two values.
 
 **Suggest for shown cats** computes recommendations in bulk.
+
+**Your roster stays on your device** — everything you pull, paste or edit lives in the browser's local storage (no
+account, nothing leaves the page). Because some setups wipe that storage on a **PC restart** (a *clear data on exit*
+setting, a private window, or a shared/managed machine), the **Backup** row under the roster keeps you safe: **⬇️ Export
+to file** saves your whole state — cats, your pencil edits, and the last breeding pairing — to a `.json` file you keep
+anywhere, and **⬆️ Import from file** restores it (replacing the current roster). On **Chrome / Edge** a **🔗 Auto-save
+to file** button also appears — pick a file once and the tool writes to it automatically on every change and reconnects
+to it on your next visit, so nothing is ever lost.
 
 ### What it computes
 
