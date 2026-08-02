@@ -40,7 +40,7 @@ share). Below the string, a **Carries:** line lists the alleles a cat is hiding 
 *Dilute* (`[FD]`), *Solid* (a patterned cat carrying solid, `[YN]`), *No-white* (`[YN]`), *Null (wind)* (`[NO]`/`[SO]`),
 and — for **North/South** cats — the **base colour** it doesn't show. Base colour is co-dominant *and positional*: North
 shows allele 1, South allele 2, so a het (`BO`/`OB`) hides and passes on the other pigment. The line reads the wind, then
-names the carried colour — e.g. a **North `BO`** shows Black but *carries Orange*; a **South `BO`** shows Orange but
+names the carried colour — e.g. a **North `BO`** shows Black but *carries Red*; a **South `BO`** shows Red but
 *carries Black*. (A **Trade** het shows both as a tortoiseshell, so it carries neither.) It only reports what's genuinely
 known: an unrevealed allele reads `?`, so a cat with `[S?]` fur makes no claim about carrying longhair. The **ID** cell is a one-click copy too — tap it to grab the cat's numeric ID. **Click any column sub-header to
 sort.** Highlights:

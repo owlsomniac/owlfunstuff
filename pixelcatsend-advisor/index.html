@@ -2477,7 +2477,7 @@ function carriesList(g){
   const col=g.color||[], x=col[0], y=col[1], wind=windName(a,b);
   if((wind==="North"||wind==="South") && ((x==="B"&&y==="O")||(x==="O"&&y==="B"))){
     const shown=(wind==="North")?x:y;
-    out.push(shown==="B" ? "Orange" : "Black");                // carries the hidden base pigment
+    out.push(shown==="B" ? "Red" : "Black");                   // carries the hidden base pigment
   }
   if(het(g.dil,"F","D"))      out.push("Dilute");
   if(het(g.patVis,"Y","N"))   out.push("Solid");
