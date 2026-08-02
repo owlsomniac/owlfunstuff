@@ -332,6 +332,9 @@
   #rosterTable td.name a{color:var(--ink);text-decoration:none;font-weight:700}
   #rosterTable td.name a:hover{color:var(--brand-ink);text-decoration:underline}
   #rosterTable td.idcol{color:var(--muted);font-variant-numeric:tabular-nums}
+  #rosterTable td.idcol .rc-id-copy{font:inherit;font-variant-numeric:tabular-nums;color:var(--muted);background:none;border:1px solid transparent;border-radius:5px;padding:1px 5px;cursor:pointer;transition:border-color .12s,color .12s}
+  #rosterTable td.idcol .rc-id-copy:hover,#rosterTable td.idcol .rc-id-copy:focus-visible{border-color:var(--brand);color:var(--brand-ink);outline:none}
+  #rosterTable td.idcol .rc-id-copy.copied{color:var(--good-ink);border-color:var(--good);background:var(--good-soft)}
   /* Quick View summary cell (the old list at-a-glance, as one collapsible column) */
   #rosterTable td.qv{white-space:normal;min-width:190px;max-width:300px;font-size:11.5px;line-height:1.55;color:var(--ink-soft)}
   #rosterTable td.qv .qv-appr{color:var(--ink);font-weight:600;margin-bottom:1px}
@@ -2033,7 +2036,7 @@ function rosterRender(){
         `<option value="adult"${rosterStageView[id]==="adult"?" selected":""}>Adult (grown)</option></select>` : "";
     const cells=[`<td class="prev"><button type="button" class="rc-edit" data-edit="${esc(id)}" title="Edit ${esc(c.name||("#"+id))}" aria-label="Edit ${esc(c.name||("#"+id))}">✏️</button>${stageBadge}${thumb}${stageView}</td>`,
       `<td class="name"><a class="cat-ext" href="${esc(catUrl(id))}" target="_blank" rel="noopener"><b>${esc(c.name||("#"+id))}</b></a></td>`,
-      `<td class="idcol">${esc(id)}</td>`,
+      `<td class="idcol"><button type="button" class="rc-id-copy" data-copy="${esc(id)}" title="Click to copy this cat's ID">${esc(id)}</button></td>`,
       quickOpen ? `<td class="qv grp-start">${quickCell(id)}</td>` : `<td class="strip grp-start" data-grp="quick" title="Show Quick View">⋯</td>`];
     groups.forEach(g=>{
       if(rosterCollapsed.has(g.key)){ cells.push(`<td class="strip grp-start" data-grp="${esc(g.key)}" title="Show ${esc(g.label)}">⋯</td>`); return; }
@@ -3342,7 +3345,7 @@ function pbSync(c){          // set the builder dropdowns from the target box's 
   pbShade(c);
 }
 function copyGeneString(btn){
-  const s=btn.getAttribute("data-gene")||"";
+  const s=btn.getAttribute("data-copy")||btn.getAttribute("data-gene")||"";
   const restore=btn.innerHTML;
   try{
     if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(s).catch(()=>{}); }
@@ -3597,6 +3600,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     if(e.target.closest("a")) return;                       // name link → open the cat's page
     if(e.target.closest(".rc-stageview")){ e.stopPropagation(); return; }   // stage dropdown → don't pick the row
     const gc=e.target.closest(".rc-gene-copy"); if(gc){ e.stopPropagation(); copyGeneString(gc); return; }   // copy genes → don't pick the row
+    const ic=e.target.closest(".rc-id-copy"); if(ic){ e.stopPropagation(); copyGeneString(ic); return; }     // copy ID → don't pick the row
     const ed=e.target.closest(".rc-edit"); if(ed){ e.stopPropagation(); openCatEditor(ed.getAttribute("data-edit")); return; }
     const grp=e.target.closest("[data-grp]"); if(grp){ toggleRosterGroup(grp.getAttribute("data-grp")); return; }
     const sk=e.target.closest("[data-key]"); if(sk){ toggleRosterSort(sk.getAttribute("data-key")); return; }

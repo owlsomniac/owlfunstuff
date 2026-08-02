@@ -39,7 +39,8 @@ job/class, and the cat's **genetic string as a one-click copy chip** — tap it 
 share). Below the string, a **Carries:** line lists any **recessive genes hiding under a dominant** — *Longhair* (`[SL]`),
 *Dilute* (`[FD]`), *Solid* (a patterned cat carrying solid, `[YN]`), *No-white* (`[YN]`) and *Null (wind)* (`[NO]`/`[SO]`).
 It only shows what's genuinely known: an unrevealed allele reads `?`, so a cat with `[S?]` fur makes no claim about carrying
-longhair. **Click any column sub-header to sort.** Highlights:
+longhair. The **ID** cell is a one-click copy too — tap it to grab the cat's numeric ID. **Click any column sub-header to
+sort.** Highlights:
 
 - **Appearance** — a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or *None*), a **Density** column
   (the coat's colour density / dilution level, **1–4**, recovered from its colour) and an **Accent** column (the game
