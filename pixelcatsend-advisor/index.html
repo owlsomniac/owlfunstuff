@@ -2472,6 +2472,13 @@ function carriesList(g){
   const w=g.wind||[], a=w[0], b=w[1];                          // Null (O) is recessive; N or S masks it
   if(((a==="O")!==(b==="O")) && (a==="O"?(b==="N"||b==="S"):(a==="N"||a==="S"))) out.push("Null (wind)");
   if(het(g.fur,"S","L"))      out.push("Longhair");
+  // Base colour is co-dominant AND positional: North shows allele 1, South allele 2, so a
+  // North/South het (one B + one O) hides — and passes on — the allele it doesn't show.
+  const col=g.color||[], x=col[0], y=col[1], wind=windName(a,b);
+  if((wind==="North"||wind==="South") && ((x==="B"&&y==="O")||(x==="O"&&y==="B"))){
+    const shown=(wind==="North")?x:y;
+    out.push(shown==="B" ? "Orange" : "Black");                // carries the hidden base pigment
+  }
   if(het(g.dil,"F","D"))      out.push("Dilute");
   if(het(g.patVis,"Y","N"))   out.push("Solid");
   if(het(g.whiteVis,"Y","N")) out.push("No-white");
