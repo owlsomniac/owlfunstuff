@@ -43,7 +43,10 @@ longhair. **Click any column sub-header to sort.** Highlights:
 
 - **Appearance** — a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or *None*), a **Density** column
   (the coat's colour density / dilution level, **1–4**, recovered from its colour) and an **Accent** column (the game
-  shows accent only when it's visible, so cats without a revealed accent read **Unknown**).
+  shows accent only when it's visible, so cats without a revealed accent read **Unknown**). The White label respects the
+  visibility gene, so a white that's **carried but not shown** (`[NN5C]`) reads *Hidden, Classic, C5, …* and one that
+  **expresses white at level 0** (`[YY0C]`) reads *Classic, C0, None* — the type and level are kept instead of collapsing
+  to a bare *None* (an ordinary no-white cat still just reads *None*).
 - **Life stage** — young cats are drawn as their **actual stage** (the tool crops the right cell of the sprite
   sheet — beans no longer show up as adults), carry a **Bean/Kitten** badge, and get a small **Bean ▸ Adult**
   dropdown under the preview to see how they'll look grown up. Because beans have no stats yet, they're **not

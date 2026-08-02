@@ -2234,7 +2234,7 @@ function saveCatEditor(id){
   c.data["Fur"]= v.fur==="LL" ? "Longhair" : "Shorthair";
   c.data["Color"]=coatShadeReadout(v.wind,v.base,v.dil,v.density);
   c.data["Pattern"]= v.patVis!=="NN" ? (/^unknown$/i.test(v.patType)?"Patterned":v.patType) : "Solid";
-  c.data["White"]= (v.whiteVis!=="NN" && v.whiteLevel>0) ? whiteCellText(v.whiteType, v.whiteLevel, "") : "None";
+  c.data["White"]= whiteDesc(v.whiteVis!=="NN", v.whiteType, v.whiteLevel);
   c.genes=withKnownAccent(str, c);
   c.geneInfo={resolved:(c.geneInfo&&c.geneInfo.resolved)||["edited by you"], guessed:(c.geneInfo&&c.geneInfo.guessed)||[]};
   r.headers=r.headers||[];
@@ -2315,6 +2315,20 @@ function whiteCellText(typeLetter, level, markName){
   const typeName=WHITE_TYPE[t]||"";
   const mark=markName || whiteMarkName(t, lv) || "";
   return [typeName, (t||"")+lv, mark].filter(Boolean).join(", ");
+}
+// Genotype-aware white label that respects the visibility gene, so a hidden or a
+// zero-level white still reports its type/level instead of collapsing to a bare "None":
+//   hidden + level 0  → "None"                                (an ordinary no-white cat)
+//   shown  + level 0  → "Classic, C0, None"                   (expresses white, but zero amount)
+//   shown  + level>0  → "Classic, C5, Classic Bicolor"
+//   hidden + level>0  → "Hidden, Classic, C5, Classic Bicolor" (carries white it doesn't show)
+function whiteDesc(shown, typeLetter, level){
+  const lv=Math.max(0,Math.min(10, parseInt(level,10)||0));
+  if(lv===0 && !shown) return "None";
+  const t=String(typeLetter||"").toUpperCase();
+  const mark=whiteMarkName(t,lv) || (lv===0?"None":"");
+  const parts=[WHITE_TYPE[t]||"", (t||"?")+lv, mark].filter(Boolean);
+  return (shown?"":"Hidden, ")+parts.join(", ");
 }
 // Resolve a roster cat's combined white label from whatever columns it has
 // (new single "White" column, or the older split White Type / Level / Markings).
@@ -2441,7 +2455,7 @@ function phenotype(g){
     pattern: patterned ? patternBase : "Solid",
     patterned, patternBase,
     whiteLevel: g.whiteLevel, whiteType: g.whiteType, showsWhite,
-    white: showsWhite ? ("White "+g.whiteLevel+" · "+(whiteMarkName(g.whiteType,g.whiteLevel)||WHITE_TYPE[g.whiteType]||g.whiteType)) : "No-white",
+    white: whiteDesc(showsWhite, g.whiteType, g.whiteLevel),
     accent: accentKnown(g) ? accentName(g.accent[0],g.accent[1]) : "",
     species: g.species==="M"?"Mercat":"Not-cat"
   };
@@ -3122,9 +3136,9 @@ function parentCard(title, g, meta){
   const ph = phenotype(g);
   const portrait = (meta&&meta.img&&meta.img.length) ? catImgFromLayers(meta.img, 84, {fur:ph.fur, title:ph.color}) : catPreviewFor(ph, 84);
   const wtName = WHITE_TYPE[ph.whiteType]||ph.whiteType;
-  const whiteVal = ph.showsWhite
+  const whiteVal = (ph.showsWhite && ph.whiteLevel>0)
     ? `${esc(whiteMarkName(ph.whiteType,ph.whiteLevel)||"White")} <span class="pf-sub">(${esc(wtName)}, Lv ${ph.whiteLevel})</span>`
-    : "None";
+    : esc(whiteDesc(ph.showsWhite, ph.whiteType, ph.whiteLevel));   // hidden / shown-but-zero → keep the type & level
   const fact=(k,v)=>`<div><span class="pf-k">${k}</span><span>${v}</span></div>`;
   // Facts are ordered to match the finder inputs / result breakdown (Species first).
   const facts = `<div class="pheno-facts">
