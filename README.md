@@ -60,7 +60,8 @@ job/class). **Click any column sub-header to sort.** Highlights:
 
 **Your roster stays on your device** — everything you pull, paste or edit lives in the browser's local storage (no
 account, nothing leaves the page). Because some setups wipe that storage on a **PC restart** (a *clear data on exit*
-setting, a private window, or a shared/managed machine), the **Backup** row under the roster keeps you safe: **⬇️ Export
+setting, a private window, or a shared/managed machine), a **BACKUP** bar pinned at the very top of the page keeps you
+safe (it's always visible, so you can restore before loading anything): **⬇️ Export
 to file** saves your whole state — cats, your pencil edits, and the last breeding pairing — to a `.json` file you keep
 anywhere, and **⬆️ Import from file** restores it (replacing the current roster). On **Chrome / Edge** a **🔗 Auto-save
 to file** button also appears — pick a file once and the tool writes to it automatically on every change and reconnects

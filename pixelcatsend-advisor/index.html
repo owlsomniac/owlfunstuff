@@ -96,6 +96,12 @@
     box-shadow:var(--shadow);padding:18px;margin-top:18px
   }
   .card > h2{font-size:16px;display:flex;align-items:center;gap:8px}
+  /* slim backup bar pinned above "Load a cat" */
+  .backup-card{padding:11px 16px;margin-top:14px}
+  .backup-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .backup-lab{text-transform:uppercase;font-weight:800;letter-spacing:.7px;color:var(--brand-ink);font-size:12.5px}
+  .backup-card .status{margin-top:0}
+  .backup-card .status:empty{display:none}
   .card > h2 .em{font-size:18px}
   .sub{color:var(--muted);font-size:13px;margin:3px 0 0}
   .breed-steps{margin:2px 0 0;padding-left:22px;font-size:13.5px;line-height:1.7}
@@ -467,6 +473,19 @@
     </button>
   </header>
 
+  <!-- ============================ BACKUP ============================ -->
+  <section class="card backup-card" aria-label="Back up and restore your roster">
+    <div class="backup-row" role="group">
+      <span class="backup-lab">BACKUP</span>
+      <button class="btn ghost sm" id="exportRosterBtn" type="button" title="Save your whole roster + manual edits + last breeding to a file you keep — survives a PC restart">⬇️ Export to file</button>
+      <button class="btn ghost sm" id="importRosterBtn" type="button" title="Load a roster file you exported earlier (replaces your current roster)">⬆️ Import from file</button>
+      <input type="file" id="importRosterInput" accept="application/json,.json" class="hide" aria-hidden="true">
+      <button class="btn ghost sm hide" id="autoSaveBtn" type="button" title="Chrome/Edge only: keep a file in sync automatically as you edit, so nothing is ever lost">🔗 Auto-save to file…</button>
+      <span class="rmeta" id="autoSaveStatus"></span>
+    </div>
+    <div class="status" id="backupStatus" role="status" aria-live="polite"></div>
+  </section>
+
   <!-- ============================ INPUT ============================ -->
   <section class="card" aria-labelledby="in-h">
     <h2 id="in-h"><span class="em">🔎</span> Load a cat</h2>
@@ -531,14 +550,6 @@
           <button class="btn ghost sm hide" id="suggestStopBtn" type="button">Stop</button>
           <button class="btn ghost sm" id="clearRosterBtn" type="button">Clear roster</button>
           <span class="rmeta" style="margin-left:auto">Tip: click a group header to collapse its columns · click a name to open the cat</span>
-        </div>
-        <div class="rfilters" style="margin-top:10px" role="group" aria-label="Save and restore your roster">
-          <span class="rmeta">Backup:</span>
-          <button class="btn ghost sm" id="exportRosterBtn" type="button" title="Save your whole roster + manual edits + last breeding to a file you keep — survives a PC restart">⬇️ Export to file</button>
-          <button class="btn ghost sm" id="importRosterBtn" type="button" title="Load a roster file you exported earlier (replaces your current roster)">⬆️ Import from file</button>
-          <input type="file" id="importRosterInput" accept="application/json,.json" class="hide" aria-hidden="true">
-          <button class="btn ghost sm hide" id="autoSaveBtn" type="button" title="Chrome/Edge only: keep a file in sync automatically as you edit, so nothing is ever lost">🔗 Auto-save to file…</button>
-          <span class="rmeta" id="autoSaveStatus"></span>
         </div>
         <div class="status" id="suggestStatus" role="status" aria-live="polite"></div>
         <div class="status" id="rosterStatus" role="status" aria-live="polite"></div>
@@ -1568,7 +1579,7 @@ async function linkSaveFile(){
       types:[{description:"Advisor save", accept:{"application/json":[".json"]}}]});
     await writeSaveFile(); try{ await idbHandle("set", saveFileHandle); }catch(e){}
     autoSaveLabel(true);
-    if($("#rosterStatus")) setStatus($("#rosterStatus"), "Auto-save linked — your roster now saves to that file automatically.", "ok");
+    if($("#backupStatus")) setStatus($("#backupStatus"), "Auto-save linked — your roster now saves to that file automatically.", "ok");
   }catch(e){ /* user cancelled the picker */ } }
 async function initAutoSave(){
   if(!fsSupported()) return;                       // Firefox/Safari: leave the button hidden
@@ -3299,7 +3310,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
   // ---- Backup: export / import a save file (+ optional Chrome/Edge auto-save) ----
   $("#exportRosterBtn").addEventListener("click", ()=>{
     exportBackup();
-    setStatus($("#rosterStatus"),"Saved a backup file — keep it somewhere safe (it survives a PC restart). Re-import it any time to restore.","ok");
+    setStatus($("#backupStatus"),"Saved a backup file — keep it somewhere safe (it survives a PC restart). Re-import it any time to restore.","ok");
   });
   $("#importRosterBtn").addEventListener("click", ()=>$("#importRosterInput").click());
   $("#importRosterInput").addEventListener("change", e=>{
@@ -3307,10 +3318,10 @@ document.addEventListener("DOMContentLoaded", ()=>{
     if(!window.confirm("Import will REPLACE your current roster, manual edits and last breeding with the backup's contents. Continue?")){ e.target.value=""; return; }
     const rd=new FileReader();
     rd.onload=()=>{ const res=importBackupText(String(rd.result||""));
-      setStatus($("#rosterStatus"), res.msg, res.ok?"ok":"err");
+      setStatus($("#backupStatus"), res.msg, res.ok?"ok":"err");
       if(res.ok){ rosterFilter="all"; rosterSort=null; afterRosterChange(); restoreBreeding(); }
       e.target.value=""; };
-    rd.onerror=()=>{ setStatus($("#rosterStatus"),"Couldn't read that file.","err"); e.target.value=""; };
+    rd.onerror=()=>{ setStatus($("#backupStatus"),"Couldn't read that file.","err"); e.target.value=""; };
     rd.readAsText(f);
   });
   $("#autoSaveBtn").addEventListener("click", async ()=>{
@@ -3319,7 +3330,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
       let h=null; try{ h=await idbHandle("get"); }catch(e){}
       let ok=false; if(h){ try{ ok=(await h.requestPermission({mode:"readwrite"}))==="granted"; }catch(e){} }
       if(ok){ saveFileHandle=h; autoSaveLabel(true); await writeSaveFile();
-        setStatus($("#rosterStatus"),"Reconnected — auto-saving to your file again.","ok"); return; }
+        setStatus($("#backupStatus"),"Reconnected — auto-saving to your file again.","ok"); return; }
     }
     linkSaveFile();
   });
