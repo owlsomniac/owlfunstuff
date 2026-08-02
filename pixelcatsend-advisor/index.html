@@ -140,6 +140,9 @@
   .btn:disabled{opacity:.55;cursor:progress}
   .btn.ghost{background:transparent;color:var(--brand-ink);border-color:var(--line)}
   .btn.ghost:hover{border-color:var(--brand);background:var(--panel2)}
+  .btn.ghost.danger{color:var(--bad-ink)}
+  .btn.ghost.danger:hover{border-color:var(--bad);background:var(--bad-soft)}
+  .clear-roster-bar{display:flex;justify-content:center;margin:26px 0 4px}
   .btn.sm{padding:8px 13px;font-size:13px}
   .hint{font-size:12.5px;color:var(--muted);margin:8px 0 0}
   .hint code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
@@ -548,7 +551,6 @@
         <div class="rfilters" style="margin-top:10px">
           <button class="btn ghost sm hide" id="suggestAllBtn" type="button" title="Opens each remaining cat's page for its stats, day-job &amp; adventuring-class levels. Pull My Whole Roster already does this; this only appears when some cats still need it (e.g. a relay hiccup).">↻ Fetch stats &amp; levels</button>
           <button class="btn ghost sm hide" id="suggestStopBtn" type="button">Stop</button>
-          <button class="btn ghost sm" id="clearRosterBtn" type="button">Clear roster</button>
           <span class="rmeta" style="margin-left:auto">Tip: click a group header to collapse its columns · click a name to open the cat</span>
         </div>
         <div class="status" id="suggestStatus" role="status" aria-live="polite"></div>
@@ -699,6 +701,10 @@
 
   <!-- ============================ RESULTS ============================ -->
   <div id="results" aria-live="polite"></div>
+
+  <div class="clear-roster-bar">
+    <button class="btn ghost sm danger" id="clearRosterBtn" type="button" title="Remove every cat from this device (export a backup first if you want to keep it)">🗑️ Clear roster</button>
+  </div>
 
   <footer>
     Fan-made helper for <a href="https://www.pixelcatsend.com" target="_blank" rel="noopener">Pixel Cat's End</a>.
@@ -3302,10 +3308,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
   $("#profileId").addEventListener("keydown", e=>{ if(e.key==="Enter") pullProfile(); });
 
   $("#clearRosterBtn").addEventListener("click", ()=>{
+    if(!window.confirm("Clear your entire roster from this device? This can't be undone — export a backup first if you want to keep it.")) return;
     try{ localStorage.removeItem(ROSTER_KEY); }catch(e){}
     rosterFilter="all"; rosterSort=null; $("#rosterUI").classList.add("hide");
     fillBreedRosterDatalist();
-    setStatus($("#rosterStatus"),"Roster cleared from this device.","ok"); rosterRender();
+    setStatus($("#backupStatus"),"Roster cleared from this device.","ok"); rosterRender();
   });
   // ---- Backup: export / import a save file (+ optional Chrome/Edge auto-save) ----
   $("#exportRosterBtn").addEventListener("click", ()=>{
