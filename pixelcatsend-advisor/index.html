@@ -312,6 +312,8 @@
   /* life-stage badge (beans/kittens) — bottom-left of the preview */
   .rc-stage{position:absolute;bottom:3px;left:3px;z-index:1;background:var(--brand);color:#fff;font-size:9.5px;font-weight:800;
     letter-spacing:.3px;padding:1px 5px;border-radius:99px;text-transform:uppercase;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+  .rc-stageview{display:block;margin:4px auto 0;max-width:100px;font-size:10.5px;padding:1px 3px;border:1px solid var(--line-soft);
+    border-radius:6px;background:var(--panel2);color:var(--ink-soft);cursor:pointer}
   .rc-edit:hover,.rc-edit:focus-visible{background:var(--brand);color:#fff;border-color:var(--brand);opacity:1;outline:none}
   /* cat editor modal */
   .rc-modal-back{position:fixed;inset:0;background:rgba(12,12,16,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
@@ -1841,6 +1843,7 @@ function toggleRosterSort(key){
 }
 // Collapsible column groups (collapse to a thin strip on the left).
 let rosterCollapsed=new Set();
+let rosterStageView={};   // per-cat preview toggle for young cats: id → "adult" (else actual stage)
 function toggleRosterGroup(k){ if(!k) return; if(rosterCollapsed.has(k)) rosterCollapsed.delete(k); else rosterCollapsed.add(k); rosterRender(); }
 // Ordered column groups. Each header column is classified into exactly one group;
 // "appear" is the catch-all. Trinkets ride with Stats (so it sits left of the Base
@@ -1995,10 +1998,17 @@ function rosterRender(){
   const attrLabels=new Set(ATTRS.map(a=>a.label));   // to flag trinket-boosted stat totals
   const body=tids.slice(0,400).map(id=>{
     const c=r.cats[id];
-    const thumb=(c.img&&c.img.length)?catImgFromLayers(c.img,100,{fur:rosterCatFur(c), title:c.name}):`<span class="rc-noimg" aria-hidden="true">🐾</span>`;
     const stg=catStage(c);
-    const stageBadge = (stg && stg!=="adult") ? `<span class="rc-stage" title="Life stage: ${esc(stg[0].toUpperCase()+stg.slice(1))} — no stats until it grows up">${esc(stg[0].toUpperCase()+stg.slice(1))}</span>` : "";
-    const cells=[`<td class="prev"><button type="button" class="rc-edit" data-edit="${esc(id)}" title="Edit ${esc(c.name||("#"+id))}" aria-label="Edit ${esc(c.name||("#"+id))}">✏️</button>${stageBadge}${thumb}</td>`,
+    const isYoung = !!(stg && stg!=="adult");
+    const stgLabel = stg ? stg[0].toUpperCase()+stg.slice(1) : "";
+    // young cats default to their real stage; the dropdown re-crops the SAME sheet's adult cell
+    const viewStage = (isYoung && rosterStageView[id]==="adult") ? "adult" : stg;
+    const thumb=(c.img&&c.img.length)?catImgFromLayers(c.img,100,{fur:rosterCatFur(c), stage:viewStage, title:c.name}):`<span class="rc-noimg" aria-hidden="true">🐾</span>`;
+    const stageBadge = isYoung ? `<span class="rc-stage" title="Life stage: ${esc(stgLabel)} — no stats until it grows up">${esc(stgLabel)}</span>` : "";
+    const stageView = isYoung ? `<select class="rc-stageview" data-sv="${esc(id)}" title="Preview as a ${esc(stgLabel)} now, or grown up">`+
+        `<option value="actual"${rosterStageView[id]!=="adult"?" selected":""}>${esc(stgLabel)} (now)</option>`+
+        `<option value="adult"${rosterStageView[id]==="adult"?" selected":""}>Adult (grown)</option></select>` : "";
+    const cells=[`<td class="prev"><button type="button" class="rc-edit" data-edit="${esc(id)}" title="Edit ${esc(c.name||("#"+id))}" aria-label="Edit ${esc(c.name||("#"+id))}">✏️</button>${stageBadge}${thumb}${stageView}</td>`,
       `<td class="name"><a class="cat-ext" href="${esc(catUrl(id))}" target="_blank" rel="noopener"><b>${esc(c.name||("#"+id))}</b></a></td>`,
       `<td class="idcol">${esc(id)}</td>`,
       quickOpen ? `<td class="qv grp-start">${quickCell(id)}</td>` : `<td class="strip grp-start" data-grp="quick" title="Show Quick View">⋯</td>`];
@@ -2806,20 +2816,27 @@ const POSE_Y = {
   c: {sitting:0,   standing:0,  playing:-2, sleeping:0, upsidedown:0},
   m: {sitting:-11, standing:-8, playing:-2, sleeping:0, upsidedown:0}
 };
+// Sprite sheets are 5 poses × 6 rows (100px cells). The 6 rows are life-stage blocks of
+// 2 fur rows each: adult (rows 0–1), kitten (2–3), bean (4–5). Confirmed from a real page:
+// m-bean-longhair-playing lands at col 2, row 5 (offY −500 = bean −400 + longhair −100).
+const STAGE_Y = {adult:0, kitten:-200, bean:-400};   // bean & adult measured; kitten inferred
 let previewPose = "standing";
 let previewSel = {species:"any", wind:"any", pattern:"any", white:"any", accent:"any"};   // kitten-gallery pickers (default: Any)
-function poseOffset(species, fur, pose){
+function poseOffset(species, fur, pose, stage){
   pose = (POSE_X[pose]!=null) ? pose : "standing";
   const sp = /mer/i.test(species||"") ? "m" : "c";
+  const st = STAGE_Y[String(stage||"").toLowerCase()]!=null ? String(stage||"").toLowerCase() : "adult";
   const x = POSE_X[pose];
-  const y = (/long/i.test(fur||"") ? -100 : 0) + (POSE_Y[sp][pose]||0);
+  // Mercat micro-offsets were measured for ADULTS; young stages sit on the clean grid.
+  const micro = st==="adult" ? (POSE_Y[sp][pose]||0) : 0;
+  const y = STAGE_Y[st] + (/long/i.test(fur||"") ? -100 : 0) + micro;
   return {x, y};
 }
 function _catStage(urls, size, opts){
   opts=opts||{};
   // species from the option or inferred from the sprite path (/images/cats/m/…)
   const species = opts.species || (((urls||[]).some(u=>/\/images\/cats\/m\//.test(u))) ? "Mercat" : "Not-cat");
-  const {x,y}=poseOffset(species, opts.fur, opts.pose||previewPose);
+  const {x,y}=poseOffset(species, opts.fur, opts.pose||previewPose, opts.stage);
   const scale=size/100;
   const imgs=(urls||[]).map((u,i)=> u?`<img class="cpl" style="left:${x}px;top:${y}px;z-index:${i+2}" src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:"").join("");
   return `<div class="catstage" style="transform:scale(${scale})">${imgs}</div>`;
@@ -2855,7 +2872,9 @@ function spriteColorTokenPat(name){ return String(name||"").toLowerCase().replac
 function catPreview(opts){
   const size=opts.size||88;
   const layers=spritePhenoLayers(opts);
-  return `<div class="catprev" title="${esc(opts.title||"")}" style="width:${size}px;height:${size}px;background:${esc(opts.hex||"var(--panel2)")}">${_catStage(layers, size, {fur:opts.fur, pose:opts.pose, species:opts.species})}</div>`;
+  // Preview backdrop is a fixed medium-dark neutral grey (not tinted by the coat colour),
+  // so sprites read consistently against it.
+  return `<div class="catprev" title="${esc(opts.title||"")}" style="width:${size}px;height:${size}px;background:#4b4b4e">${_catStage(layers, size, {fur:opts.fur, pose:opts.pose, species:opts.species, stage:opts.stage})}</div>`;
 }
 function catPreviewFor(ph, size){
   return catPreview({colorName:ph.colorPrimary, colorName2:(ph.colors&&ph.colors[1])||null, coatType:ph.coatType,
@@ -3367,10 +3386,15 @@ document.addEventListener("DOMContentLoaded", ()=>{
   function pickFromRoster(id){ if(!id) return; $("#catId").value=id; loadCatById(id); }
   $("#rosterTable").addEventListener("click", e=>{
     if(e.target.closest("a")) return;                       // name link → open the cat's page
+    if(e.target.closest(".rc-stageview")){ e.stopPropagation(); return; }   // stage dropdown → don't pick the row
     const ed=e.target.closest(".rc-edit"); if(ed){ e.stopPropagation(); openCatEditor(ed.getAttribute("data-edit")); return; }
     const grp=e.target.closest("[data-grp]"); if(grp){ toggleRosterGroup(grp.getAttribute("data-grp")); return; }
     const sk=e.target.closest("[data-key]"); if(sk){ toggleRosterSort(sk.getAttribute("data-key")); return; }
     const tr=e.target.closest("tr[data-id]"); if(tr) pickFromRoster(tr.getAttribute("data-id"));
+  });
+  $("#rosterTable").addEventListener("change", e=>{
+    const sv=e.target.closest(".rc-stageview");
+    if(sv){ const id=sv.getAttribute("data-sv"); if(sv.value==="adult") rosterStageView[id]="adult"; else delete rosterStageView[id]; rosterRender(); }
   });
   $("#rosterTable").addEventListener("keydown", e=>{
     if(!(e.key==="Enter"||e.key===" ")) return;
