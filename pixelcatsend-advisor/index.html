@@ -2848,13 +2848,15 @@ function catImgFromLayers(layers, size, opts){
 // Build sprite layer URLs from a phenotype description.
 function spritePhenoLayers(opts){
   // opts: {colorName, colorName2, coatType, patternName, patterned, species, whiteType, whiteLevel, accentColor}
+  // Snow (Null-wind) has no known base-coat sprite file, so synthesize NOTHING — the
+  // caller falls back to a colour swatch (better than a body-less pair of floating eyes).
+  if(/snow/i.test(opts.colorName||"") || opts.coatType==="snow") return [];
   const sp = opts.species==="Mercat" ? "m" : "c";
   const pat = opts.patterned ? spriteColorTokenPat(opts.patternName) : "solid";
   const layers=[];
   const base=IMG_ORIGIN+"/images/cats/"+sp+"/";
-  const isSnow=/snow/i.test(opts.colorName||"");
   const mainTok=spriteColorToken(opts.colorName);
-  if(mainTok && !isSnow) layers.push(base+mainTok+"_main_"+pat+".png");
+  if(mainTok) layers.push(base+mainTok+"_main_"+pat+".png");
   if((opts.coatType==="tortoiseshell"||opts.coatType==="watercolor") && opts.colorName2){
     layers.push(base+spriteColorToken(opts.colorName2)+"_trade_"+pat+".png");
   }
@@ -2872,9 +2874,14 @@ function spriteColorTokenPat(name){ return String(name||"").toLowerCase().replac
 function catPreview(opts){
   const size=opts.size||88;
   const layers=spritePhenoLayers(opts);
-  // Preview backdrop is a fixed medium-dark neutral grey (not tinted by the coat colour),
-  // so sprites read consistently against it.
-  return `<div class="catprev" title="${esc(opts.title||"")}" style="width:${size}px;height:${size}px;background:#4b4b4e">${_catStage(layers, size, {fur:opts.fur, pose:opts.pose, species:opts.species, stage:opts.stage})}</div>`;
+  // Backdrop is a fixed medium-dark neutral grey (so sprites read consistently); the
+  // BORDER carries the base coat colour (content-box keeps the sprite crop unclipped).
+  const border = opts.hex ? `;border:2px solid ${esc(opts.hex)};box-sizing:content-box` : "";
+  // No synthesizable sprite (e.g. Snow) → show the coat colour as a solid swatch, not eyes.
+  if(!layers.length){
+    return `<div class="catprev" title="${esc(opts.title||"")}" style="width:${size}px;height:${size}px;background:${esc(opts.hex||"#4b4b4e")}${border}"></div>`;
+  }
+  return `<div class="catprev" title="${esc(opts.title||"")}" style="width:${size}px;height:${size}px;background:#4b4b4e${border}">${_catStage(layers, size, {fur:opts.fur, pose:opts.pose, species:opts.species, stage:opts.stage})}</div>`;
 }
 function catPreviewFor(ph, size){
   return catPreview({colorName:ph.colorPrimary, colorName2:(ph.colors&&ph.colors[1])||null, coatType:ph.coatType,
