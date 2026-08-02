@@ -2110,7 +2110,7 @@ function coatShadeReadout(windSec, base, dil, density){
   const dc=displayedColor(wind, b[0]||"B", b[1]||"B", dilute, d);
   if(dc.coatType==="snow") return "Snow";
   if(dc.coatType==="tortoiseshell") return dc.colors.join("-")+" tortoiseshell";
-  if(dc.coatType==="watercolor") return dc.colors[0]+" watercolor";
+  if(dc.coatType==="watercolor") return dc.colors.join("-")+" watercolor";
   return dc.colors[0];
 }
 // accent colour name → allele pair string ("BY") or "??" for Unknown.
@@ -2491,7 +2491,9 @@ function displayedColor(wind, x, y, dilute, density){
   if(wind==="North"){ const c=colorInfo(x,dilute,density); return {label:c.name+" standard", hex:c.hex, coatType:"standard", colors:[c.name]}; }
   if(wind==="South"){ const c=colorInfo(y,dilute,density); return {label:c.name+" standard", hex:c.hex, coatType:"standard", colors:[c.name]}; }
   // Trade
-  if(x===y){ const c=colorInfo(x,dilute,density); return {label:c.name+" watercolor", hex:c.hex, coatType:"watercolor", colors:[c.name]}; }
+  if(x===y){ const c=colorInfo(x,dilute,density), d=Math.max(1,Math.min(4,density||1));
+    const s=d>1?colorInfo(x,dilute,d-1):{name:SNOW[0],hex:SNOW[1]};   // a watercolour washes the shade into one step lighter (Snow at the palest)
+    return {label:c.name+"-"+s.name+" watercolor", hex:c.hex, hex2:s.hex, coatType:"watercolor", colors:[c.name,s.name]}; }
   const main=colorInfo(x,dilute,density), sec=colorInfo(y,dilute,density);
   return {label:main.name+"-"+sec.name+" tortoiseshell", hex:main.hex, hex2:sec.hex, coatType:"tortoiseshell", colors:[main.name,sec.name]};
 }
