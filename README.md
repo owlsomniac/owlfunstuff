@@ -58,7 +58,8 @@ share). **Click any column sub-header to sort.** Highlights:
   Density so you can see what the genotype paints. The parent builder uses the **same options in the same order**, so the
   two always match. Edits flow straight into breeding predictions. This is also how you **record a hidden accent** once
   you've revealed it: a Not-cat's accent isn't on its page, so test it in the breeding sandbox against a homozygous Mercat,
-  then set it here so every future cross is exact.
+  then set it here so every future cross is exact. (**Growth** has no dropdown — it's an unobservable gene, so it's always
+  written as `??` rather than guessed.)
 - **Stats** — each total is tinted by its game **grade** (ROYGBP pastels: Poor · Average · Good · Very Good ·
   Excellent · Exceptional) and shows its **dice pool** (1d6–9d6). A trinket-adjusted stat **splits** the cell — the
   adjusted total on top, the base value below — and sorts by the (higher) adjusted number.
@@ -105,8 +106,9 @@ Predict a litter **two ways**:
   that means reading the rendered avatar's description (main + trade colours, pattern, white level & type, fur, species),
   which pins the coat genetics down accurately; it fills the editable string box and notes any hidden recessives it had
   to assume. Parents picked from the roster show their **real in-game portrait**.
-- **Paste a genetic string** directly (e.g. `[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]`; old dash/pipe strings work too)
-  when you have one revealed.
+- **Paste a genetic string** directly (e.g. `[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [??] [YR]`; old dash/pipe strings work too)
+  when you have one revealed. The **7th (growth) section is always `??`** — that gene can't be observed or tested in-game,
+  so the tool never fabricates a value for it (old strings that carry a growth genotype still parse fine).
 - **Build a parent (what-if)** — a **🛠 dropdown builder** under each parent assembles a full genotype from scratch, in
   genome order: **Species · Wind · Fur · Base colour · Dilution · Density · Pattern type · Pattern shown · White type ·
   White level · White shown · Accent** — the **same carrier controls, in the same order**, as the pencil editor (Fur

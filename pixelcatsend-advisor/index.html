@@ -594,7 +594,7 @@
       </ol>
       <p class="sub" style="margin-top:8px">Genetic string format:</p>
       <ul class="breed-fmt">
-        <li><code>[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]</code></li>
+        <li><code>[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [??] [YR]</code></li>
         <li>Old dash/pipe strings work too — e.g. <code>[C-NN-SS-BBFF4-YYTT-YY0C-BA-YR]</code></li>
       </ul>
 
@@ -2072,7 +2072,7 @@ function geneSecs(str){ return [...String(str||"").matchAll(/\[([^\]]*)\]/g)].ma
 function catBaseGenes(cat){
   if(cat.genes){ const p=parseGeneString(cat.genes); if(!p.error) return cat.genes; }
   const res=rosterCatToGeneString(cat); if(res && res.str) return res.str;
-  return "[C] [NN] [SS] [BBFF4] [NN??] [NN0C] [AB] [??]";     // neutral default
+  return "[C] [NN] [SS] [BBFF4] [NN??] [NN0C] [??] [??]";     // neutral default (growth unknowable)
 }
 // Wind by allele pair — SHARED by the Edit-cat editor and the parent builder so the two
 // selectors have identical options and order. Value = the section string, label = named.
@@ -2114,7 +2114,7 @@ function assembleGenotype(v){
   const wl = Math.max(0,Math.min(10, parseInt(v.whiteLevel,10)||0));
   const whiteSec = whiteVis + wl + wt;
   const acc = /^[RBYL]{2}$/.test(v.accent||"") ? v.accent : "??";
-  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [AB] [${acc}]`;
+  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [??] [${acc}]`;
 }
 // Base colour is co-dominant AND positional (North shows allele 1, South allele 2, Trade
 // both). "BO" is stored canonically B-first, but a revealed het cat may be "OB" — flipping
@@ -2352,7 +2352,7 @@ function withKnownAccent(str, cat){
   if(secs.length<7) return str;
   const al=catAccentAlleles(cat);
   secs[7]=al ? al.join("") : "??";
-  for(let i=0;i<secs.length;i++) if(secs[i]==null) secs[i]="AB";
+  for(let i=0;i<secs.length;i++) if(secs[i]==null) secs[i]= i===6 ? "??" : "AB";
   return secs.map(s=>"["+s+"]").join(" ");
 }
 // A roster cat's coat-colour density (1–4) — the "dilution level" of its shade.
@@ -2392,7 +2392,7 @@ function parseGeneString(raw){
     // old single-bracket dash/pipe format: [C-N|N-S|S-...]
     secs=s.replace(/^\[|\]$/g,"").split("-").map(x=>x.replace(/[\s|]/g,"").toUpperCase());
   }
-  if(secs.length<7) return {error:"Expected 7–8 sections like [C] [NN] [SS] [BBFF4] [NNMS] [NN0C] [BA] [YR]"};
+  if(secs.length<7) return {error:"Expected 7–8 sections like [C] [NN] [SS] [BBFF4] [NNMS] [NN0C] [??] [YR]"};
   const g={raw:s};
   g.species=secs[0]||"C";
   g.wind=(secs[1]||"").split("").slice(0,2);
@@ -2816,7 +2816,7 @@ function phenotypeToGeneString(t){
   const pattern=patVis[0]+patVis[1]+pat[0]+pat[1];
   const white=whiteVis[0]+whiteVis[1]+whiteLevel+whiteType;
   // Unknown accent → "??" placeholder (parsed back as unknown, never Ruby).
-  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB] [${accent?accent.join(""):"??"}]`;
+  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [??] [${accent?accent.join(""):"??"}]`;
   return { str, resolved, guessed };
 }
 
@@ -2891,7 +2891,7 @@ function phenoLabelToGeneString(p){
   const pattern=patVis[0]+patVis[1]+pat[0]+pat[1];
   const white=whiteVis[0]+whiteVis[1]+whiteLevel+whiteType;
   // aria-labels never expose accent → "??" placeholder (unknown, not Ruby).
-  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [AB] [??]`;
+  const str=`[${sp}] [${wind.join("")}] [${fur.join("")}] [${coat}] [${pattern}] [${white}] [??] [??]`;
   return { str, resolved, guessed };
 }
 
@@ -3145,7 +3145,7 @@ function offspringGeneString(o){
   if(o.patterned){ const pr=PATTERN_REV[String(o.patName||"").toLowerCase()]; patSec="Y?"+(pr?pr.join(""):"??"); }
   else patSec="NN??";
   const whiteSec = (o.wLevel>0) ? ("Y?"+o.wLevel+(o.wType||"C")) : "NN0?";
-  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [AB] [${o.accGeno||"??"}]`;
+  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [??] [${o.accGeno||"??"}]`;
 }
 // A gallery of every possible kitten coat, with a row of Wind / Pattern / White
 // dropdowns (each listing only outcomes this pairing can produce). Picking any of
@@ -3350,7 +3350,7 @@ function renderBreeding(strA, strB){
   const out = $("#breedResults");
   if(A.error || B.error){
     out.innerHTML = `<div class="card"><div class="breed-parents">${parentCard("Parent A",A,breedMeta.A)}${parentCard("Parent B",B,breedMeta.B)}</div>
-      <div class="breed-warn" style="margin-top:12px">Fix the string(s) above — expected 7–8 sections like <code>[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]</code>.</div></div>`;
+      <div class="breed-warn" style="margin-top:12px">Fix the string(s) above — expected 7–8 sections like <code>[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [??] [YR]</code>.</div></div>`;
     breedSave();
     return;
   }
@@ -3805,8 +3805,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
     try{ localStorage.removeItem(BREED_KEY); }catch(e){}
   });
   $("#breedDemoBtn").addEventListener("click", ()=>{
-    $("#pA").value="[C] [NO] [SL] [BBFF3] [YYTT] [NN0C] [AB] [YR]";
-    $("#pB").value="[C] [SO] [LL] [OOFF3] [YYSS] [YY4P] [BA] [YR]";
+    $("#pA").value="[C] [NO] [SL] [BBFF3] [YYTT] [NN0C] [??] [YR]";
+    $("#pB").value="[C] [SO] [LL] [OOFF3] [YYSS] [YY4P] [??] [YR]";
     $("#pickA").value=""; $("#pickB").value="";
     $("#noteA").textContent=""; $("#noteB").textContent="";
     breedMeta.A=null; breedMeta.B=null;
