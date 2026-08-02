@@ -2054,8 +2054,7 @@ function rosterRender(){
 }
 
 /* ---- per-cat quick editor (the pencil) — fix a mis-parse or record a tested accent ----
-   Only fields that map losslessly to a single genome section are here; colour & wind come
-   straight from the game's own aria-label (which never mis-reads them), so they're left be.
+   Each field maps losslessly to a single genome section; colour stays as the game reads it.
    Accent is the whole point: PCE never shows a Not-cat's accent, so you test it in the
    breeding sandbox and record it here. */
 let rcEditId=null;
@@ -2065,6 +2064,10 @@ function catBaseGenes(cat){
   const res=rosterCatToGeneString(cat); if(res && res.str) return res.str;
   return "[C] [NN] [SS] [BBFF4] [NN??] [NN0C] [AB] [??]";     // neutral default
 }
+// Wind by allele pair — SHARED by the Edit-cat editor and the parent builder so the two
+// selectors have identical options and order. Value = the section string, label = named.
+const WIND_ALLELE_OPTS=[["NN","North"],["NO","North (carries Null)"],["SS","South"],["SO","South (carries Null)"],["NS","Trade"],["OO","Null"]];
+function windEditKey(sec){ const s=String(sec||"").toUpperCase().replace(/[^NSO]/g,"").split("").sort().join(""); return {NN:"NN",SS:"SS",OO:"OO",NS:"NS",NO:"NO",OS:"SO"}[s] || "NN"; }
 function openCatEditor(id){
   const ex=$("#rcModalHost"); if(ex) ex.remove();
   const r=rosterLoad(), c=r.cats[id]; if(!c) return;
@@ -2073,6 +2076,7 @@ function openCatEditor(id){
   const cur={
     name: c.name||"",
     species: (/mercat/i.test(data["Species"]||"") || secs[0]==="M") ? "Mercat" : "Not-cat",
+    wind: windEditKey(secs[1]),
     fur: (/long/i.test(data["Fur"]||data["Fur Length"]||"") || secs[2]==="LL") ? "Longhair" : "Shorthair",
     pattern: (function(){ const p=notNA(data["Pattern"]); if(p) return p;
       const pn=patternName((secs[4]||"")[2],(secs[4]||"")[3]); return pn||"Solid"; })(),
@@ -2093,6 +2097,7 @@ function openCatEditor(id){
     <div class="rc-form">
       <label for="rcName">Name</label><input id="rcName" type="text" value="${esc(cur.name)}">
       <label for="rcSpecies">Species</label><select id="rcSpecies">${opt(["Not-cat","Mercat"],cur.species)}</select>
+      <label for="rcWind">Wind</label><select id="rcWind">${WIND_ALLELE_OPTS.map(([v,lab])=>`<option value="${v}"${v===cur.wind?" selected":""}>${esc(lab)}</option>`).join("")}</select>
       <label for="rcFur">Fur</label><select id="rcFur">${opt(["Shorthair","Longhair"],cur.fur)}</select>
       <label for="rcPattern">Pattern</label><select id="rcPattern">${opt(patterns,patterns.includes(cur.pattern)?cur.pattern:"Solid")}</select>
       <label for="rcWhiteType">White</label>
@@ -2117,26 +2122,27 @@ function saveCatEditor(id){
   const r=rosterLoad(), c=r.cats[id]; if(!c) return false;
   c.data=c.data||{};
   const val=s=>{ const el=$(s); return el?el.value:""; };
-  const name=val("#rcName").trim(), species=val("#rcSpecies"), fur=val("#rcFur"),
+  const name=val("#rcName").trim(), species=val("#rcSpecies"), wind=val("#rcWind")||"NN", fur=val("#rcFur"),
         pattern=val("#rcPattern"), accent=val("#rcAccent"),
         wType=val("#rcWhiteType")||"C", wLevel=parseInt(val("#rcWhiteLevel"),10)||0;
   if(name) c.name=name;
-  // rewrite the genome one section at a time — colour (3) & wind (1) are left untouched
+  // rewrite the genome one section at a time — colour (3) is left untouched
   const secs=geneSecs(catBaseGenes(c));
   while(secs.length<8) secs.push(secs.length===6?"AB":"??");
   secs[0]=species==="Mercat"?"M":"C";
+  secs[1]=/^[NSO]{2}$/.test(wind)?wind:"NN";
   secs[2]=fur==="Longhair"?"LL":"S?";
   const pr=(pattern && pattern!=="Solid") ? PATTERN_REV[pattern.toLowerCase()] : null;
   secs[4]= (pattern==="Solid"||!pr) ? "NN??" : ("YY"+pr.join(""));
   secs[5]= wLevel>0 ? ("YY"+wLevel+wType) : ("NN0"+wType);
   // accent flows through data.Accent → withKnownAccent (Unknown ⇒ [??], never invented)
   c.data["Accent"]=/^unknown$/i.test(accent)?"Unknown":accent;
-  c.data["Species"]=species; c.data["Fur"]=fur; c.data["Pattern"]=pattern;
+  c.data["Species"]=species; c.data["Wind"]=windName(wind[0],wind[1]); c.data["Fur"]=fur; c.data["Pattern"]=pattern;
   c.data["White"]= wLevel>0 ? whiteCellText(wType, wLevel, "") : "None";
   c.genes=withKnownAccent(secs.map(s=>"["+s+"]").join(" "), c);
   c.geneInfo={resolved:(c.geneInfo&&c.geneInfo.resolved)||["edited by you"], guessed:(c.geneInfo&&c.geneInfo.guessed)||[]};
   r.headers=r.headers||[];
-  ["Species","Fur","Pattern"].forEach(h=>{ if(!r.headers.some(x=>x.toLowerCase()===h.toLowerCase())) r.headers.push(h); });
+  ["Species","Wind","Fur","Pattern"].forEach(h=>{ if(!r.headers.some(x=>x.toLowerCase()===h.toLowerCase())) r.headers.push(h); });
   rosterSave(r);
   rosterRender();
   return true;
@@ -3150,12 +3156,11 @@ function kittenGallery(R,A,B){
     <div class="kitten-gallery">${cells||`<p class="hint">No kitten matches the current picks.</p>`}</div>
     <p class="hint">Each % is the <b>true overall chance</b> of a kitten with that coat${picked.length?(" and "+esc(picked.join(" · "))):""}. Previews are composited from the game's own sprite layers; a missing layer falls back to a colour swatch. Tap a genetic string to copy it — a <code>?</code> marks an allele the game keeps hidden; the last section is the <b>accent</b> chosen in the selector above (Not-cats don't show it, Mercats wear it on the tail). See the <b>Quick Genetics Overview</b>.</p></div>`;
 }
-// One-click copy of a kitten's genetic string; flashes "Copied!" immediately.
 /* ---- Parent what-if builder: dropdowns (genome order) that assemble a parent's gene
-   string. Wind & fur use the canonical genotype (North=NN, Shorthair=SS); the base
-   colour name carries the density; a 2nd colour (Trade only) makes a tortoiseshell and
-   shares the base's density. Growth is skipped. Assembled string is written to the box. */
-const PB_WINDSEC={North:"NN",South:"SS",Trade:"NS",Null:"OO"};
+   string. Wind uses the shared allele options (WIND_ALLELE_OPTS — matches the Edit-cat
+   editor); fur uses the canonical genotype (Shorthair=SS); the base colour name carries
+   the density; a 2nd colour (Trade only) makes a tortoiseshell sharing the base's density.
+   Growth is skipped. The assembled string is written to the parent box. */
 const PB_COLORS=SPRITE_COLORS.map(c=>c[0]);                         // 16 colour names, in order
 const PB_PATTERNS=["Solid",...new Set(Object.values(PATTERN_NAME))];
 const PB_ACCENTS=[["Unknown","Unknown"]].concat(Object.keys(ACCENT_NAME).map(k=>[ACCENT_NAME[k], ACCENT_NAME[k]+" ("+k+")"]));
@@ -3164,7 +3169,7 @@ function parentBuilderHTML(){
   const p=arr=>arr.map(v=>[v,v]);
   const sel=(cls,label,pairs,cur,extraClass)=>`<label class="kc ${extraClass||""}"><span>${label}</span><select class="kc-pick ${cls}">${pbOpts(pairs,cur)}</select></label>`;
   return sel("pb-species","Species",p(["Not-cat","Mercat"]),"Not-cat")
-    + sel("pb-wind","Wind",p(["North","South","Trade","Null"]),"North")
+    + sel("pb-wind","Wind",WIND_ALLELE_OPTS,"NN")
     + sel("pb-fur","Fur",p(["Shorthair","Longhair"]),"Shorthair")
     + sel("pb-color","Base colour",p(PB_COLORS),"Black")
     + sel("pb-color2","2nd colour",p(PB_COLORS),"Red","pb-2nd hide")
@@ -3173,15 +3178,15 @@ function parentBuilderHTML(){
     + sel("pb-wlevel","Lv",Array.from({length:11},(_,i)=>[String(i),"Lv "+i]),"0")
     + sel("pb-accent","Accent",PB_ACCENTS,"Unknown");
 }
-function pbToggle2nd(c){ const w=(c.querySelector(".pb-wind")||{}).value, lab=c.querySelector(".pb-2nd"); if(lab) lab.classList.toggle("hide", w!=="Trade"); }
+function pbToggle2nd(c){ const w=(c.querySelector(".pb-wind")||{}).value, lab=c.querySelector(".pb-2nd"); if(lab) lab.classList.toggle("hide", w!=="NS"); }
 function pbAssemble(c){
   const v=cls=>{ const el=c.querySelector("."+cls); return el?el.value:""; };
   const sp=v("pb-species")==="Mercat"?"M":"C";
-  const wind=v("pb-wind"), windSec=PB_WINDSEC[wind]||"NN";
+  const windSec=/^[NSO]{2}$/.test(v("pb-wind"))?v("pb-wind"):"NN";   // value IS the allele pair
   const furSec=v("pb-fur")==="Longhair"?"LL":"SS";
   const c1=COLOR_REV[v("pb-color").toLowerCase()]||{group:"B",dilute:false,density:4};
   let g2=c1.group, d2=c1.dilute?"D":"F";
-  if(wind==="Trade"){ const c2=COLOR_REV[v("pb-color2").toLowerCase()]; if(c2){ g2=c2.group; d2=c2.dilute?"D":"F"; } }
+  if(windSec==="NS"){ const c2=COLOR_REV[v("pb-color2").toLowerCase()]; if(c2){ g2=c2.group; d2=c2.dilute?"D":"F"; } }
   const coatSec=c1.group+g2+(c1.dilute?"D":"F")+d2+c1.density;
   const patName=v("pb-pattern"), pr=(patName&&patName!=="Solid")?PATTERN_REV[patName.toLowerCase()]:null;
   const patSec=(patName==="Solid"||!pr)?"NN??":("YY"+pr.join(""));
@@ -3195,7 +3200,7 @@ function pbSync(c){          // set the builder dropdowns from the target box's 
   const set=(cls,val)=>{ const el=c.querySelector("."+cls); if(el&&val!=null) el.value=val; };
   if(g && !g.error){
     set("pb-species", g.species==="M"?"Mercat":"Not-cat");
-    set("pb-wind", windName(g.wind[0],g.wind[1]));
+    set("pb-wind", windEditKey((g.wind||[]).join("")));
     set("pb-fur", /L/i.test((g.fur||[]).join(""))?"Longhair":"Shorthair");
     set("pb-color", colorInfo(g.color[0], g.dil[0]==="D", g.density).name);
     set("pb-color2", colorInfo(g.color[1], g.dil[1]==="D", g.density).name);

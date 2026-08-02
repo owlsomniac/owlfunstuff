@@ -45,12 +45,13 @@ job/class). **Click any column sub-header to sort.** Highlights:
   dropdown under the preview to see how they'll look grown up. Because beans have no stats yet, they're **not
   counted** by the *Fetch stats & levels* button — so a village full of beans won't nag you with a "3 left" that
   can never resolve.
-- **Edit any cat** — a **✏️ pencil** on each row opens a quick editor for its **Name, Species, Fur, Pattern, White**
-  and **Accent** (a 10-colour dropdown that shows each colour's genotype — *Green (BY)*, *Indigo (BL)* … — or *Unknown*).
-  Edits rewrite just those genome sections — colour & wind, which
-  the game's own description never mis-reads, are left untouched — and flow straight into breeding predictions. This is
-  how you **record a hidden accent** once you've revealed it: a Not-cat's accent isn't on its page, so test it in the
-  breeding sandbox against a homozygous Mercat, then set it here so every future cross is exact.
+- **Edit any cat** — a **✏️ pencil** on each row opens a quick editor for its **Name, Species, Wind, Fur, Pattern,
+  White** and **Accent** (a 10-colour dropdown that shows each colour's genotype — *Green (BY)*, *Indigo (BL)* … — or
+  *Unknown*). **Wind** is picked by allele pair with the phenotype named — *North (NN)*, *North (carries Null) (NO)*,
+  *South (SS)*, *South (carries Null) (SO)*, *Trade (NS)*, *Null (OO)* — the same list the parent builder uses. Edits
+  rewrite just those genome sections (colour is left as the game reads it) and flow straight into breeding predictions.
+  This is how you **record a hidden accent** once you've revealed it: a Not-cat's accent isn't on its page, so test it
+  in the breeding sandbox against a homozygous Mercat, then set it here so every future cross is exact.
 - **Stats** — each total is tinted by its game **grade** (ROYGBP pastels: Poor · Average · Good · Very Good ·
   Excellent · Exceptional) and shows its **dice pool** (1d6–9d6). A trinket-adjusted stat **splits** the cell — the
   adjusted total on top, the base value below — and sorts by the (higher) adjusted number.
@@ -102,8 +103,9 @@ Predict a litter **two ways**:
 - **Build a parent (what-if)** — a **🛠 dropdown builder** under each parent assembles a genotype from scratch, in
   genome order: **Species · Wind · Fur · Base colour · (2nd colour, for Trade) · Pattern · White · Accent**. The base
   colour carries the density (Black=4 … Tan=1); a 2nd colour on a Trade cat makes a tortoiseshell (sharing the base
-  density). Each change writes the string into the box and re-renders; opening the builder syncs it from whatever's
-  already there — so you can tweak a picked cat or invent one to explore *"what if I bred X with Y?"*
+  density). **Wind** uses the same allele list as the pencil editor (*North (NN)*, *North (carries Null) (NO)*, …), so
+  the two selectors match. Each change writes the string into the box and re-renders; opening the builder syncs it from
+  whatever's already there — so you can tweak a picked cat or invent one to explore *"what if I bred X with Y?"*
 
 Or work backwards with **🔎 Find a pairing for a desired kitten**: choose the traits you want — coat type/colour, pattern,
 wind, fur, **white type & level (min/max)**, **colour density (min/max)**, species, accent — and it searches every pair of
