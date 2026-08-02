@@ -40,6 +40,11 @@ job/class). **Click any column sub-header to sort.** Highlights:
 - **Appearance** — a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or *None*), a **Density** column
   (the coat's colour density / dilution level, **1–4**, recovered from its colour) and an **Accent** column (the game
   shows accent only when it's visible, so cats without a revealed accent read **Unknown**).
+- **Edit any cat** — a **✏️ pencil** on each row opens a quick editor for its **Name, Species, Fur, Pattern, White**
+  and **Accent** (a 10-colour dropdown, or *Unknown*). Edits rewrite just those genome sections — colour & wind, which
+  the game's own description never mis-reads, are left untouched — and flow straight into breeding predictions. This is
+  how you **record a hidden accent** once you've revealed it: a Not-cat's accent isn't on its page, so test it in the
+  breeding sandbox against a homozygous Mercat, then set it here so every future cross is exact.
 - **Stats** — each total is tinted by its game **grade** (ROYGBP pastels: Poor · Average · Good · Very Good ·
   Excellent · Exceptional) and shows its **dice pool** (1d6–9d6). A trinket-adjusted stat **splits** the cell — the
   adjusted total on top, the base value below — and sorts by the (higher) adjusted number.
@@ -96,11 +101,16 @@ Teal…), and **species** — the result blocks are ordered to mirror the finder
 possible **allele pairs** are listed (e.g. accent `[RR]` × `[LL]` → *Pink* `[RL] / [LR]`); colour alleles honour each parent's
 **wind** (which slot each donates), and traits that aren't a two-allele cross (species, white type & level, density) show a short
 inheritance note instead. A pattern only names its type when it's actually shown (a solid cat reads **Solid**, never a leaked
-hidden type). **Accent** is handled per Pixel Cat's End's rules — Not-cats hide it, Mercats show it on their tail — and rides in
-the copy string's final section as **one concrete genotype** for both species. Whenever a pairing can produce more than one
-accent an **Accent picker** appears (labelled **(tail)** for Mercats): it defaults to the most likely colour, or to **Unknown**
-(`[??]`) when neither parent reveals an accent, and picking one rewrites every kitten's copy string — and, for Mercats,
-re-colours the tail on every preview. A parent with a hidden accent still reads **Accent: Unknown** on its card. Plus
+hidden type). **Accent** follows Pixel Cat's End's **co-dominant** rules — one colour ⇔ one exact allele pair — and the game only
+ever *shows* it on a **Mercat** (its tail); a **Not-cat's accent is never revealed** (it lives on PCE's server), so the tool
+treats it as unknown rather than inventing one. When **both** parents' accents are known, each kitten's accent is a concrete
+colour with its genotype. When a parent's accent is hidden, the offspring accent stays an **honest partial** — `[L?]` or `[B?]`,
+never an invented colour or a fake percentage — and a note explains that Mercat kittens are drawn with the **known parent's
+colour as a placeholder** (not a prediction), plus how to **reveal** a hidden accent (breed with a homozygous Mercat —
+Black/Ruby/Blue/Gold — and read the offspring colours) and record it. An **Accent picker** appears only when a pairing genuinely
+has more than one outcome to choose from — labelled by colour when fully known, by genotype (`[B?]`) when partial, and
+**(tail)** on a Mercat, where the pick also recolours the tail. A parent with a hidden accent reads **Accent: Unknown** on its
+card. Plus
 each parent's decoded phenotype (shown as **labelled facts** in the same order as the search inputs — Species / Wind / Fur /
 Coat / Pattern / White / Accent — with its name/#ID linking to the cat's page when picked from your roster). Parents and
 **every** possible kitten get **composited sprite previews** built from the game's own image layers, each **cropped to a single
@@ -114,7 +124,8 @@ species/wind/pattern/white (independent loci multiply in, and a wind pick isolat
 carries a **click-to-copy genetic string** (small, wrapping button) that marks every allele the game keeps hidden with a
 single **`?`**: a shown-dominant trait reads `[D?]` (the second copy could be a hidden recessive), a shown-recessive trait
 reads `[rr]` (both copies known), and a fully-hidden slot (a North/South cat's off-wind colour allele) reads `[??]` — never a
-guessed value; the string's final section carries the accent genotype currently chosen in the Accent picker. A collapsible
+guessed value; the final section carries the accent genotype, which stays a partial like `[L?]` (or `[??]`) whenever a parent's
+accent is unknown. A collapsible
 **🧬 Quick Genetics Overview** on the tab explains the homozygous
 assumption for un-revealed cats, the `?` convention, and how gene pairs pass down (`[rr] × [rr]` → `[rr]`; `[D?] × [DD]` →
 `[DD]`/`[D?]`; `[D?] × [D?]` → `[DD]`/`[D?]`/`[??]`), with the reminder that outcomes are a close approximation. A missing

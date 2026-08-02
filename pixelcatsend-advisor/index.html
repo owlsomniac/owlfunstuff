@@ -293,9 +293,28 @@
   #rosterTable tbody tr{background:var(--panel2);cursor:pointer}
   #rosterTable tbody tr:nth-child(even){background:var(--panel)}
   #rosterTable tbody tr:hover{background:var(--brand-soft)}
-  #rosterTable td.prev,#rosterTable th.prev{width:108px;min-width:108px;text-align:center;padding:4px}
+  #rosterTable td.prev,#rosterTable th.prev{width:108px;min-width:108px;text-align:center;padding:4px;position:relative}
   #rosterTable td.prev .catprev{margin:0 auto;border-radius:10px}
   #rosterTable td.prev .rc-noimg{font-size:44px;opacity:.4}
+  /* per-row edit (pencil) button — sits top-left of the preview cell */
+  .rc-edit{position:absolute;top:3px;left:3px;z-index:1;border:1px solid var(--line-soft);background:var(--panel2);
+    color:var(--muted);border-radius:7px;width:22px;height:22px;line-height:1;font-size:12px;padding:0;cursor:pointer;opacity:.55;transition:opacity .12s,background .12s}
+  #rosterTable tbody tr:hover .rc-edit{opacity:1}
+  .rc-edit:hover,.rc-edit:focus-visible{background:var(--brand);color:#fff;border-color:var(--brand);opacity:1;outline:none}
+  /* cat editor modal */
+  .rc-modal-back{position:fixed;inset:0;background:rgba(12,12,16,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+  .rc-modal{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);max-width:440px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.4)}
+  .rc-modal h3{margin:0;padding:14px 18px;border-bottom:1px solid var(--line-soft);font-size:15px}
+  .rc-modal h3 .rc-sub{display:block;font-size:11.5px;color:var(--muted);font-weight:500;margin-top:2px}
+  .rc-form{padding:12px 18px;display:grid;grid-template-columns:96px 1fr;gap:9px 12px;align-items:center}
+  .rc-form label{color:var(--ink-soft);font-size:12.5px;font-weight:600}
+  .rc-form input,.rc-form select{width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink);font-size:13px}
+  .rc-form .rc-hint{grid-column:1/-1;color:var(--muted);font-size:11px;line-height:1.5;margin:-2px 0 2px}
+  .rc-white-lvl{display:flex;gap:8px}.rc-white-lvl select{flex:1}
+  .rc-actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line-soft)}
+  .rc-actions button{padding:7px 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--line)}
+  .rc-actions .rc-cancel{background:var(--panel2);color:var(--ink-soft)}
+  .rc-actions .rc-save{background:var(--brand);color:#fff;border-color:var(--brand)}
   #rosterTable td.name a{color:var(--ink);text-decoration:none;font-weight:700}
   #rosterTable td.name a:hover{color:var(--brand-ink);text-decoration:underline}
   #rosterTable td.idcol{color:var(--muted);font-variant-numeric:tabular-nums}
@@ -359,6 +378,13 @@
   .geno{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.5px;color:inherit;background:var(--panel2);border:1px solid var(--line-soft);border-radius:5px;padding:0 5px;line-height:16px;opacity:.85}
   .geno-note{font-size:11.5px;font-style:italic;color:var(--muted);margin:0 0 5px}
   .breed-warn{color:var(--warn-ink);font-size:13px;margin-top:8px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:var(--radius-sm);padding:8px 11px}
+  .accent-note{font-size:12.5px;line-height:1.55;margin-top:8px;color:var(--ink-soft);background:var(--panel2);border:1px solid var(--line-soft);border-left:3px solid var(--brand);border-radius:var(--radius-sm);padding:9px 12px}
+  .accent-note code{font-size:11.5px}
+  .acc-cheats{margin-top:6px}
+  .acc-cheats summary{cursor:pointer;color:var(--brand-ink);font-weight:700}
+  .acc-cheats p{margin:7px 0}
+  .acc-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+  .acc-chip{border:1px solid var(--line-soft);border-radius:99px;padding:1px 8px;font-size:11.5px;background:var(--panel);white-space:nowrap}
   .pheno-head{display:flex;gap:12px;align-items:flex-start;margin-top:6px}
   .catprev{position:relative;flex:0 0 auto;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--panel2)}
   .catprev .catstage{position:absolute;top:0;left:0;width:100px;height:100px;overflow:hidden;transform-origin:top left}
@@ -1860,7 +1886,7 @@ function rosterRender(){
   const body=tids.slice(0,400).map(id=>{
     const c=r.cats[id];
     const thumb=(c.img&&c.img.length)?catImgFromLayers(c.img,100,{fur:rosterCatFur(c), title:c.name}):`<span class="rc-noimg" aria-hidden="true">🐾</span>`;
-    const cells=[`<td class="prev">${thumb}</td>`,
+    const cells=[`<td class="prev"><button type="button" class="rc-edit" data-edit="${esc(id)}" title="Edit ${esc(c.name||("#"+id))}" aria-label="Edit ${esc(c.name||("#"+id))}">✏️</button>${thumb}</td>`,
       `<td class="name"><a class="cat-ext" href="${esc(catUrl(id))}" target="_blank" rel="noopener"><b>${esc(c.name||("#"+id))}</b></a></td>`,
       `<td class="idcol">${esc(id)}</td>`,
       quickOpen ? `<td class="qv grp-start">${quickCell(id)}</td>` : `<td class="strip grp-start" data-grp="quick" title="Show Quick View">⋯</td>`];
@@ -1895,6 +1921,92 @@ function rosterRender(){
     return `<tr data-id="${esc(id)}">${cells.join("")}</tr>`;
   }).join("");
   T.innerHTML=`<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+/* ---- per-cat quick editor (the pencil) — fix a mis-parse or record a tested accent ----
+   Only fields that map losslessly to a single genome section are here; colour & wind come
+   straight from the game's own aria-label (which never mis-reads them), so they're left be.
+   Accent is the whole point: PCE never shows a Not-cat's accent, so you test it in the
+   breeding sandbox and record it here. */
+let rcEditId=null;
+function geneSecs(str){ return [...String(str||"").matchAll(/\[([^\]]*)\]/g)].map(m=>m[1]); }
+function catBaseGenes(cat){
+  if(cat.genes){ const p=parseGeneString(cat.genes); if(!p.error) return cat.genes; }
+  const res=rosterCatToGeneString(cat); if(res && res.str) return res.str;
+  return "[C] [NN] [SS] [BBFF4] [NN??] [NN0C] [AB] [??]";     // neutral default
+}
+function openCatEditor(id){
+  const ex=$("#rcModalHost"); if(ex) ex.remove();
+  const r=rosterLoad(), c=r.cats[id]; if(!c) return;
+  rcEditId=id;
+  const data=c.data||{}, secs=geneSecs(catBaseGenes(c));
+  const cur={
+    name: c.name||"",
+    species: (/mercat/i.test(data["Species"]||"") || secs[0]==="M") ? "Mercat" : "Not-cat",
+    fur: (/long/i.test(data["Fur"]||data["Fur Length"]||"") || secs[2]==="LL") ? "Longhair" : "Shorthair",
+    pattern: (function(){ const p=notNA(data["Pattern"]); if(p) return p;
+      const pn=patternName((secs[4]||"")[2],(secs[4]||"")[3]); return pn||"Solid"; })(),
+    accent: catAccentText(c)
+  };
+  const wsec=secs[5]||"NN0C", wm=wsec.match(/^..(\d+)([CPLRIT])$/);
+  const wLevel = wm?parseInt(wm[1],10):0, wType = wm?wm[2]:"C";
+  const opt=(list,sel)=>list.map(v=>`<option value="${esc(v)}"${v===sel?" selected":""}>${esc(v)}</option>`).join("");
+  const patterns=["Solid",...new Set(Object.values(PATTERN_NAME))];
+  const accents=["Unknown",...new Set(Object.values(ACCENT_NAME))];
+  const accentSel=accents.includes(cur.accent)?cur.accent:"Unknown";
+  const lvls=Array.from({length:11},(_,i)=>i);
+  const html=`<div class="rc-modal-back" id="rcModalBack"><div class="rc-modal" role="dialog" aria-modal="true" aria-label="Edit cat">
+    <h3>Edit ${esc(c.name||("#"+id))}<span class="rc-sub">#${esc(id)} — updates this cat's genotype &amp; its breeding predictions.</span></h3>
+    <div class="rc-form">
+      <label for="rcName">Name</label><input id="rcName" type="text" value="${esc(cur.name)}">
+      <label for="rcSpecies">Species</label><select id="rcSpecies">${opt(["Not-cat","Mercat"],cur.species)}</select>
+      <label for="rcFur">Fur</label><select id="rcFur">${opt(["Shorthair","Longhair"],cur.fur)}</select>
+      <label for="rcPattern">Pattern</label><select id="rcPattern">${opt(patterns,patterns.includes(cur.pattern)?cur.pattern:"Solid")}</select>
+      <label for="rcWhiteType">White</label>
+      <div class="rc-white-lvl"><select id="rcWhiteType">${Object.keys(WHITE_TYPE).map(k=>`<option value="${k}"${k===wType?" selected":""}>${esc(WHITE_TYPE[k])}</option>`).join("")}</select>
+        <select id="rcWhiteLevel" title="White level 0–10">${lvls.map(n=>`<option value="${n}"${n===wLevel?" selected":""}>Lv ${n}</option>`).join("")}</select></div>
+      <label for="rcAccent">Accent</label><select id="rcAccent">${opt(accents,accentSel)}</select>
+      <div class="rc-hint">A Not-cat's accent isn't on its page. Test it by breeding her with a homozygous Mercat (Black / Ruby / Blue / Gold) in the sandbox and reading the offspring colours, then set it here. "Unknown" keeps it as <code>[??]</code>.</div>
+    </div>
+    <div class="rc-actions"><button type="button" class="rc-cancel" id="rcCancel">Cancel</button><button type="button" class="rc-save" id="rcSave">Save</button></div>
+  </div></div>`;
+  const host=document.createElement("div"); host.id="rcModalHost"; host.innerHTML=html;
+  document.body.appendChild(host);
+  const close=()=>{ const h=$("#rcModalHost"); if(h) h.remove(); rcEditId=null; document.removeEventListener("keydown",onKey); };
+  const onKey=e=>{ if(e.key==="Escape") close(); };
+  document.addEventListener("keydown",onKey);
+  $("#rcCancel").addEventListener("click", close);
+  $("#rcModalBack").addEventListener("click", e=>{ if(e.target.id==="rcModalBack") close(); });
+  $("#rcSave").addEventListener("click", ()=>{ if(saveCatEditor(id)) close(); });
+  $("#rcName").focus();
+}
+function saveCatEditor(id){
+  const r=rosterLoad(), c=r.cats[id]; if(!c) return false;
+  c.data=c.data||{};
+  const val=s=>{ const el=$(s); return el?el.value:""; };
+  const name=val("#rcName").trim(), species=val("#rcSpecies"), fur=val("#rcFur"),
+        pattern=val("#rcPattern"), accent=val("#rcAccent"),
+        wType=val("#rcWhiteType")||"C", wLevel=parseInt(val("#rcWhiteLevel"),10)||0;
+  if(name) c.name=name;
+  // rewrite the genome one section at a time — colour (3) & wind (1) are left untouched
+  const secs=geneSecs(catBaseGenes(c));
+  while(secs.length<8) secs.push(secs.length===6?"AB":"??");
+  secs[0]=species==="Mercat"?"M":"C";
+  secs[2]=fur==="Longhair"?"LL":"S?";
+  const pr=(pattern && pattern!=="Solid") ? PATTERN_REV[pattern.toLowerCase()] : null;
+  secs[4]= (pattern==="Solid"||!pr) ? "NN??" : ("YY"+pr.join(""));
+  secs[5]= wLevel>0 ? ("YY"+wLevel+wType) : ("NN0"+wType);
+  // accent flows through data.Accent → withKnownAccent (Unknown ⇒ [??], never invented)
+  c.data["Accent"]=/^unknown$/i.test(accent)?"Unknown":accent;
+  c.data["Species"]=species; c.data["Fur"]=fur; c.data["Pattern"]=pattern;
+  c.data["White"]= wLevel>0 ? whiteCellText(wType, wLevel, "") : "None";
+  c.genes=withKnownAccent(secs.map(s=>"["+s+"]").join(" "), c);
+  c.geneInfo={resolved:(c.geneInfo&&c.geneInfo.resolved)||["edited by you"], guessed:(c.geneInfo&&c.geneInfo.guessed)||[]};
+  r.headers=r.headers||[];
+  ["Species","Fur","Pattern"].forEach(h=>{ if(!r.headers.some(x=>x.toLowerCase()===h.toLowerCase())) r.headers.push(h); });
+  rosterSave(r);
+  rosterRender();
+  return true;
 }
 
 /* =========================================================================
@@ -2203,18 +2315,42 @@ function offspringAccentGenotypes(A,B){
   a.forEach(x=>b.forEach(y=>set.add(orderAccentPair(x,y))));
   return [...set];
 }
-// A Mercat SHOWS its accent (tail colour), so for Mercat previews we enumerate the
-// possible accent COLOURS (resolving a hidden parent's allele to any of R/B/Y/L),
-// each with a representative genotype, ordered by likelihood when it's computable.
-function offspringAccentColors(A,B){
-  const ALL=["R","B","Y","L"];
-  const alleles = g => accentKnown(g) ? [...new Set(g.accent)] : ALL.slice();
-  const a=alleles(A), b=alleles(B), byColor=new Map();
-  a.forEach(x=>b.forEach(y=>{ const geno=[x,y].sort().join(""), color=accentName(x,y); if(!byColor.has(color)) byColor.set(color, geno); }));
-  let out=[...byColor.entries()].map(([color,geno])=>({color, geno}));
+// Every accent genotype a kitten could inherit, each with a colour ONLY when it's
+// fully determined. A parent with a hidden accent contributes "?", and that "?" is
+// kept — we never expand it to "any of R/B/Y/L" (that would invent colours the game
+// can't actually confirm). So [LL] × hidden → [{geno:"L?"}] (colour unknown), while
+// [RR] × [LL] → [{geno:"RL", color:"Pink"}]. Ordered by likelihood when both parents
+// reveal their accent (so the distribution is computable); otherwise insertion order.
+function offspringAccentOptions(A,B){
+  const al = g => accentKnown(g) ? [...new Set(g.accent)] : ["?"];
+  const a=al(A), b=al(B), byGeno=new Map();
+  a.forEach(x=>b.forEach(y=>{
+    const geno=orderAccentPair(x,y);
+    if(!byGeno.has(geno)){
+      const known = !geno.includes("?");
+      byGeno.set(geno, {geno, known, color: known ? accentName(geno[0],geno[1]) : null});
+    }
+  }));
+  let out=[...byGeno.values()];
   const d=accentDist(A,B);
   if(d) out.sort((p,q)=>(d.get(q.color)||0)-(d.get(p.color)||0));
   return out;
+}
+// Shown under the kittens when a parent's accent is unknown: why the accent can't be
+// predicted, what the Mercat tail placeholder means, and how to reveal + record it.
+function accentDisclaimer(A,B){
+  if(accentKnown(A) && accentKnown(B)) return "";
+  const known = accentKnown(A) ? accentName(A.accent[0],A.accent[1])
+             : accentKnown(B) ? accentName(B.accent[0],B.accent[1]) : "";
+  const placeholder = known
+    ? `Mercat kittens are drawn with <b>${esc(known)}</b> (the known parent's colour) as a stand-in — a placeholder, not a prediction.`
+    : `Neither parent's accent is known, so Mercat kittens use a neutral placeholder tail.`;
+  const cheats = Object.keys(ACCENT_NAME).map(k=>`<span class="acc-chip">${esc(ACCENT_NAME[k])} <code>[${esc(k)}]</code></span>`).join("");
+  return `<div class="breed-note accent-note"><b>Accent can't be predicted here.</b> A parent's accent is hidden — Pixel Cat's End never shows a Not-cat's accent — so each kitten's accent stays a partial genotype like <code>[L?]</code>. ${placeholder}
+    <details class="acc-cheats"><summary>How to reveal &amp; record a hidden accent</summary>
+      <p>Accent is <b>co-dominant</b>: one colour ⇔ one exact allele pair. Breed the cat with a <b>homozygous Mercat</b> — Black <code>[LL]</code>, Ruby <code>[RR]</code>, Blue <code>[BB]</code> or Gold <code>[YY]</code> — in the game's sandbox; every offspring tail colour reveals one of her hidden alleles. Then set it with the <b>✏️ pencil</b> in <b>My cats</b>.</p>
+      <div class="acc-chips">${cheats}</div>
+    </details></div>`;
 }
 
 // which parent contributes the north(slot1) / south(slot2) colour allele, from winds
@@ -2802,17 +2938,14 @@ function kittenGallery(R,A,B){
   let wLevel=0, wType="C";
   if(previewSel.white!=="any" && previewSel.white!=="none"){ const m=String(previewSel.white).match(/^w:(\d+):([CPLRIT])$/); if(m){ wLevel=parseInt(m[1],10); wType=m[2]; } }
 
-  // The accent is always resolved to ONE concrete genotype (chosen from the accent
-  // selector), and it rides in the kitten's normal 8-section string — even for a
-  // Not-cat, whose accent the game never shows. A Mercat also has its tail coloured
-  // by it. The picker lists every accent this pairing could produce.
+  // The accent is resolved to ONE genotype (chosen from the accent selector) and rides
+  // in the kitten's normal 8-section string — even for a Not-cat, whose accent the game
+  // never shows. A hidden parent keeps a "?", so an [LL] × hidden pairing stays [L?]
+  // (never an invented colour). A Mercat also has its tail coloured by it.
   const isMercat = species==="Mercat";
-  const accKnownAny = accentKnown(A) || accentKnown(B);       // any real constraint on the accent?
-  const accColors = offspringAccentColors(A,B);
-  const bySel = accColors.find(c=>c.color===previewSel.accent);
-  // default to a concrete accent only when we know something; with NOTHING known,
-  // keep "??" so we never invent an accent (e.g. no bogus Ruby).
-  const selAcc = bySel ? bySel : (accKnownAny && accColors.length ? accColors[0] : {color:"", geno:"??"});
+  const accOpts = offspringAccentOptions(A,B);   // e.g. [{geno:"L?"}] — "?" kept, never expanded
+  const bySel = accOpts.find(o=>o.geno===previewSel.accent || (o.color && o.color===previewSel.accent));
+  const selAcc = bySel || accOpts[0] || {geno:"??", known:false, color:null};
   const tailAccent = selAcc.color || mercatTailAccent(A,B);   // colours a Mercat kitten's tail
 
   const cells=colors.map(([label,p])=>{
@@ -2838,11 +2971,12 @@ function kittenGallery(R,A,B){
     `<option value="any"${cur==="any"?" selected":""}>Any</option>`+
     opts.map(([v,lab])=>`<option value="${esc(v)}"${cur===v?" selected":""}>${esc(lab)}</option>`).join("")+
     `</select></label>`;
-  // Accent selector. On a Mercat it recolours the tail; on a Not-cat it just sets the
-  // (hidden) accent in each kitten's genetic string. When nothing is known it leads
-  // with an "Unknown" (??) option so we don't assert a colour by default.
-  const accentOpts = (accKnownAny ? [] : [["any","Unknown"]]).concat(accColors.map(c=>[c.color, c.color]));
-  const selVal = selAcc.color || "any";
+  // Accent selector. Its options are the genotypes this pairing can actually yield —
+  // a hidden parent keeps a "?", so we never enumerate invented colours. A fully-known
+  // genotype shows its colour name; a partial one shows the genotype, e.g. [L?]. On a
+  // Mercat the pick recolours the tail. Rendered only when there's a real choice (>1).
+  const accentOpts = accOpts.map(o=>[o.geno, o.known ? o.color : "["+o.geno+"]"]);
+  const selVal = selAcc.geno;
   const accentPicker = (accentOpts.length>1)
     ? `<label class="kc"><span>Accent${isMercat?" (tail)":""}</span><select class="kc-pick accent-pick">${accentOpts.map(([v,lab])=>`<option value="${esc(v)}"${v===selVal?" selected":""}>${esc(lab)}</option>`).join("")}</select></label>`
     : "";
@@ -2929,6 +3063,7 @@ function renderBreeding(strA, strB){
     <div class="breed-parents">${parentCard("Parent A",A,breedMeta.A)}${parentCard("Parent B",B,breedMeta.B)}</div>
     ${warn}
     ${kittenGallery(R,A,B)}
+    ${accentDisclaimer(A,B)}
     <div class="grid2" style="margin-top:6px">
       <div class="dist-block"><h3>Species</h3>${distRows(R.species,{map:{C:"Not-cat",M:"Mercat"}, note:"Inherited whole from one parent (50/50)."})}</div>
       <div class="dist-block"><h3>Wind</h3>${distRows(R.wind,{genos:gWind})}</div>
@@ -3086,6 +3221,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
   function pickFromRoster(id){ if(!id) return; $("#catId").value=id; loadCatById(id); }
   $("#rosterTable").addEventListener("click", e=>{
     if(e.target.closest("a")) return;                       // name link → open the cat's page
+    const ed=e.target.closest(".rc-edit"); if(ed){ e.stopPropagation(); openCatEditor(ed.getAttribute("data-edit")); return; }
     const grp=e.target.closest("[data-grp]"); if(grp){ toggleRosterGroup(grp.getAttribute("data-grp")); return; }
     const sk=e.target.closest("[data-key]"); if(sk){ toggleRosterSort(sk.getAttribute("data-key")); return; }
     const tr=e.target.closest("tr[data-id]"); if(tr) pickFromRoster(tr.getAttribute("data-id"));
