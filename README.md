@@ -22,13 +22,13 @@ collapsible rows (open one at a time):
    total), equipped trinkets, current day job & adventuring class, every day-job level and all 7 class levels**. All
    from public pages. A small **↻ Fetch stats & levels** button appears only if some cats still need it (a relay
    hiccup) and hides itself once they're done.
-2. **🔎 Single Cat Look-Up** — paste one cat's **ID** or **page link** and press **Fetch cat** (or **Try a demo
-   cat**). Routed through public CORS relays because the game blocks direct cross-site reads.
-3. **✏️ Enter Manually** — start a blank sheet and type any values you know.
+2. **🔎 Single Cat Look-Up** — paste one cat's **ID** or **page link** and press **Add cat** to drop them straight
+   into your roster. Routed through public CORS relays because the game blocks direct cross-site reads.
+3. **✏️ Enter Manually** — **Add a blank cat**, which opens the ✏️ editor so you can type in whatever you know.
 
-Single-cat lookups land on an editable **Review & edit** sheet (with a real cropped portrait), so you can fix any
-mis-parse before **Analyze**. Attributes read the **effective total** (base + equipped trinkets); equipped stats show
-a `base X · +N Item` breakdown.
+Every cat lives in the roster, and **all editing happens in one place — the ✏️ pencil editor** (see *Edit any cat*
+below). There's no longer a separate stat sheet at the bottom of the page, and clicking a roster row doesn't jump you
+anywhere — use the row's pencil.
 
 The roster itself is one **searchable, filterable, sortable table** (zebra-striped, with full-size portraits).
 **Preview, Name and ID stay on the left** (Name links to the cat's own page); every other column is grouped under a
@@ -53,7 +53,9 @@ sort.** Highlights:
   dropdown under the preview to see how they'll look grown up. Because beans have no stats yet, they're **not
   counted** by the *Fetch stats & levels* button — so a village full of beans won't nag you with a "3 left" that
   can never resolve.
-- **Edit any cat** — a **✏️ pencil** on each row opens a **full genotype editor**. Every locus is its own dropdown, in
+- **Edit any cat** — a **✏️ pencil** on each row opens the **cat editor**, the single place all edits live. **Name,
+  Species and Wind** stay at the top; below them are three collapsible sections — **Appearance**, **Stats** and
+  **Personality**. **Appearance** is the full genotype: every locus is its own dropdown, in
   genome order, and the ones that can hide a recessive offer an **"X carries Y"** option: **Wind** (*North (NN)*, *North
   (carries Null) (NO)*, *South (SS)*, *South (carries Null) (SO)*, *Trade (NS)*, *Null (OO)*), **Fur** (*Shorthair (SS)*,
   *Shorthair (carries Longhair) (SL)*, *Longhair (LL)*), **Base colour** (*BB / OO / BO* — the co-dominant black/red pair
@@ -66,7 +68,8 @@ sort.** Highlights:
   two always match. Edits flow straight into breeding predictions. This is also how you **record a hidden accent** once
   you've revealed it: a Not-cat's accent isn't on its page, so test it in the breeding sandbox against a homozygous Mercat,
   then set it here so every future cross is exact. (**Growth** has no dropdown — it's an unobservable gene, so it's always
-  written as `??` rather than guessed.)
+  written as `??` rather than guessed.) The **Stats** section edits the 7 attributes and **Personality** the 5 traits;
+  saving writes them to the roster and **re-runs that cat's class/job recommendation** on the spot.
 - **Stats** — each total is tinted by its game **grade** (ROYGBP pastels: Poor · Average · Good · Very Good ·
   Excellent · Exceptional) and shows its **dice pool** (1d6–9d6). A trinket-adjusted stat **splits** the cell — the
   adjusted total on top, the base value below — and sorts by the (higher) adjusted number.

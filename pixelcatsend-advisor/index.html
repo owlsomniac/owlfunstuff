@@ -325,6 +325,13 @@
   .rc-form input,.rc-form select{width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink);font-size:13px}
   .rc-form .rc-hint{grid-column:1/-1;color:var(--muted);font-size:11px;line-height:1.5;margin:-2px 0 2px}
   .rc-white-lvl{display:flex;gap:8px}.rc-white-lvl select{flex:1}
+  .rc-sect{border-top:1px solid var(--line-soft)}
+  .rc-sect>summary{list-style:none;cursor:pointer;padding:10px 18px;font-size:12.5px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:7px;user-select:none}
+  .rc-sect>summary::-webkit-details-marker{display:none}
+  .rc-sect>summary::before{content:"▸";color:var(--muted);font-size:10px;transition:transform .12s}
+  .rc-sect[open]>summary::before{transform:rotate(90deg)}
+  .rc-sect .rc-form{padding-top:2px}
+  .rc-sect .rc-hint{grid-column:1/-1;color:var(--muted);font-size:11px;line-height:1.5;margin:-2px 0 2px}
   .rc-actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line-soft)}
   .rc-actions button{padding:7px 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--line)}
   .rc-actions .rc-cancel{background:var(--panel2);color:var(--ink-soft)}
@@ -539,14 +546,13 @@
       <details class="lookup">
         <summary>🔎 Single Cat Look-Up</summary>
         <div class="lk-body">
-          <p class="hint">Paste your cat's ID — or their page link.</p>
+          <p class="hint">Paste one cat's ID — or their page link — to add them straight to your roster.</p>
           <div class="row">
             <div class="grow">
               <label class="fld" for="catId">Cat ID or page link</label>
               <input type="text" id="catId" inputmode="numeric" placeholder="e.g. 430432  or  https://www.pixelcatsend.com/cat&amp;id=430432" autocomplete="off">
             </div>
-            <button class="btn" id="fetchBtn" type="button"><span>Fetch cat</span></button>
-            <button class="btn ghost sm" id="demoBtn" type="button">Try a demo cat</button>
+            <button class="btn" id="fetchBtn" type="button"><span>Add cat</span></button>
           </div>
           <div class="status" id="fetchStatus" role="status" aria-live="polite"></div>
         </div>
@@ -555,9 +561,9 @@
       <details class="lookup">
         <summary>✏️ Enter Manually</summary>
         <div class="lk-body">
-          <p class="hint">Enter your cat's details manually in the fields below.</p>
+          <p class="hint">Add a blank cat and fill in its name, appearance, stats and personality in the ✏️ editor.</p>
           <div class="row" style="margin-top:6px">
-            <button class="btn ghost sm" id="blankSheetBtn" type="button">Start a blank sheet</button>
+            <button class="btn ghost sm" id="blankSheetBtn" type="button">Add a blank cat</button>
           </div>
         </div>
       </details>
@@ -685,46 +691,6 @@
 
     <!-- By ID -->
   </section>
-
-  <!-- ============================ EDITABLE SHEET ============================ -->
-  <section class="card hide" id="sheetCard" aria-labelledby="sheet-h">
-    <h2 id="sheet-h"><span class="em">📝</span> Review &amp; edit</h2>
-    <p class="sub">Fix anything the reader got wrong, then analyze. Attributes run 4–24; personality traits are typically 1–14.</p>
-
-    <div class="sheet-head" style="margin-top:14px">
-      <div class="thumb" id="sheetThumb" aria-hidden="true"></div>
-      <div class="grow">
-        <label class="fld" for="sheetName">Name</label>
-        <input type="text" id="sheetName" placeholder="Cat name" autocomplete="off">
-      </div>
-    </div>
-    <div class="row" style="margin-bottom:14px">
-      <div class="grow">
-        <label class="fld" for="sheetImg">Image URL (optional)</label>
-        <input type="text" id="sheetImg" placeholder="https://…" autocomplete="off">
-      </div>
-    </div>
-
-    <div class="sheet-grid">
-      <div class="statset">
-        <h3>Base attributes</h3>
-        <div id="attrInputs"></div>
-      </div>
-      <div class="statset">
-        <h3>Personality traits</h3>
-        <div id="persInputs"></div>
-      </div>
-    </div>
-    <div class="flag" id="sheetFlags"></div>
-
-    <div class="row" style="margin-top:16px">
-      <button class="btn" id="analyzeBtn" type="button"><span>⚔️ Analyze this cat</span></button>
-      <button class="btn ghost sm" id="clearBtn" type="button">Clear</button>
-    </div>
-  </section>
-
-  <!-- ============================ RESULTS ============================ -->
-  <div id="results" aria-live="polite"></div>
 
   <div class="clear-roster-bar">
     <button class="btn ghost sm danger" id="clearRosterBtn" type="button" title="Remove every cat from this device (export a backup first if you want to keep it)">🗑️ Clear roster</button>
@@ -2177,6 +2143,10 @@ function openCatEditor(id){
   const accentOptsList=[["Unknown","Unknown"]].concat(Object.keys(ACCENT_NAME).map(k=>[ACCENT_NAME[k], ACCENT_NAME[k]+" ("+k+")"]));
   const accentSel=accentOptsList.some(o=>o[0]===cur.accent)?cur.accent:"Unknown";
   const lvls=Array.from({length:11},(_,i)=>[String(i),"Lv "+i]);
+  // Stats & Personality edit rows, seeded from the roster's effective values.
+  const numRow=(rid,label,val,mn,mx)=>`<label for="${rid}">${esc(label)}</label><input id="${rid}" type="number" inputmode="numeric" min="${mn}" max="${mx}" value="${esc(val||"")}">`;
+  const statRows=ATTRS.map(a=>numRow("rc-a-"+a.key,a.label,data[a.label],0,40)).join("");
+  const persRows=PERS.map(p=>numRow("rc-p-"+p.key,p.label,data[p.label],0,30)).join("");
   // Controls run in genome order: Species·Wind·Fur·Base·Dilution·Density·Pattern type·
   // Pattern shown·White type·White level·White shown·Accent — matching the parent builder.
   const html=`<div class="rc-modal-back" id="rcModalBack"><div class="rc-modal" role="dialog" aria-modal="true" aria-label="Edit cat">
@@ -2185,19 +2155,38 @@ function openCatEditor(id){
       <label for="rcName">Name</label><input id="rcName" type="text" value="${esc(cur.name)}">
       <label for="rcSpecies">Species</label><select id="rcSpecies">${opt(["Not-cat","Mercat"],cur.species)}</select>
       <label for="rcWind">Wind</label><select id="rcWind">${optP(WIND_ALLELE_OPTS,cur.wind)}</select>
-      <label for="rcFur">Fur</label><select id="rcFur">${optP(FUR_ALLELE_OPTS,cur.fur)}</select>
-      <label for="rcBase">Base colour</label><select id="rcBase">${optP(BASE_COLOR_OPTS,cur.base)}</select>
-      <label for="rcDil">Dilution</label><select id="rcDil">${optP(DILUTION_OPTS,cur.dil)}</select>
-      <label for="rcDensity">Density</label>
-      <div class="rc-white-lvl"><select id="rcDensity">${optP(DENSITY_OPTS,cur.density)}</select><span class="rc-shade" id="rcShade"></span></div>
-      <label for="rcPatType">Pattern type</label><select id="rcPatType">${optP(patTypeOpts(),cur.patType)}</select>
-      <label for="rcPatVis">Pattern shown</label><select id="rcPatVis">${optP(PATVIS_OPTS,cur.patVis)}</select>
-      <label for="rcWhiteType">White type</label><select id="rcWhiteType">${Object.keys(WHITE_TYPE).map(k=>`<option value="${k}"${k===wType?" selected":""}>${esc(WHITE_TYPE[k])}</option>`).join("")}</select>
-      <label for="rcWhiteLevel">White level</label><select id="rcWhiteLevel" title="White level 0–10">${optP(lvls,String(wLevel))}</select>
-      <label for="rcWhiteVis">White shown</label><select id="rcWhiteVis">${optP(WHITEVIS_OPTS,cur.whiteVis)}</select>
-      <label for="rcAccent">Accent</label><select id="rcAccent">${optP(accentOptsList,accentSel)}</select>
-      <div class="rc-hint">A Not-cat's accent isn't on its page. Test it by breeding her with a homozygous Mercat (Black / Ruby / Blue / Gold) in the sandbox and reading the offspring colours, then set it here. "Unknown" keeps it as <code>[??]</code>. Carrier options (e.g. "carries Longhair") record a hidden recessive; the derived shade is shown live beside Density.</div>
     </div>
+    <details class="rc-sect" open>
+      <summary>Appearance</summary>
+      <div class="rc-form">
+        <label for="rcFur">Fur</label><select id="rcFur">${optP(FUR_ALLELE_OPTS,cur.fur)}</select>
+        <label for="rcBase">Base colour</label><select id="rcBase">${optP(BASE_COLOR_OPTS,cur.base)}</select>
+        <label for="rcDil">Dilution</label><select id="rcDil">${optP(DILUTION_OPTS,cur.dil)}</select>
+        <label for="rcDensity">Density</label>
+        <div class="rc-white-lvl"><select id="rcDensity">${optP(DENSITY_OPTS,cur.density)}</select><span class="rc-shade" id="rcShade"></span></div>
+        <label for="rcPatType">Pattern type</label><select id="rcPatType">${optP(patTypeOpts(),cur.patType)}</select>
+        <label for="rcPatVis">Pattern shown</label><select id="rcPatVis">${optP(PATVIS_OPTS,cur.patVis)}</select>
+        <label for="rcWhiteType">White type</label><select id="rcWhiteType">${Object.keys(WHITE_TYPE).map(k=>`<option value="${k}"${k===wType?" selected":""}>${esc(WHITE_TYPE[k])}</option>`).join("")}</select>
+        <label for="rcWhiteLevel">White level</label><select id="rcWhiteLevel" title="White level 0–10">${optP(lvls,String(wLevel))}</select>
+        <label for="rcWhiteVis">White shown</label><select id="rcWhiteVis">${optP(WHITEVIS_OPTS,cur.whiteVis)}</select>
+        <label for="rcAccent">Accent</label><select id="rcAccent">${optP(accentOptsList,accentSel)}</select>
+        <div class="rc-hint">A Not-cat's accent isn't on its page. Test it by breeding her with a homozygous Mercat (Black / Ruby / Blue / Gold) in the sandbox and reading the offspring colours, then set it here. "Unknown" keeps it as <code>[??]</code>. Carrier options (e.g. "carries Longhair") record a hidden recessive; the derived shade is shown live beside Density.</div>
+      </div>
+    </details>
+    <details class="rc-sect">
+      <summary>Stats</summary>
+      <div class="rc-form">
+        ${statRows}
+        <div class="rc-hint">Attributes run ~4–24. Editing these updates the roster and re-runs the class/job recommendation. Leave blank to clear.</div>
+      </div>
+    </details>
+    <details class="rc-sect">
+      <summary>Personality</summary>
+      <div class="rc-form">
+        ${persRows}
+        <div class="rc-hint">Personality traits are typically 1–14 (Bravery, Benevolence… feed the recommendation).</div>
+      </div>
+    </details>
     <div class="rc-actions"><button type="button" class="rc-cancel" id="rcCancel">Cancel</button><button type="button" class="rc-save" id="rcSave">Save</button></div>
   </div></div>`;
   const host=document.createElement("div"); host.id="rcModalHost"; host.innerHTML=html;
@@ -2242,6 +2231,15 @@ function saveCatEditor(id){
   c.geneInfo={resolved:(c.geneInfo&&c.geneInfo.resolved)||["edited by you"], guessed:(c.geneInfo&&c.geneInfo.guessed)||[]};
   r.headers=r.headers||[];
   ["Species","Wind","Fur","Color","Pattern"].forEach(h=>{ if(!r.headers.some(x=>x.toLowerCase()===h.toLowerCase())) r.headers.push(h); });
+  // Stats & Personality: write the value (and base, so the Stats cell shows it cleanly),
+  // or clear when the field is blank. Blank = untouched here since the input keeps "".
+  const numVal=rid=>{ const el=$(rid); if(!el) return undefined; const t=(el.value||"").trim(); return t===""?"":String(parseInt(t,10)||0); };
+  ATTRS.forEach(a=>{ const v=numVal("#rc-a-"+a.key); if(v===undefined) return; if(v===""){ delete c.data[a.label]; delete c.data[a.label+" base"]; } else { c.data[a.label]=v; c.data[a.label+" base"]=v; } });
+  PERS.forEach(p=>{ const v=numVal("#rc-p-"+p.key); if(v===undefined) return; if(v===""){ delete c.data[p.label]; } else { c.data[p.label]=v; } });
+  ATTRS.forEach(a=>[a.label,a.label+" base"].forEach(h=>{ if(c.data[h]!=null && !r.headers.some(x=>x.toLowerCase()===h.toLowerCase())) r.headers.push(h); }));
+  PERS.forEach(p=>{ if(c.data[p.label]!=null && !r.headers.some(x=>x.toLowerCase()===p.label.toLowerCase())) r.headers.push(p.label); });
+  // re-run this cat's class/job recommendation from the (possibly edited) stats
+  try{ const sc=rosterCatForScoring(c), sug=suggestLoad(); if(sc){ sug[id]=computeSuggestion(sc); } else { delete sug[id]; } suggestSave(sug); }catch(e){}
   rosterSave(r);
   rosterRender();
   return true;
@@ -3471,7 +3469,6 @@ function syncThemeBtn(){
 }
 
 document.addEventListener("DOMContentLoaded", ()=>{
-  buildSheetInputs();
   initTheme();
 
   $("#themeToggle").addEventListener("click", ()=>{
@@ -3494,13 +3491,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
       const html = await fetchCatById(id, m=>setStatus($("#fetchStatus"),m,"busy"));
       const cat = parseCatHTML(html);
       if(!cat.id) cat.id=id;
-      setStatus($("#fetchStatus"),"Loaded — review the values below.","ok");
-      fillSheet(cat);
-      // if this cat is in the roster, fold in its fresh stats/jobs/classes/genetics
-      if(rosterLoad().cats[id]){ rosterEnrichFromCat(id, cat); rosterRender(); fillBreedRosterDatalist(); }
+      rosterEnrichFromCat(id, cat);                       // add / refresh this cat in the roster
+      afterRosterChange();
+      setStatus($("#fetchStatus"),"Added "+(cat.name||("#"+id))+" to your roster — edit it with the ✏️ pencil.","ok");
     }catch(e){
-      setStatus($("#fetchStatus"),"Couldn't fetch automatically ("+(e.message||e)+"). Try “Paste page HTML”, or enter values manually.","err");
-      $("#sheetCard").classList.remove("hide");
+      setStatus($("#fetchStatus"),"Couldn't fetch automatically ("+(e.message||e)+"). Use “Pull My Whole Roster”, or add the cat with “Enter Manually”.","err");
     }finally{ btn.disabled=false; }
   }
   const doFetch = ()=>loadCatById(parseIdInput($("#catId").value));
@@ -3595,7 +3590,6 @@ document.addEventListener("DOMContentLoaded", ()=>{
   initAutoSave();
   ["all","active","travel"].forEach(k=>$("#rf-"+k).addEventListener("click", ()=>{ if($("#rf-"+k).disabled) return; rosterFilter=k; rosterRender(); }));
   $("#rosterSearch").addEventListener("input", rosterRender);
-  function pickFromRoster(id){ if(!id) return; $("#catId").value=id; loadCatById(id); }
   $("#rosterTable").addEventListener("click", e=>{
     if(e.target.closest("a")) return;                       // name link → open the cat's page
     if(e.target.closest(".rc-stageview")){ e.stopPropagation(); return; }   // stage dropdown → don't pick the row
@@ -3604,7 +3598,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     const ed=e.target.closest(".rc-edit"); if(ed){ e.stopPropagation(); openCatEditor(ed.getAttribute("data-edit")); return; }
     const grp=e.target.closest("[data-grp]"); if(grp){ toggleRosterGroup(grp.getAttribute("data-grp")); return; }
     const sk=e.target.closest("[data-key]"); if(sk){ toggleRosterSort(sk.getAttribute("data-key")); return; }
-    const tr=e.target.closest("tr[data-id]"); if(tr) pickFromRoster(tr.getAttribute("data-id"));
+    // clicking a row no longer loads a bottom stat sheet — edit a cat with its ✏️ pencil
   });
   $("#rosterTable").addEventListener("change", e=>{
     const sv=e.target.closest(".rc-stageview");
@@ -3856,26 +3850,17 @@ document.addEventListener("DOMContentLoaded", ()=>{
   // Bring back the last pairing + preview picks from a previous visit.
   restoreBreeding();
 
-  // Demos
-  $("#demoBtn").addEventListener("click", ()=>{ currentId="430432"; fillSheet(DEMO_CAT()); setStatus($("#fetchStatus"),"Loaded a demo cat — press Analyze.","ok"); });
-  $("#blankSheetBtn").addEventListener("click", ()=>{ fillSheet({name:"",image:"",attributes:{},personality:{},warnings:[]}); });
-
-  // Analyze / clear
-  $("#analyzeBtn").addEventListener("click", ()=>{
-    const cat=readSheet();
-    const hasAny = Object.keys(cat.attributes).length || Object.keys(cat.personality).length;
-    if(!hasAny){ $("#sheetFlags").textContent="⚠ Enter at least a few stats before analyzing."; return; }
-    renderResults(cat);
+  // Enter Manually → create a blank roster cat and open its ✏️ editor (all edits live there).
+  $("#blankSheetBtn").addEventListener("click", ()=>{
+    const r=rosterLoad();
+    let nid; do { nid="local-"+Math.random().toString(36).slice(2,8); } while(r.cats[nid]);
+    r.cats[nid]={id:nid, name:"New cat", data:{Species:"Not-cat"}, geneInfo:{resolved:["added manually"], guessed:[]}};
+    r.sets=r.sets||{all:[],active:[],travel:[]}; r.sets.all=r.sets.all||[];
+    if(r.sets.all.indexOf(nid)<0) r.sets.all.push(nid);
+    r.ts=nowTs(); rosterSave(r);
+    afterRosterChange();
+    openCatEditor(nid);
   });
-  $("#clearBtn").addEventListener("click", ()=>{
-    ATTRS.forEach(a=>$("#in-"+a.key).value="");
-    PERS.forEach(p=>$("#in-"+p.key).value="");
-    $("#sheetName").value=""; $("#sheetImg").value=""; renderSheetThumb({});
-    $("#sheetFlags").textContent=""; $("#results").innerHTML="";
-  });
-
-  // live thumb preview when the Image URL is edited by hand
-  $("#sheetImg").addEventListener("change", ()=>{ renderSheetThumb({image:$("#sheetImg").value}); });
 });
 
 /* Demo data + a realistic sample page for the paste parser */
