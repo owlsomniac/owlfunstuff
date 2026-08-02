@@ -40,6 +40,9 @@ job/class). **Click any column sub-header to sort.** Highlights:
 - **Appearance** — a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or *None*), a **Density** column
   (the coat's colour density / dilution level, **1–4**, recovered from its colour) and an **Accent** column (the game
   shows accent only when it's visible, so cats without a revealed accent read **Unknown**).
+- **Life stage** — a **Bean** / **Kitten** badge marks young cats on their preview (read from the page). Because
+  beans have no stats yet, they're **not counted** by the *Fetch stats & levels* button — so a village full of
+  beans won't nag you with a "3 left" that can never resolve.
 - **Edit any cat** — a **✏️ pencil** on each row opens a quick editor for its **Name, Species, Fur, Pattern, White**
   and **Accent** (a 10-colour dropdown that shows each colour's genotype — *Green (BY)*, *Indigo (BL)* … — or *Unknown*).
   Edits rewrite just those genome sections — colour & wind, which

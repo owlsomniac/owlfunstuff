@@ -309,6 +309,9 @@
   .rc-edit{position:absolute;top:3px;left:3px;z-index:1;border:1px solid var(--line-soft);background:var(--panel2);
     color:var(--muted);border-radius:7px;width:22px;height:22px;line-height:1;font-size:12px;padding:0;cursor:pointer;opacity:.55;transition:opacity .12s,background .12s}
   #rosterTable tbody tr:hover .rc-edit{opacity:1}
+  /* life-stage badge (beans/kittens) — bottom-left of the preview */
+  .rc-stage{position:absolute;bottom:3px;left:3px;z-index:1;background:var(--brand);color:#fff;font-size:9.5px;font-weight:800;
+    letter-spacing:.3px;padding:1px 5px;border-radius:99px;text-transform:uppercase;box-shadow:0 1px 3px rgba(0,0,0,.35)}
   .rc-edit:hover,.rc-edit:focus-visible{background:var(--brand);color:#fff;border-color:var(--brand);opacity:1;outline:none}
   /* cat editor modal */
   .rc-modal-back{position:fixed;inset:0;background:rgba(12,12,16,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
@@ -1650,6 +1653,7 @@ function mergeCatsPageCats(cats){
     const p=c.pheno||{};
     const setc=(k,v)=>{ if(v!=null&&v!=="") cur.data[k]=v; };
     setc("Species",p.species);
+    if(p.stage) setc("Stage", p.stage[0].toUpperCase()+p.stage.slice(1));
     if(c.occupation) setc("Occupation",c.occupation);
     if(p.fur) setc("Fur", p.fur[0].toUpperCase()+p.fur.slice(1));
     if(p.pattern) setc("Pattern", p.pattern[0].toUpperCase()+p.pattern.slice(1));
@@ -1740,6 +1744,8 @@ function catRosterColumns(cat){
   put("Species", bio["species"]); put("Fur", bio["fur"]); put("Color", bio["color"]);
   put("Pattern", bio["pattern"]); put("Wind", bio["wind"]); put("Size", bio["size"]);
   put("Eye Color", bio["eye color"]); put("Age", bio["age"]);
+  // life stage from Age ("Bean (6 Days)" → Bean, "Adult (6 Years)" → Adult) — beans have no stats yet
+  if(bio["age"]){ const st=String(bio["age"]).trim().split(/[\s(]/)[0]; if(st) put("Stage", st); }
   // The cat page lists an accent only when it's visible; capture whatever key holds it.
   const accentKey=Object.keys(bio).find(k=>/accent/.test(k)); if(accentKey) put("Accent", bio[accentKey]);
   // One combined "White" column: "Classic, C7, Spotted Piebald" (type, code, marking) — or "None".
@@ -1921,10 +1927,20 @@ function rosterVisibleIds(r){
 function updateEnrichBtn(r, ids){
   const btn=$("#suggestAllBtn"); if(!btn) return;
   if(bulkRunning) return;  // leave the button alone mid-run
-  const missing = (ids||[]).filter(id=>!((r.cats[id].data||{})["Strength"]));
+  // Beans/kittens have no stats yet — they aren't "missing", so don't count them.
+  const missing = (ids||[]).filter(id=>!((r.cats[id].data||{})["Strength"]) && catIsAdult(r.cats[id]));
   if(missing.length){ btn.classList.remove("hide"); btn.textContent="↻ Fetch stats & levels ("+missing.length+" left)"; }
   else btn.classList.add("hide");
 }
+// A roster cat's life stage ("adult", "bean", …), from its Stage/Age columns. "" if unknown.
+function catStage(cat){
+  const d=(cat&&cat.data)||{};
+  const s=String(d.Stage||"").trim().toLowerCase(); if(s) return s;
+  const age=String(d.Age||"").trim().toLowerCase(); if(age){ const w=age.split(/[\s(]/)[0]; if(w) return w; }
+  return "";
+}
+// Adults (or cats whose stage we don't know) are the ones that can have stats to fetch.
+function catIsAdult(cat){ const s=catStage(cat); return s==="" || s==="adult"; }
 function rosterRender(){
   const r=rosterLoad(), all=Object.keys(r.cats);
   [["all",all.length],["active",(r.sets.active||[]).length],["travel",(r.sets.travel||[]).length]].forEach(([k,n])=>{
@@ -1980,7 +1996,9 @@ function rosterRender(){
   const body=tids.slice(0,400).map(id=>{
     const c=r.cats[id];
     const thumb=(c.img&&c.img.length)?catImgFromLayers(c.img,100,{fur:rosterCatFur(c), title:c.name}):`<span class="rc-noimg" aria-hidden="true">🐾</span>`;
-    const cells=[`<td class="prev"><button type="button" class="rc-edit" data-edit="${esc(id)}" title="Edit ${esc(c.name||("#"+id))}" aria-label="Edit ${esc(c.name||("#"+id))}">✏️</button>${thumb}</td>`,
+    const stg=catStage(c);
+    const stageBadge = (stg && stg!=="adult") ? `<span class="rc-stage" title="Life stage: ${esc(stg[0].toUpperCase()+stg.slice(1))} — no stats until it grows up">${esc(stg[0].toUpperCase()+stg.slice(1))}</span>` : "";
+    const cells=[`<td class="prev"><button type="button" class="rc-edit" data-edit="${esc(id)}" title="Edit ${esc(c.name||("#"+id))}" aria-label="Edit ${esc(c.name||("#"+id))}">✏️</button>${stageBadge}${thumb}</td>`,
       `<td class="name"><a class="cat-ext" href="${esc(catUrl(id))}" target="_blank" rel="noopener"><b>${esc(c.name||("#"+id))}</b></a></td>`,
       `<td class="idcol">${esc(id)}</td>`,
       quickOpen ? `<td class="qv grp-start">${quickCell(id)}</td>` : `<td class="strip grp-start" data-grp="quick" title="Show Quick View">⋯</td>`];
@@ -2713,6 +2731,8 @@ function parsePhenoLabel(label){
   const nameM=s.match(/^([^:]+):/); if(nameM) out.name=nameM[1].trim();
   out.species = /\bmercat\b/i.test(s) ? "Mercat" : "Not-cat";
   const pose=s.match(/:\s*(\w+)\s+(?:Not-cat|Mercat)/i); if(pose) out.pose=pose[1].toLowerCase();
+  // life stage — the word right after the species ("… Not-cat adult with", "… Mercat bean with")
+  const stage=s.match(/(?:Not-cat|Mercat)\s+([a-z]+)\s+with\b/i); if(stage) out.stage=stage[1].toLowerCase();
   const coat=s.match(/with an? (\w+) (\w+) (shorthair|longhair) coat/i);
   if(coat){ out.mainColor=coat[1].toLowerCase(); out.pattern=coat[2].toLowerCase(); out.fur=coat[3].toLowerCase(); }
   const trade=s.match(/and (\w+) \w+ trade markings/i);
