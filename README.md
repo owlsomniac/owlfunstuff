@@ -36,7 +36,10 @@ The roster itself is one **searchable, filterable, sortable table** (zebra-strip
 to fold it away to the left. Groups are separated by clear **3px dividers** so they never run together when expanded.
 A collapsible **Quick View** column gives the at-a-glance summary (appearance, current job & class, recommended
 job/class, and the cat's **genetic string as a one-click copy chip** — tap it to copy, ready to paste into Breeding or
-share). **Click any column sub-header to sort.** Highlights:
+share). Below the string, a **Carries:** line lists any **recessive genes hiding under a dominant** — *Longhair* (`[SL]`),
+*Dilute* (`[FD]`), *Solid* (a patterned cat carrying solid, `[YN]`), *No-white* (`[YN]`) and *Null (wind)* (`[NO]`/`[SO]`).
+It only shows what's genuinely known: an unrevealed allele reads `?`, so a cat with `[S?]` fur makes no claim about carrying
+longhair. **Click any column sub-header to sort.** Highlights:
 
 - **Appearance** — a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or *None*), a **Density** column
   (the coat's colour density / dilution level, **1–4**, recovered from its colour) and an **Accent** column (the game
