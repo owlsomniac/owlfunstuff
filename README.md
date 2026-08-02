@@ -99,6 +99,11 @@ Predict a litter **two ways**:
   to assume. Parents picked from the roster show their **real in-game portrait**.
 - **Paste a genetic string** directly (e.g. `[C] [NN] [SS] [BBFF4] [YYTT] [YY0C] [BA] [YR]`; old dash/pipe strings work too)
   when you have one revealed.
+- **Build a parent (what-if)** — a **🛠 dropdown builder** under each parent assembles a genotype from scratch, in
+  genome order: **Species · Wind · Fur · Base colour · (2nd colour, for Trade) · Pattern · White · Accent**. The base
+  colour carries the density (Black=4 … Tan=1); a 2nd colour on a Trade cat makes a tortoiseshell (sharing the base
+  density). Each change writes the string into the box and re-renders; opening the builder syncs it from whatever's
+  already there — so you can tweak a picked cat or invent one to explore *"what if I bred X with Y?"*
 
 Or work backwards with **🔎 Find a pairing for a desired kitten**: choose the traits you want — coat type/colour, pattern,
 wind, fur, **white type & level (min/max)**, **colour density (min/max)**, species, accent — and it searches every pair of
@@ -130,7 +135,7 @@ each parent's decoded phenotype (shown as **labelled facts** in the same order a
 Coat / Pattern / White / Accent — with its name/#ID linking to the cat's page when picked from your roster). Parents and
 **every** possible kitten get **composited sprite previews** built from the game's own image layers, each **cropped to a single
 pose** (correct per-species offsets for Not-cats and Mercats) — pick **standing / sitting / playing / sleeping / upsidedown**
-from the pose selector. Above the kitten gallery a row of **dropdowns — Species · Wind · Pattern · White** (plus an **Accent**
+from the pose selector. Above the kitten gallery a row of **dropdowns — Species · Wind · Fur · Pattern · White** (plus an **Accent**
 picker whenever more than one accent is possible) — each lists **only outcomes this pairing can actually produce** (Species toggles the
 previews between Not-cat and Mercat sprites); picking
 any of them narrows the previews and rewrites every kitten's % to the **true overall chance** of a kitten with that coat *and*

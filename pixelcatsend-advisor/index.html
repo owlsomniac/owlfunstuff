@@ -423,6 +423,12 @@
   .kitten-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:2px 0 12px}
   .kc{display:flex;flex-direction:column;gap:3px}
   .kc>span{color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px}
+  .kc-pick{padding:5px 7px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink);font-size:12.5px}
+  /* parent what-if builder */
+  .parent-builder{margin-top:8px}
+  .parent-builder>summary{cursor:pointer;color:var(--brand-ink);font-weight:700;font-size:12.5px}
+  .pbuild{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px}
+  .pbuild .kc.hide{display:none}
   .kitten-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:12px;margin-top:6px}
   .kitten{margin:0;text-align:center}
   .kitten .catprev{margin:0 auto}
@@ -645,6 +651,7 @@
           <div class="pick-or">or paste a genetic string</div>
           <input type="text" id="pA" placeholder="[C] [NN] [SS] [BBFF4] …" autocomplete="off" spellcheck="false">
           <div class="breed-note" id="noteA"></div>
+          <details class="parent-builder"><summary>🛠 Build a parent (what-if)</summary><div class="pbuild" id="buildA" data-target="pA"></div></details>
         </div>
         <div>
           <label class="fld" for="pickB">Parent B</label>
@@ -652,6 +659,7 @@
           <div class="pick-or">or paste a genetic string</div>
           <input type="text" id="pB" placeholder="[C] [SS] [SL] [OOFD3] …" autocomplete="off" spellcheck="false">
           <div class="breed-note" id="noteB"></div>
+          <details class="parent-builder"><summary>🛠 Build a parent (what-if)</summary><div class="pbuild" id="buildB" data-target="pB"></div></details>
         </div>
       </div>
       <datalist id="rosterDL"></datalist>
@@ -2821,7 +2829,7 @@ const POSE_Y = {
 // m-bean-longhair-playing lands at col 2, row 5 (offY −500 = bean −400 + longhair −100).
 const STAGE_Y = {adult:0, kitten:-200, bean:-400};   // bean & adult measured; kitten inferred
 let previewPose = "standing";
-let previewSel = {species:"any", wind:"any", pattern:"any", white:"any", accent:"any"};   // kitten-gallery pickers (default: Any)
+let previewSel = {species:"any", wind:"any", fur:"any", pattern:"any", white:"any", accent:"any"};   // kitten-gallery pickers (default: Any)
 function poseOffset(species, fur, pose, stage){
   pose = (POSE_X[pose]!=null) ? pose : "standing";
   const sp = /mer/i.test(species||"") ? "m" : "c";
@@ -3050,26 +3058,29 @@ function offspringGeneString(o){
 function kittenGallery(R,A,B){
   const cc=R.color; if(cc.error) return "";
   const colors=[...cc.dist.entries()].sort((a,b)=>b[1]-a[1]);
-  const fur = ([...R.fur.entries()].sort((a,b)=>b[1]-a[1])[0]||["Shorthair"])[0];
 
   // possible visible outcomes (each sums to 1)
   const speciesOut = [...R.species.entries()].map(([k,p])=>[k==="M"?"Mercat":"Not-cat", p]).filter(([,p])=>p>0).sort((a,b)=>b[1]-a[1]);
   const windOut  = [...R.wind.entries()].filter(([w,p])=>p>0).sort((a,b)=>b[1]-a[1]);
+  const furOut   = [...R.fur.entries()].filter(([f,p])=>p>0).sort((a,b)=>b[1]-a[1]);
   const patOut   = [...patternOutcomeDist(R).entries()].sort((a,b)=>b[1]-a[1]);
   const whiteOut = [...whiteOutcomeDist(R).entries()].sort((a,b)=>b[1]-a[1]);
-  const speciesMap=new Map(speciesOut), patMap=new Map(patOut), whiteMap=new Map(whiteOut);
+  const speciesMap=new Map(speciesOut), furMap=new Map(furOut), patMap=new Map(patOut), whiteMap=new Map(whiteOut);
 
   // keep the current selection valid for this pairing
   if(previewSel.species!=="any" && !speciesMap.has(previewSel.species))         previewSel.species="any";
   if(previewSel.wind!=="any"    && !windOut.some(([w])=>w===previewSel.wind))   previewSel.wind="any";
+  if(previewSel.fur!=="any"     && !furMap.has(previewSel.fur))                 previewSel.fur="any";
   if(previewSel.pattern!=="any" && !patMap.has(previewSel.pattern))             previewSel.pattern="any";
   if(previewSel.white!=="any"   && !whiteMap.has(previewSel.white))             previewSel.white="any";
 
   const speciesFactor = previewSel.species==="any" ? 1 : (speciesMap.get(previewSel.species)||0);
+  const furFactor     = previewSel.fur==="any"     ? 1 : (furMap.get(previewSel.fur)||0);
   const patFactor     = previewSel.pattern==="any" ? 1 : (patMap.get(previewSel.pattern)||0);
   const whiteFactor   = previewSel.white==="any"   ? 1 : (whiteMap.get(previewSel.white)||0);
-  // which species the previews render (picked, else most-likely)
+  // which species / fur the previews render (picked, else most-likely)
   const species = previewSel.species!=="any" ? previewSel.species : (speciesOut[0]?speciesOut[0][0]:"Not-cat");
+  const fur     = previewSel.fur!=="any"     ? previewSel.fur     : (furOut[0]?furOut[0][0]:"Shorthair");
 
   // what the previews render (most-likely when the picker is on "Any")
   const topPatEntry = patOut.filter(([k])=>k!=="Solid").sort((a,b)=>b[1]-a[1])[0];
@@ -3092,7 +3103,7 @@ function kittenGallery(R,A,B){
 
   const cells=colors.map(([label,p])=>{
     const windP = previewSel.wind==="any" ? p : ((cc.windJoint.get(label)||new Map()).get(previewSel.wind)||0);
-    const prob  = windP * speciesFactor * patFactor * whiteFactor;
+    const prob  = windP * speciesFactor * furFactor * patFactor * whiteFactor;
     if(prob<=0) return "";                          // impossible under the current picks
     const pct=prob*100;
     const hex=cc.hex.get(label);
@@ -3125,12 +3136,14 @@ function kittenGallery(R,A,B){
   const controls = `<div class="kitten-controls">
     ${sel({label:"Species",k:"species-pick"}, previewSel.species, speciesOut.map(([s])=>[s,s]))}
     ${sel({label:"Wind",k:"wind-pick"},    previewSel.wind,    windOut.map(([w])=>[w,w]))}
+    ${sel({label:"Fur",k:"fur-pick"},      previewSel.fur,     furOut.map(([f])=>[f,f]))}
     ${sel({label:"Pattern",k:"pat-pick"},  previewSel.pattern, patOut.map(([k])=>[k,k]))}
     ${sel({label:"White",k:"white-pick"},  previewSel.white,   whiteOut.map(([k])=>[k,whiteOutcomeLabel(k)]))}
     ${accentPicker}
   </div>`;
 
   const picked=[previewSel.species!=="any"?previewSel.species:null, previewSel.wind!=="any"?previewSel.wind:null,
+    previewSel.fur!=="any"?previewSel.fur:null,
     previewSel.pattern!=="any"?previewSel.pattern:null, previewSel.white!=="any"?whiteOutcomeLabel(previewSel.white):null].filter(Boolean);
   return `<div class="dist-block"><h3>Likely kittens</h3>
     ${controls}
@@ -3138,6 +3151,61 @@ function kittenGallery(R,A,B){
     <p class="hint">Each % is the <b>true overall chance</b> of a kitten with that coat${picked.length?(" and "+esc(picked.join(" · "))):""}. Previews are composited from the game's own sprite layers; a missing layer falls back to a colour swatch. Tap a genetic string to copy it — a <code>?</code> marks an allele the game keeps hidden; the last section is the <b>accent</b> chosen in the selector above (Not-cats don't show it, Mercats wear it on the tail). See the <b>Quick Genetics Overview</b>.</p></div>`;
 }
 // One-click copy of a kitten's genetic string; flashes "Copied!" immediately.
+/* ---- Parent what-if builder: dropdowns (genome order) that assemble a parent's gene
+   string. Wind & fur use the canonical genotype (North=NN, Shorthair=SS); the base
+   colour name carries the density; a 2nd colour (Trade only) makes a tortoiseshell and
+   shares the base's density. Growth is skipped. Assembled string is written to the box. */
+const PB_WINDSEC={North:"NN",South:"SS",Trade:"NS",Null:"OO"};
+const PB_COLORS=SPRITE_COLORS.map(c=>c[0]);                         // 16 colour names, in order
+const PB_PATTERNS=["Solid",...new Set(Object.values(PATTERN_NAME))];
+const PB_ACCENTS=[["Unknown","Unknown"]].concat(Object.keys(ACCENT_NAME).map(k=>[ACCENT_NAME[k], ACCENT_NAME[k]+" ("+k+")"]));
+function pbOpts(pairs, cur){ return pairs.map(([v,lab])=>`<option value="${esc(v)}"${v===cur?" selected":""}>${esc(lab)}</option>`).join(""); }
+function parentBuilderHTML(){
+  const p=arr=>arr.map(v=>[v,v]);
+  const sel=(cls,label,pairs,cur,extraClass)=>`<label class="kc ${extraClass||""}"><span>${label}</span><select class="kc-pick ${cls}">${pbOpts(pairs,cur)}</select></label>`;
+  return sel("pb-species","Species",p(["Not-cat","Mercat"]),"Not-cat")
+    + sel("pb-wind","Wind",p(["North","South","Trade","Null"]),"North")
+    + sel("pb-fur","Fur",p(["Shorthair","Longhair"]),"Shorthair")
+    + sel("pb-color","Base colour",p(PB_COLORS),"Black")
+    + sel("pb-color2","2nd colour",p(PB_COLORS),"Red","pb-2nd hide")
+    + sel("pb-pattern","Pattern",p(PB_PATTERNS),"Solid")
+    + sel("pb-wtype","White",Object.keys(WHITE_TYPE).map(t=>[t,WHITE_TYPE[t]]),"C")
+    + sel("pb-wlevel","Lv",Array.from({length:11},(_,i)=>[String(i),"Lv "+i]),"0")
+    + sel("pb-accent","Accent",PB_ACCENTS,"Unknown");
+}
+function pbToggle2nd(c){ const w=(c.querySelector(".pb-wind")||{}).value, lab=c.querySelector(".pb-2nd"); if(lab) lab.classList.toggle("hide", w!=="Trade"); }
+function pbAssemble(c){
+  const v=cls=>{ const el=c.querySelector("."+cls); return el?el.value:""; };
+  const sp=v("pb-species")==="Mercat"?"M":"C";
+  const wind=v("pb-wind"), windSec=PB_WINDSEC[wind]||"NN";
+  const furSec=v("pb-fur")==="Longhair"?"LL":"SS";
+  const c1=COLOR_REV[v("pb-color").toLowerCase()]||{group:"B",dilute:false,density:4};
+  let g2=c1.group, d2=c1.dilute?"D":"F";
+  if(wind==="Trade"){ const c2=COLOR_REV[v("pb-color2").toLowerCase()]; if(c2){ g2=c2.group; d2=c2.dilute?"D":"F"; } }
+  const coatSec=c1.group+g2+(c1.dilute?"D":"F")+d2+c1.density;
+  const patName=v("pb-pattern"), pr=(patName&&patName!=="Solid")?PATTERN_REV[patName.toLowerCase()]:null;
+  const patSec=(patName==="Solid"||!pr)?"NN??":("YY"+pr.join(""));
+  const wt=v("pb-wtype")||"C", wl=parseInt(v("pb-wlevel"),10)||0;
+  const whiteSec=wl>0?("YY"+wl+wt):("NN0"+wt);
+  const acc=v("pb-accent"), ar=/^unknown$/i.test(acc)?null:ACCENT_REV[acc.toLowerCase()];
+  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [AB] [${ar?ar.join(""):"??"}]`;
+}
+function pbSync(c){          // set the builder dropdowns from the target box's current string
+  const box=document.getElementById(c.getAttribute("data-target")), g=box?parseGeneString((box.value||"").trim()):null;
+  const set=(cls,val)=>{ const el=c.querySelector("."+cls); if(el&&val!=null) el.value=val; };
+  if(g && !g.error){
+    set("pb-species", g.species==="M"?"Mercat":"Not-cat");
+    set("pb-wind", windName(g.wind[0],g.wind[1]));
+    set("pb-fur", /L/i.test((g.fur||[]).join(""))?"Longhair":"Shorthair");
+    set("pb-color", colorInfo(g.color[0], g.dil[0]==="D", g.density).name);
+    set("pb-color2", colorInfo(g.color[1], g.dil[1]==="D", g.density).name);
+    set("pb-pattern", (g.patVis[0]==="N"&&g.patVis[1]==="N")?"Solid":(patternName(g.pat[0],g.pat[1])||"Solid"));
+    set("pb-wtype", /^[CPLRIT]$/.test(g.whiteType)?g.whiteType:"C");
+    set("pb-wlevel", String(g.whiteLevel||0));
+    set("pb-accent", accentKnown(g)?accentName(g.accent[0],g.accent[1]):"Unknown");
+  }
+  pbToggle2nd(c);
+}
 function copyGeneString(btn){
   const s=btn.getAttribute("data-gene")||"";
   const restore=btn.innerHTML;
@@ -3169,7 +3237,7 @@ function breedLoad(){ try{ return JSON.parse(localStorage.getItem(BREED_KEY)||"n
 function restoreBreeding(){
   const st=breedLoad(); if(!st) return;
   if(st.pose) previewPose=st.pose;
-  if(st.sel && typeof st.sel==="object") previewSel={species:st.sel.species||"any", wind:st.sel.wind||"any", pattern:st.sel.pattern||"any", white:st.sel.white||"any", accent:st.sel.accent||"any"};
+  if(st.sel && typeof st.sel==="object") previewSel={species:st.sel.species||"any", wind:st.sel.wind||"any", fur:st.sel.fur||"any", pattern:st.sel.pattern||"any", white:st.sel.white||"any", accent:st.sel.accent||"any"};
   if(st.metaA) breedMeta.A=st.metaA; if(st.metaB) breedMeta.B=st.metaB;
   const setV=(s,val)=>{ const el=$(s); if(el) el.value=val||""; };
   setV("#pA",st.a); setV("#pB",st.b); setV("#pickA",st.pickA); setV("#pickB",st.pickB);
@@ -3492,6 +3560,20 @@ document.addEventListener("DOMContentLoaded", ()=>{
   // Editing a string box by hand detaches it from the picked cat.
   $("#pA").addEventListener("input", ()=>{ breedMeta.A=null; });
   $("#pB").addEventListener("input", ()=>{ breedMeta.B=null; });
+  // Parent what-if builders: populate the dropdowns; a change assembles the string into
+  // the box (detaching any picked cat) and re-renders. Opening one syncs it from the box.
+  [["buildA","A"],["buildB","B"]].forEach(([id,which])=>{
+    const c=$("#"+id); if(!c) return;
+    c.innerHTML=parentBuilderHTML();
+    c.addEventListener("change", ()=>{
+      pbToggle2nd(c);
+      const box=$("#"+c.getAttribute("data-target")); if(!box) return;
+      box.value=pbAssemble(c); breedMeta[which]=null;
+      const pk=$("#pick"+which); if(pk) pk.value="";
+      maybeAutoBreed();
+    });
+    const det=c.closest("details"); if(det) det.addEventListener("toggle", ()=>{ if(det.open) pbSync(c); });
+  });
   // Preview controls (delegated). Pose re-poses every preview incl. roster
   // thumbnails; the white picker re-renders the kitten gallery.
   const reBreed=()=>{ if(lastBreed) renderBreeding(lastBreed.a, lastBreed.b); };
@@ -3500,10 +3582,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
     if(!t||!t.classList) return;
     if(t.classList.contains("pose-pick")){ previewPose=t.value; reBreed(); rosterRender(); }
     else if(t.classList.contains("species-pick")){ previewSel.species=t.value; reBreed(); }
-    else if(t.classList.contains("accent-pick")){ previewSel.accent=t.value; reBreed(); }
     else if(t.classList.contains("wind-pick")){ previewSel.wind=t.value; reBreed(); }
+    else if(t.classList.contains("fur-pick")){ previewSel.fur=t.value; reBreed(); }
     else if(t.classList.contains("pat-pick")){ previewSel.pattern=t.value; reBreed(); }
     else if(t.classList.contains("white-pick")){ previewSel.white=t.value; reBreed(); }
+    else if(t.classList.contains("accent-pick")){ previewSel.accent=t.value; reBreed(); }
   });
   $("#breedResults").addEventListener("click", e=>{
     const b=e.target.closest && e.target.closest(".gene-copy");
@@ -3615,7 +3698,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     ["#pA","#pB","#pickA","#pickB"].forEach(s=>{ const el=$(s); if(el) el.value=""; });
     $("#noteA").textContent=""; $("#noteB").textContent="";
     breedMeta.A=null; breedMeta.B=null; lastBreed=null;
-    previewSel={species:"any", wind:"any", pattern:"any", white:"any", accent:"any"};
+    previewSel={species:"any", wind:"any", fur:"any", pattern:"any", white:"any", accent:"any"};
     $("#breedResults").innerHTML=""; setStatus($("#breedStatus"),"","");
     try{ localStorage.removeItem(BREED_KEY); }catch(e){}
   });
