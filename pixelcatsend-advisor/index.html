@@ -337,6 +337,10 @@
   #rosterTable td.qv .qv-appr{color:var(--ink);font-weight:600;margin-bottom:1px}
   #rosterTable td.qv .qv-k{color:var(--muted)}
   #rosterTable td.qv .qv-rec{color:var(--good-ink);font-weight:700}
+  #rosterTable td.qv .qv-genes{margin-top:3px}
+  #rosterTable td.qv .rc-gene-copy{display:inline-block;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10px;line-height:1.35;color:var(--ink);background:var(--panel2);border:1px solid var(--line-soft);border-radius:6px;padding:2px 5px;margin-top:1px;cursor:pointer;white-space:normal;word-break:break-word;overflow-wrap:anywhere;text-align:left;max-width:260px;transition:border-color .12s,color .12s}
+  #rosterTable td.qv .rc-gene-copy:hover,#rosterTable td.qv .rc-gene-copy:focus-visible{border-color:var(--brand);color:var(--brand-ink);outline:none}
+  #rosterTable td.qv .rc-gene-copy.copied{color:var(--good-ink);border-color:var(--good);background:var(--good-soft)}
   #rosterTable .sug{color:var(--good-ink);font-weight:700}
   #rosterTable .trink{color:var(--good-ink);font-weight:800}   /* stat total boosted by a trinket */
   #rosterTable .trink-up{color:var(--good-ink);font-size:9px;font-weight:900;vertical-align:top;margin-left:2px;line-height:1}
@@ -429,6 +433,8 @@
   .parent-builder>summary{cursor:pointer;color:var(--brand-ink);font-weight:700;font-size:12.5px}
   .pbuild{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px}
   .pbuild .kc.hide{display:none}
+  .pb-shade{align-self:flex-end;padding-bottom:6px;font-size:12px;font-weight:700;color:var(--brand-ink)}
+  .rc-shade{align-self:center;font-size:12px;font-weight:700;color:var(--brand-ink);white-space:nowrap}
   .kitten-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:12px;margin-top:6px}
   .kitten{margin:0;text-align:center}
   .kitten .catprev{margin:0 auto}
@@ -2001,7 +2007,11 @@ function rosterRender(){
     const job=notNA(col(c,/occupation/i)), cls=notNA(col(c,/^class$/i))||notNA(col(c,/adventuring/i));
     const recJob=(s.jobs&&s.jobs.length)?s.jobs.join(", "):"", recCls=s.className?(s.className+(s.classPct?(" ("+s.classPct+"%)"):"")):"";
     const line=(k,v,vc)=> v?`<div><span class="qv-k">${k}</span> <span class="${vc||""}">${esc(v)}</span></div>`:"";
-    return `<div class="qv-appr">${esc(appr||"—")}</div>`+line("Job:",job)+line("Class:",cls)+line("Rec Job:",recJob,"qv-rec")+line("Rec Class:",recCls,"qv-rec");
+    // The cat's genetic string (revealed / page-derived, accent pinned to what's known) —
+    // one click copies it, so it's ready to paste into Breeding or share.
+    const gsr=rosterCatToGeneString(c), gstr=(gsr&&gsr.str)?gsr.str:"";
+    const genesLine = gstr ? `<div class="qv-genes"><span class="qv-k">Genes:</span> <button type="button" class="rc-gene-copy" data-gene="${esc(gstr)}" title="Click to copy this cat's genetic string">${esc(gstr)}</button></div>` : "";
+    return `<div class="qv-appr">${esc(appr||"—")}</div>`+line("Job:",job)+line("Class:",cls)+line("Rec Job:",recJob,"qv-rec")+line("Rec Class:",recCls,"qv-rec")+genesLine;
   };
   const attrLabels=new Set(ATTRS.map(a=>a.label));   // to flag trinket-boosted stat totals
   const body=tids.slice(0,400).map(id=>{
@@ -2068,43 +2078,117 @@ function catBaseGenes(cat){
 // selectors have identical options and order. Value = the section string, label = named.
 const WIND_ALLELE_OPTS=[["NN","North"],["NO","North (carries Null)"],["SS","South"],["SO","South (carries Null)"],["NS","Trade"],["OO","Null"]];
 function windEditKey(sec){ const s=String(sec||"").toUpperCase().replace(/[^NSO]/g,"").split("").sort().join(""); return {NN:"NN",SS:"SS",OO:"OO",NS:"NS",NO:"NO",OS:"SO"}[s] || "NN"; }
+// Full "carrier" option sets — SHARED by the Edit-cat editor and the parent builder so
+// the two have identical options & order (genome order). Value = the section fragment,
+// label = human name ("X carries Y" for a hidden recessive). See §6 dominance map.
+const FUR_ALLELE_OPTS  = [["SS","Shorthair"],["SL","Shorthair (carries Longhair)"],["LL","Longhair"]];
+const BASE_COLOR_OPTS  = [["BB","Black-based · BB"],["OO","Red-based · OO"],["BO","Tortoiseshell · BO"]];  // co-dominant
+const DILUTION_OPTS    = [["FF","Full"],["FD","Full (carries Dilute)"],["DD","Dilute"]];
+const DENSITY_OPTS     = [["1","1"],["2","2"],["3","3"],["4","4"]];
+const PATVIS_OPTS      = [["YY","Patterned"],["YN","Patterned (carries Solid)"],["NN","Solid"]];
+const WHITEVIS_OPTS    = [["YY","White"],["YN","White (carries No-white)"],["NN","No-white"]];
+// Pattern TYPE = the two hidden pattern alleles (separate from Pattern-shown). A Solid
+// cat still carries a type; "Unknown" keeps it hidden as [??]. Lazy (PATTERN_NAME is
+// declared further down) so it can't hit the temporal dead zone at load.
+function patTypeOpts(){ return [["Unknown","Unknown"]].concat([...new Set(Object.values(PATTERN_NAME))].map(n=>[n,n])); }
+// reverse-map raw section alleles back onto a carrier dropdown value (for sync/seed).
+function furEditKey(sec){ const s=String(sec||"").toUpperCase().replace(/[^SL]/g,""); if(s==="LL") return "LL"; if(/L/.test(s)&&/S/.test(s)) return "SL"; if(s==="L") return "LL"; return "SS"; }
+function baseColorKey(c1,c2){ const a=String(c1||"").toUpperCase(), b=String(c2||"").toUpperCase(); const hasB=a==="B"||b==="B", hasO=a==="O"||b==="O"; if(hasB&&hasO) return "BO"; if(hasO) return "OO"; return "BB"; }
+function dilutionKey(d1,d2){ const a=String(d1||"").toUpperCase(), b=String(d2||"").toUpperCase(); if(a==="D"&&b==="D") return "DD"; if(a==="D"||b==="D") return "FD"; return "FF"; }
+function ynKey(a,b){ a=String(a||"").toUpperCase(); b=String(b||"").toUpperCase(); if(a==="Y"&&b==="Y") return "YY"; if(a==="Y"||b==="Y") return "YN"; return "NN"; }
+// Assemble an 8-section gene string from the full carrier-editor control set — the ONE
+// encoder both the editor and the builder call, so they can never drift apart.
+function assembleGenotype(v){
+  const sp = v.species==="Mercat" ? "M" : "C";
+  const windSec = /^[NSO]{2}$/.test(v.wind) ? v.wind : "NN";
+  const furSec  = /^(SS|SL|LL)$/.test(v.fur) ? v.fur : "SS";
+  const base    = /^(BB|OO|BO)$/.test(v.base) ? v.base : "BB";
+  const dil     = /^(FF|FD|DD)$/.test(v.dil) ? v.dil : "FF";
+  const density = Math.max(1,Math.min(4, parseInt(v.density,10)||4));
+  const coatSec = base[0]+base[1]+dil[0]+dil[1]+density;
+  const patVis  = /^(YY|YN|NN)$/.test(v.patVis) ? v.patVis : "NN";
+  const pr = (v.patType && !/^unknown$/i.test(v.patType)) ? PATTERN_REV[String(v.patType).toLowerCase()] : null;
+  const patSec  = patVis + (pr ? pr.join("") : "??");
+  const whiteVis = /^(YY|YN|NN)$/.test(v.whiteVis) ? v.whiteVis : "NN";
+  const wt = /^[CPLRIT]$/.test(v.whiteType) ? v.whiteType : "C";
+  const wl = Math.max(0,Math.min(10, parseInt(v.whiteLevel,10)||0));
+  const whiteSec = whiteVis + wl + wt;
+  const acc = /^[RBYL]{2}$/.test(v.accent||"") ? v.accent : "??";
+  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [AB] [${acc}]`;
+}
+// Base colour is co-dominant AND positional (North shows allele 1, South allele 2, Trade
+// both). "BO" is stored canonically B-first, but a revealed het cat may be "OB" — flipping
+// it would swap a North/South cat's displayed colour. So when the base set is unchanged from
+// the cat's original coat, keep the original allele order.
+function preserveBaseOrder(str, origPair){
+  const o=String(origPair||"").toUpperCase().replace(/[^BO]/g,""); if(o.length!==2) return str;
+  const secs=[...String(str||"").matchAll(/\[([^\]]*)\]/g)].map(m=>m[1]);
+  const coat=secs[3]||"", cur=coat.slice(0,2), key=s=>s.split("").sort().join("");
+  if(key(cur)==="BO" && key(o)==="BO" && cur!==o){ secs[3]=o+coat.slice(2); return secs.map(s=>"["+s+"]").join(" "); }
+  return str;
+}
+// Live derived-coat readout from Wind + Base colour + Dilution + Density (the shade name is
+// DERIVED, never picked directly — one dropdown per genotype axis, per the user's spec).
+function coatShadeReadout(windSec, base, dil, density){
+  const w=String(windSec||"NN"), wind=windName(w[0]||"N", w[1]||"N");
+  const b=String(base||"BB"), dilute = String(dil||"FF")==="DD";
+  const d=Math.max(1,Math.min(4,parseInt(density,10)||4));
+  const dc=displayedColor(wind, b[0]||"B", b[1]||"B", dilute, d);
+  if(dc.coatType==="snow") return "Snow";
+  if(dc.coatType==="tortoiseshell") return dc.colors.join("-")+" tortoiseshell";
+  if(dc.coatType==="watercolor") return dc.colors[0]+" watercolor";
+  return dc.colors[0];
+}
+// accent colour name → allele pair string ("BY") or "??" for Unknown.
+function accentAlleleStr(name){ if(!name || /^unknown$/i.test(name)) return "??"; const ar=ACCENT_REV[String(name).toLowerCase()]; return ar?ar.join(""):"??"; }
 function openCatEditor(id){
   const ex=$("#rcModalHost"); if(ex) ex.remove();
   const r=rosterLoad(), c=r.cats[id]; if(!c) return;
   rcEditId=id;
   const data=c.data||{}, secs=geneSecs(catBaseGenes(c));
+  const coat=secs[3]||"BBFF4", pat=secs[4]||"NN??";
   const cur={
     name: c.name||"",
     species: (/mercat/i.test(data["Species"]||"") || secs[0]==="M") ? "Mercat" : "Not-cat",
     wind: windEditKey(secs[1]),
-    fur: (/long/i.test(data["Fur"]||data["Fur Length"]||"") || secs[2]==="LL") ? "Longhair" : "Shorthair",
-    pattern: (function(){ const p=notNA(data["Pattern"]); if(p) return p;
-      const pn=patternName((secs[4]||"")[2],(secs[4]||"")[3]); return pn||"Solid"; })(),
+    fur: (function(){ const k=furEditKey(secs[2]); return (k==="SS" && /long/i.test(data["Fur"]||data["Fur Length"]||"")) ? "LL" : k; })(),
+    base: baseColorKey(coat[0],coat[1]),
+    dil: dilutionKey(coat[2],coat[3]),
+    density: (function(){ const d=parseInt(coat.slice(4),10); return (d>=1&&d<=4)?String(d):"4"; })(),
+    patType: (function(){ const pn=patternName(pat[2],pat[3]); return pn && patTypeOpts().some(o=>o[0]===pn) ? pn : "Unknown"; })(),
+    patVis: ynKey(pat[0],pat[1]),
+    whiteVis: ynKey((secs[5]||"")[0],(secs[5]||"")[1]),
     accent: catAccentText(c)
   };
   const wsec=secs[5]||"NN0C", wm=wsec.match(/^..(\d+)([CPLRIT])$/);
   const wLevel = wm?parseInt(wm[1],10):0, wType = wm?wm[2]:"C";
-  const opt=(list,sel)=>list.map(v=>`<option value="${esc(v)}"${v===sel?" selected":""}>${esc(v)}</option>`).join("");
-  const patterns=["Solid",...new Set(Object.values(PATTERN_NAME))];
+  const optP=(pairs,sel)=>pairs.map(([v,lab])=>`<option value="${esc(v)}"${v===sel?" selected":""}>${esc(lab)}</option>`).join("");
+  const opt=(list,sel)=>optP(list.map(v=>[v,v]),sel);
   // accent options: value stays the colour name, but the label shows its genotype too
   // (e.g. "Green (BY)", "Indigo (BL)") so you can match what the sandbox revealed.
   const accentOptsList=[["Unknown","Unknown"]].concat(Object.keys(ACCENT_NAME).map(k=>[ACCENT_NAME[k], ACCENT_NAME[k]+" ("+k+")"]));
   const accentSel=accentOptsList.some(o=>o[0]===cur.accent)?cur.accent:"Unknown";
-  const accentOptsHtml=accentOptsList.map(([v,lab])=>`<option value="${esc(v)}"${v===accentSel?" selected":""}>${esc(lab)}</option>`).join("");
-  const lvls=Array.from({length:11},(_,i)=>i);
+  const lvls=Array.from({length:11},(_,i)=>[String(i),"Lv "+i]);
+  // Controls run in genome order: Species·Wind·Fur·Base·Dilution·Density·Pattern type·
+  // Pattern shown·White type·White level·White shown·Accent — matching the parent builder.
   const html=`<div class="rc-modal-back" id="rcModalBack"><div class="rc-modal" role="dialog" aria-modal="true" aria-label="Edit cat">
     <h3>Edit ${esc(c.name||("#"+id))}<span class="rc-sub">#${esc(id)} — updates this cat's genotype &amp; its breeding predictions.</span></h3>
     <div class="rc-form">
       <label for="rcName">Name</label><input id="rcName" type="text" value="${esc(cur.name)}">
       <label for="rcSpecies">Species</label><select id="rcSpecies">${opt(["Not-cat","Mercat"],cur.species)}</select>
-      <label for="rcWind">Wind</label><select id="rcWind">${WIND_ALLELE_OPTS.map(([v,lab])=>`<option value="${v}"${v===cur.wind?" selected":""}>${esc(lab)}</option>`).join("")}</select>
-      <label for="rcFur">Fur</label><select id="rcFur">${opt(["Shorthair","Longhair"],cur.fur)}</select>
-      <label for="rcPattern">Pattern</label><select id="rcPattern">${opt(patterns,patterns.includes(cur.pattern)?cur.pattern:"Solid")}</select>
-      <label for="rcWhiteType">White</label>
-      <div class="rc-white-lvl"><select id="rcWhiteType">${Object.keys(WHITE_TYPE).map(k=>`<option value="${k}"${k===wType?" selected":""}>${esc(WHITE_TYPE[k])}</option>`).join("")}</select>
-        <select id="rcWhiteLevel" title="White level 0–10">${lvls.map(n=>`<option value="${n}"${n===wLevel?" selected":""}>Lv ${n}</option>`).join("")}</select></div>
-      <label for="rcAccent">Accent</label><select id="rcAccent">${accentOptsHtml}</select>
-      <div class="rc-hint">A Not-cat's accent isn't on its page. Test it by breeding her with a homozygous Mercat (Black / Ruby / Blue / Gold) in the sandbox and reading the offspring colours, then set it here. "Unknown" keeps it as <code>[??]</code>.</div>
+      <label for="rcWind">Wind</label><select id="rcWind">${optP(WIND_ALLELE_OPTS,cur.wind)}</select>
+      <label for="rcFur">Fur</label><select id="rcFur">${optP(FUR_ALLELE_OPTS,cur.fur)}</select>
+      <label for="rcBase">Base colour</label><select id="rcBase">${optP(BASE_COLOR_OPTS,cur.base)}</select>
+      <label for="rcDil">Dilution</label><select id="rcDil">${optP(DILUTION_OPTS,cur.dil)}</select>
+      <label for="rcDensity">Density</label>
+      <div class="rc-white-lvl"><select id="rcDensity">${optP(DENSITY_OPTS,cur.density)}</select><span class="rc-shade" id="rcShade"></span></div>
+      <label for="rcPatType">Pattern type</label><select id="rcPatType">${optP(patTypeOpts(),cur.patType)}</select>
+      <label for="rcPatVis">Pattern shown</label><select id="rcPatVis">${optP(PATVIS_OPTS,cur.patVis)}</select>
+      <label for="rcWhiteType">White type</label><select id="rcWhiteType">${Object.keys(WHITE_TYPE).map(k=>`<option value="${k}"${k===wType?" selected":""}>${esc(WHITE_TYPE[k])}</option>`).join("")}</select>
+      <label for="rcWhiteLevel">White level</label><select id="rcWhiteLevel" title="White level 0–10">${optP(lvls,String(wLevel))}</select>
+      <label for="rcWhiteVis">White shown</label><select id="rcWhiteVis">${optP(WHITEVIS_OPTS,cur.whiteVis)}</select>
+      <label for="rcAccent">Accent</label><select id="rcAccent">${optP(accentOptsList,accentSel)}</select>
+      <div class="rc-hint">A Not-cat's accent isn't on its page. Test it by breeding her with a homozygous Mercat (Black / Ruby / Blue / Gold) in the sandbox and reading the offspring colours, then set it here. "Unknown" keeps it as <code>[??]</code>. Carrier options (e.g. "carries Longhair") record a hidden recessive; the derived shade is shown live beside Density.</div>
     </div>
     <div class="rc-actions"><button type="button" class="rc-cancel" id="rcCancel">Cancel</button><button type="button" class="rc-save" id="rcSave">Save</button></div>
   </div></div>`;
@@ -2113,6 +2197,9 @@ function openCatEditor(id){
   const close=()=>{ const h=$("#rcModalHost"); if(h) h.remove(); rcEditId=null; document.removeEventListener("keydown",onKey); };
   const onKey=e=>{ if(e.key==="Escape") close(); };
   document.addEventListener("keydown",onKey);
+  const updShade=()=>{ const el=$("#rcShade"); if(el) el.textContent="→ "+coatShadeReadout($("#rcWind").value,$("#rcBase").value,$("#rcDil").value,$("#rcDensity").value); };
+  ["#rcWind","#rcBase","#rcDil","#rcDensity"].forEach(s=>{ const el=$(s); if(el) el.addEventListener("change",updShade); });
+  updShade();
   $("#rcCancel").addEventListener("click", close);
   $("#rcModalBack").addEventListener("click", e=>{ if(e.target.id==="rcModalBack") close(); });
   $("#rcSave").addEventListener("click", ()=>{ if(saveCatEditor(id)) close(); });
@@ -2122,27 +2209,31 @@ function saveCatEditor(id){
   const r=rosterLoad(), c=r.cats[id]; if(!c) return false;
   c.data=c.data||{};
   const val=s=>{ const el=$(s); return el?el.value:""; };
-  const name=val("#rcName").trim(), species=val("#rcSpecies"), wind=val("#rcWind")||"NN", fur=val("#rcFur"),
-        pattern=val("#rcPattern"), accent=val("#rcAccent"),
-        wType=val("#rcWhiteType")||"C", wLevel=parseInt(val("#rcWhiteLevel"),10)||0;
+  const name=val("#rcName").trim();
+  const v={
+    species: val("#rcSpecies"), wind: val("#rcWind")||"NN", fur: val("#rcFur")||"SS",
+    base: val("#rcBase")||"BB", dil: val("#rcDil")||"FF", density: val("#rcDensity")||"4",
+    patType: val("#rcPatType"), patVis: val("#rcPatVis")||"NN",
+    whiteType: val("#rcWhiteType")||"C", whiteLevel: parseInt(val("#rcWhiteLevel"),10)||0,
+    whiteVis: val("#rcWhiteVis")||"NN",
+    accent: accentAlleleStr(val("#rcAccent"))
+  };
   if(name) c.name=name;
-  // rewrite the genome one section at a time — colour (3) is left untouched
-  const secs=geneSecs(catBaseGenes(c));
-  while(secs.length<8) secs.push(secs.length===6?"AB":"??");
-  secs[0]=species==="Mercat"?"M":"C";
-  secs[1]=/^[NSO]{2}$/.test(wind)?wind:"NN";
-  secs[2]=fur==="Longhair"?"LL":"S?";
-  const pr=(pattern && pattern!=="Solid") ? PATTERN_REV[pattern.toLowerCase()] : null;
-  secs[4]= (pattern==="Solid"||!pr) ? "NN??" : ("YY"+pr.join(""));
-  secs[5]= wLevel>0 ? ("YY"+wLevel+wType) : ("NN0"+wType);
-  // accent flows through data.Accent → withKnownAccent (Unknown ⇒ [??], never invented)
-  c.data["Accent"]=/^unknown$/i.test(accent)?"Unknown":accent;
-  c.data["Species"]=species; c.data["Wind"]=windName(wind[0],wind[1]); c.data["Fur"]=fur; c.data["Pattern"]=pattern;
-  c.data["White"]= wLevel>0 ? whiteCellText(wType, wLevel, "") : "None";
-  c.genes=withKnownAccent(secs.map(s=>"["+s+"]").join(" "), c);
+  // one shared encoder builds every section — the whole genotype is now editable.
+  const origCoat=(geneSecs(catBaseGenes(c))[3]||"");
+  const str=preserveBaseOrder(assembleGenotype(v), origCoat.slice(0,2));
+  // reflect the derived phenotype into the roster data columns
+  c.data["Accent"]=/^unknown$/i.test(val("#rcAccent"))?"Unknown":val("#rcAccent");
+  c.data["Species"]=v.species;
+  c.data["Wind"]=windName(v.wind[0],v.wind[1]);
+  c.data["Fur"]= v.fur==="LL" ? "Longhair" : "Shorthair";
+  c.data["Color"]=coatShadeReadout(v.wind,v.base,v.dil,v.density);
+  c.data["Pattern"]= v.patVis!=="NN" ? (/^unknown$/i.test(v.patType)?"Patterned":v.patType) : "Solid";
+  c.data["White"]= (v.whiteVis!=="NN" && v.whiteLevel>0) ? whiteCellText(v.whiteType, v.whiteLevel, "") : "None";
+  c.genes=withKnownAccent(str, c);
   c.geneInfo={resolved:(c.geneInfo&&c.geneInfo.resolved)||["edited by you"], guessed:(c.geneInfo&&c.geneInfo.guessed)||[]};
   r.headers=r.headers||[];
-  ["Species","Wind","Fur","Pattern"].forEach(h=>{ if(!r.headers.some(x=>x.toLowerCase()===h.toLowerCase())) r.headers.push(h); });
+  ["Species","Wind","Fur","Color","Pattern"].forEach(h=>{ if(!r.headers.some(x=>x.toLowerCase()===h.toLowerCase())) r.headers.push(h); });
   rosterSave(r);
   rosterRender();
   return true;
@@ -3157,59 +3248,63 @@ function kittenGallery(R,A,B){
     <p class="hint">Each % is the <b>true overall chance</b> of a kitten with that coat${picked.length?(" and "+esc(picked.join(" · "))):""}. Previews are composited from the game's own sprite layers; a missing layer falls back to a colour swatch. Tap a genetic string to copy it — a <code>?</code> marks an allele the game keeps hidden; the last section is the <b>accent</b> chosen in the selector above (Not-cats don't show it, Mercats wear it on the tail). See the <b>Quick Genetics Overview</b>.</p></div>`;
 }
 /* ---- Parent what-if builder: dropdowns (genome order) that assemble a parent's gene
-   string. Wind uses the shared allele options (WIND_ALLELE_OPTS — matches the Edit-cat
-   editor); fur uses the canonical genotype (Shorthair=SS); the base colour name carries
-   the density; a 2nd colour (Trade only) makes a tortoiseshell sharing the base's density.
-   Growth is skipped. The assembled string is written to the parent box. */
-const PB_COLORS=SPRITE_COLORS.map(c=>c[0]);                         // 16 colour names, in order
-const PB_PATTERNS=["Solid",...new Set(Object.values(PATTERN_NAME))];
+   string, using the SAME carrier option sets as the Edit-cat editor so the two match
+   option-for-option. Every genotype axis is its own dropdown — Fur (SS/SL/LL), Base
+   colour (BB/OO/BO), Dilution (FF/FD/DD), Density, Pattern type + Pattern-shown,
+   White type/level + White-shown, Accent. The derived shade is shown live. Growth is
+   skipped. `assembleGenotype` (shared) writes the string to the parent box. */
 const PB_ACCENTS=[["Unknown","Unknown"]].concat(Object.keys(ACCENT_NAME).map(k=>[ACCENT_NAME[k], ACCENT_NAME[k]+" ("+k+")"]));
 function pbOpts(pairs, cur){ return pairs.map(([v,lab])=>`<option value="${esc(v)}"${v===cur?" selected":""}>${esc(lab)}</option>`).join(""); }
 function parentBuilderHTML(){
   const p=arr=>arr.map(v=>[v,v]);
-  const sel=(cls,label,pairs,cur,extraClass)=>`<label class="kc ${extraClass||""}"><span>${label}</span><select class="kc-pick ${cls}">${pbOpts(pairs,cur)}</select></label>`;
+  const sel=(cls,label,pairs,cur)=>`<label class="kc"><span>${label}</span><select class="kc-pick ${cls}">${pbOpts(pairs,cur)}</select></label>`;
   return sel("pb-species","Species",p(["Not-cat","Mercat"]),"Not-cat")
     + sel("pb-wind","Wind",WIND_ALLELE_OPTS,"NN")
-    + sel("pb-fur","Fur",p(["Shorthair","Longhair"]),"Shorthair")
-    + sel("pb-color","Base colour",p(PB_COLORS),"Black")
-    + sel("pb-color2","2nd colour",p(PB_COLORS),"Red","pb-2nd hide")
-    + sel("pb-pattern","Pattern",p(PB_PATTERNS),"Solid")
-    + sel("pb-wtype","White",Object.keys(WHITE_TYPE).map(t=>[t,WHITE_TYPE[t]]),"C")
-    + sel("pb-wlevel","Lv",Array.from({length:11},(_,i)=>[String(i),"Lv "+i]),"0")
-    + sel("pb-accent","Accent",PB_ACCENTS,"Unknown");
+    + sel("pb-fur","Fur",FUR_ALLELE_OPTS,"SS")
+    + sel("pb-base","Base colour",BASE_COLOR_OPTS,"BB")
+    + sel("pb-dil","Dilution",DILUTION_OPTS,"FF")
+    + sel("pb-density","Density",DENSITY_OPTS,"4")
+    + sel("pb-pattype","Pattern type",patTypeOpts(),"Unknown")
+    + sel("pb-patvis","Pattern shown",PATVIS_OPTS,"NN")
+    + sel("pb-wtype","White type",Object.keys(WHITE_TYPE).map(t=>[t,WHITE_TYPE[t]]),"C")
+    + sel("pb-wlevel","White level",Array.from({length:11},(_,i)=>[String(i),"Lv "+i]),"0")
+    + sel("pb-wvis","White shown",WHITEVIS_OPTS,"NN")
+    + sel("pb-accent","Accent",PB_ACCENTS,"Unknown")
+    + `<span class="pb-shade"></span>`;
 }
-function pbToggle2nd(c){ const w=(c.querySelector(".pb-wind")||{}).value, lab=c.querySelector(".pb-2nd"); if(lab) lab.classList.toggle("hide", w!=="NS"); }
+function pbShade(c){ const el=c.querySelector(".pb-shade"); if(!el) return;
+  const v=cls=>{ const x=c.querySelector("."+cls); return x?x.value:""; };
+  el.textContent="→ "+coatShadeReadout(v("pb-wind"),v("pb-base"),v("pb-dil"),v("pb-density")); }
 function pbAssemble(c){
   const v=cls=>{ const el=c.querySelector("."+cls); return el?el.value:""; };
-  const sp=v("pb-species")==="Mercat"?"M":"C";
-  const windSec=/^[NSO]{2}$/.test(v("pb-wind"))?v("pb-wind"):"NN";   // value IS the allele pair
-  const furSec=v("pb-fur")==="Longhair"?"LL":"SS";
-  const c1=COLOR_REV[v("pb-color").toLowerCase()]||{group:"B",dilute:false,density:4};
-  let g2=c1.group, d2=c1.dilute?"D":"F";
-  if(windSec==="NS"){ const c2=COLOR_REV[v("pb-color2").toLowerCase()]; if(c2){ g2=c2.group; d2=c2.dilute?"D":"F"; } }
-  const coatSec=c1.group+g2+(c1.dilute?"D":"F")+d2+c1.density;
-  const patName=v("pb-pattern"), pr=(patName&&patName!=="Solid")?PATTERN_REV[patName.toLowerCase()]:null;
-  const patSec=(patName==="Solid"||!pr)?"NN??":("YY"+pr.join(""));
-  const wt=v("pb-wtype")||"C", wl=parseInt(v("pb-wlevel"),10)||0;
-  const whiteSec=wl>0?("YY"+wl+wt):("NN0"+wt);
-  const acc=v("pb-accent"), ar=/^unknown$/i.test(acc)?null:ACCENT_REV[acc.toLowerCase()];
-  return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [AB] [${ar?ar.join(""):"??"}]`;
+  const str=assembleGenotype({
+    species:v("pb-species"), wind:v("pb-wind"), fur:v("pb-fur"),
+    base:v("pb-base"), dil:v("pb-dil"), density:v("pb-density"),
+    patType:v("pb-pattype"), patVis:v("pb-patvis"),
+    whiteType:v("pb-wtype"), whiteLevel:v("pb-wlevel"), whiteVis:v("pb-wvis"),
+    accent:accentAlleleStr(v("pb-accent"))
+  });
+  return preserveBaseOrder(str, c.dataset.baseOrder||"");   // keep a synced het cat's B/O order
 }
 function pbSync(c){          // set the builder dropdowns from the target box's current string
   const box=document.getElementById(c.getAttribute("data-target")), g=box?parseGeneString((box.value||"").trim()):null;
   const set=(cls,val)=>{ const el=c.querySelector("."+cls); if(el&&val!=null) el.value=val; };
   if(g && !g.error){
+    c.dataset.baseOrder=(g.color||[]).join("");   // remember the coat's B/O order for re-assembly
     set("pb-species", g.species==="M"?"Mercat":"Not-cat");
     set("pb-wind", windEditKey((g.wind||[]).join("")));
-    set("pb-fur", /L/i.test((g.fur||[]).join(""))?"Longhair":"Shorthair");
-    set("pb-color", colorInfo(g.color[0], g.dil[0]==="D", g.density).name);
-    set("pb-color2", colorInfo(g.color[1], g.dil[1]==="D", g.density).name);
-    set("pb-pattern", (g.patVis[0]==="N"&&g.patVis[1]==="N")?"Solid":(patternName(g.pat[0],g.pat[1])||"Solid"));
+    set("pb-fur", furEditKey((g.fur||[]).join("")));
+    set("pb-base", baseColorKey(g.color[0],g.color[1]));
+    set("pb-dil", dilutionKey(g.dil[0],g.dil[1]));
+    set("pb-density", String((g.density>=1&&g.density<=4)?g.density:4));
+    set("pb-pattype", (function(){ const n=patternName(g.pat[0],g.pat[1]); return n && patTypeOpts().some(o=>o[0]===n) ? n : "Unknown"; })());
+    set("pb-patvis", ynKey(g.patVis[0],g.patVis[1]));
     set("pb-wtype", /^[CPLRIT]$/.test(g.whiteType)?g.whiteType:"C");
-    set("pb-wlevel", String(g.whiteLevel||0));
+    set("pb-wlevel", String((g.whiteLevel>=0&&g.whiteLevel<=10)?g.whiteLevel:0));
+    set("pb-wvis", ynKey(g.whiteVis[0],g.whiteVis[1]));
     set("pb-accent", accentKnown(g)?accentName(g.accent[0],g.accent[1]):"Unknown");
   }
-  pbToggle2nd(c);
+  pbShade(c);
 }
 function copyGeneString(btn){
   const s=btn.getAttribute("data-gene")||"";
@@ -3466,6 +3561,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
   $("#rosterTable").addEventListener("click", e=>{
     if(e.target.closest("a")) return;                       // name link → open the cat's page
     if(e.target.closest(".rc-stageview")){ e.stopPropagation(); return; }   // stage dropdown → don't pick the row
+    const gc=e.target.closest(".rc-gene-copy"); if(gc){ e.stopPropagation(); copyGeneString(gc); return; }   // copy genes → don't pick the row
     const ed=e.target.closest(".rc-edit"); if(ed){ e.stopPropagation(); openCatEditor(ed.getAttribute("data-edit")); return; }
     const grp=e.target.closest("[data-grp]"); if(grp){ toggleRosterGroup(grp.getAttribute("data-grp")); return; }
     const sk=e.target.closest("[data-key]"); if(sk){ toggleRosterSort(sk.getAttribute("data-key")); return; }
@@ -3571,13 +3667,14 @@ document.addEventListener("DOMContentLoaded", ()=>{
     const c=$("#"+id); if(!c) return;
     c.innerHTML=parentBuilderHTML();
     c.addEventListener("change", ()=>{
-      pbToggle2nd(c);
+      pbShade(c);
       const box=$("#"+c.getAttribute("data-target")); if(!box) return;
       box.value=pbAssemble(c); breedMeta[which]=null;
       const pk=$("#pick"+which); if(pk) pk.value="";
       maybeAutoBreed();
     });
     const det=c.closest("details"); if(det) det.addEventListener("toggle", ()=>{ if(det.open) pbSync(c); });
+    pbShade(c);
   });
   // Preview controls (delegated). Pose re-poses every preview incl. roster
   // thumbnails; the white picker re-renders the kitten gallery.
