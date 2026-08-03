@@ -97,8 +97,9 @@ sort.** Highlights:
   its level plus its governing attribute's modifier.
 - **Adventure Classes** — **Suggested class** leads (its class name over a sortable **Fit %**), then one column per
   class (Fighter … Bard) reading **`Lv: N`** / **`Fit: X%`** (level defaults to 1 when the page doesn't list it;
-  Fit % is how well the cat matches that class's ideal, `0.55 × attributes + 0.45 × personality`, computed from the
-  cat's stats). Each of these headers has separate sort buttons for its two values.
+  Fit % is how well the cat matches that class's ideal, `0.80 × attributes + 0.20 × personality` for most classes — the
+  Bard leans on personality more, `~0.55 / 0.45` — computed from the cat's stats). Each of these headers has separate
+  sort buttons for its two values.
 
 **Suggest for shown cats** computes recommendations in bulk.
 
@@ -125,14 +126,16 @@ and a Spite-die count.
 | **Spite (low Benevolence)** | The offensive engine for **Intimidate / Bluff** and the Bard's **Hiss**; resisted by the target's Bravery. Most valuable on a **Bard**. |
 | **Energy / Extroversion / Dedication** | Day-job & *exploration* advantages only — no adventuring combat dice. |
 
-Class fit = `0.55 × attribute-fit + 0.45 × personality-fit` across Fighter, Guardian, Thief, Ranger, Medic, Scout, Bard.
+Class fit = `0.80 × attribute-fit + 0.20 × personality-fit` for most classes across Fighter, Guardian, Thief, Ranger,
+Medic, Scout, Bard — a class lives or dies on its **stats**, so personality is only a light ~20% adjustment.
 Attribute-fit weights each class's **core stat** heavily (Fighter = Strength, Guardian = Health, Thief = Agility, Ranger =
 Finesse, Medic = Cleverness, Scout/Bard = Perception), and three stats help **every** cat as a baseline — **Agility**
 (movement tiles), **Perception** (initiative) and **Health** (HP). A class's own stats are **added on top of** that
 baseline, so a stat a class *specifically* needs (e.g. a Fighter's Agility to close distance, or Health to tank) is
 weighted *above* the plain universal bump — more than a class that only benefits from it generically. Personality-fit is the cat's **overall personality level**
-(a weighted average where **Bravery counts double**, since it defends against Spite on every quest) — a well-rounded, brave cat
-is a stronger pick for any class. The **Bard** is the one exception: **low Benevolence** is desirable (it fuels Spite damage), so that trait is inverted for it.
+(a weighted average where **Bravery counts double**, since it defends against Spite on every quest) — among cats with
+similar stats the more well-rounded, braver one edges ahead. The **Bard** is the exception: it's personality-driven, so
+personality weighs much more (~45%) and **low Benevolence** — which fuels its Spite damage — is inverted and counts most.
 Day jobs come from the strongest attributes; high Benevolence/Bravery surface specialty roles (Caregiver, Doctor,
 Diplomat/Spite Bard, Adventurous Mayor).
 

@@ -770,6 +770,7 @@ const CLASSES = [
    blurb:"Skill-check specialist — +150% initiative, thrives on active events."},
   {key:"bard", name:"Bard", em:"🎵", core:"perception",
    attrs:{perception:.6}, persInvert:["benevolence"],   // no attribute core — Spite (LOW Benevolence) is it; Perception speeds Rally
+   persWeight:0.45, persFit:{benevolence:3},   // Bard is personality-driven: LOW Benevolence is its main "stat"
    blurb:"Team amplifier — buffs everyone's Bravery/Benevolence/Spite rolls."}
 ];
 
@@ -1158,6 +1159,10 @@ function balanceScore(attributes){
 }
 const persLevelNorm = v => v==null?0 : clamp((v-1)/9, 0, 1);   // personality value → 0..1 level (1→0, 10→1)
 const PERS_FIT_WEIGHT = {bravery:2};   // Bravery counts double in the personality total — it's the DEFENSIVE stat vs Spite on every quest
+// How much of a class's fit is personality vs attributes. Personality is a MINOR factor for most
+// classes (~20%) — a class lives or dies on its core STATS. The Bard is the exception: LOW
+// Benevolence is its primary damage stat (Spite), so its personality side carries much more.
+const PERS_WEIGHT_DEFAULT = 0.20;
 
 function scoreClasses(cat){
   const {attributes:A, personality:P} = cat;
@@ -1180,11 +1185,12 @@ function scoreClasses(cat){
     // cat is a stronger pick for ANY class. A class may want a trait LOW instead (persInvert):
     // only the Bard does, since LOW Benevolence fuels its Spite damage.
     const invert = new Set(c.persInvert||[]);
+    const persW = Object.assign({}, PERS_FIT_WEIGHT, c.persFit||{});   // class may weight a trait higher (Bard: Benevolence)
     const knownP = PERS.filter(p=>P[p.key]!=null);
     let persScore = .5;
     if(knownP.length){
       let sum=0, wsum=0;
-      knownP.forEach(p=>{ const w=PERS_FIT_WEIGHT[p.key]||1, n=persLevelNorm(P[p.key]);
+      knownP.forEach(p=>{ const w=persW[p.key]||1, n=persLevelNorm(P[p.key]);
         sum += w*(invert.has(p.key)?(1-n):n); wsum += w; });
       persScore = wsum ? sum/wsum : .5;
     }
@@ -1195,7 +1201,8 @@ function scoreClasses(cat){
       if(v>=8) reasons.push(p.high+" ("+v+")");
     });
 
-    const total = 0.55*attrScore + 0.45*persScore;
+    const pw = c.persWeight!=null ? c.persWeight : PERS_WEIGHT_DEFAULT;   // personality ~20% (Bard: more)
+    const total = (1-pw)*attrScore + pw*persScore;
     return {...c, attrScore, persScore, total, pct:Math.round(total*100), reasons};
   }).sort((x,y)=>y.total-x.total);
 }
@@ -1447,14 +1454,15 @@ function renderResults(cat){
     When a held trinket boosts a stat, the row also shows <code>base · +N Item name</code> — e.g. <code>base 24 · +3 Raw Essence Crystal</code>
     for an effective Luck of 27. Recommendations use the effective total.</p>
     <h4>Class fit</h4>
-    <p>Each class scores <code>0.55 × attribute-fit + 0.45 × personality-fit</code>. Attribute-fit weights that class's core stat highest
+    <p>For most classes each score is <code>0.80 × attribute-fit + 0.20 × personality-fit</code> — a class lives or dies on its core
+    <b>stats</b>, so personality is only a light ~20% adjustment. Attribute-fit weights that class's core stat highest
     (e.g. Fighter = Strength, Ranger = Finesse), and three stats help <i>every</i> cat as a baseline — <b>Agility</b> (movement tiles),
     <b>Perception</b> (initiative) and <b>Health</b> (HP). Personality-fit is the cat's <b>overall personality level</b> (a weighted average
     where <b>Bravery counts double</b>, since it's the
     defensive stat against Spite on every quest) — higher personality means more dice and better odds across skill checks, day jobs and
-    scenarios, so a well-rounded cat is a stronger pick for <i>any</i> class (a Fighter with the same Strength &amp; Health but higher
-    personality — especially Bravery — is the better Fighter). The <b>Bard</b> is the one exception: <b>low Benevolence</b> is desirable — it
-    fuels its Spite damage — so that single trait is inverted for it. Which class is suggested is decided by attributes; personality lifts or lowers the whole score.</p>
+    scenarios, so among cats with similar stats the more well-rounded one edges ahead. The <b>Bard</b> is the exception: it's
+    personality-driven, so personality is weighted much more heavily (~45%) and <b>low Benevolence</b> — which fuels its Spite damage — is
+    inverted and counts most. Which class is suggested is decided mainly by attributes; personality nudges the score.</p>
     <h4>Day jobs (governing attribute)</h4>
     <div class="scrollx"><table>
       <tr><th>Strength</th><th>Agility</th><th>Finesse</th><th>Cleverness</th><th>Perception</th></tr>
@@ -1758,7 +1766,7 @@ const ROSTER_BOOKMARKLET = "javascript:(function(){try{var h=document.documentEl
 function classPctMap(classesArr){ const m={}; (classesArr||[]).forEach(c=>{ if(c&&c.name) m[c.name]=c.pct; }); return m; }
 // Bump whenever scoreClasses / recommendJobs scoring changes, so cached suggestions
 // (pce-suggest-v1) recompute on next load instead of showing stale numbers.
-const ALGO_VERSION = 3;
+const ALGO_VERSION = 4;
 function computeSuggestion(cat){
   const classes=scoreClasses(cat), cls=classes[0];
   const jobs=recommendJobs(cat).jobs.flatMap(j=>j.jobs).slice(0,4);
@@ -1845,6 +1853,29 @@ function rosterEnrichFromCat(id, cat){
 
 let rosterFilter="all", rosterSort=null, bulkStop=false, bulkRunning=false;
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+// Net trinket bonus a held item applies to `label`, read back out of the roster "Trinkets"
+// column (e.g. "Guardian's Medallion (+3 Health); Lucky Coin (+2 Luck, -1 Finesse)"). Sums
+// every signed "+N Label" / "-N Label" token that names this stat.
+function trinketBonusFor(data, label){
+  const s=(data||{})["Trinkets"]; if(!s) return 0;
+  const want=String(label).toLowerCase(); let sum=0, m;
+  const re=/([+\-]\s*\d+)\s+([A-Za-z][A-Za-z ]*?)(?=\s*[,;)]|$)/g;
+  while((m=re.exec(s))){ if(m[2].trim().toLowerCase()===want){ const n=parseInt(m[1].replace(/\s+/g,""),10); if(!isNaN(n)) sum+=n; } }
+  return sum;
+}
+// A cat's TRUE base value for an attribute, with any held-trinket bonus removed. Deriving
+// effective − trinket is authoritative: it self-heals a stored "X base" that was overwritten
+// with the effective value (the pencil editor used to do that). Falls back to the stored base,
+// then the shown value. Returns null when the stat is unknown.
+function catBaseStat(data, label){
+  data=data||{};
+  const eff=parseInt(data[label],10);
+  const bonus=trinketBonusFor(data, label);
+  if(!isNaN(eff) && bonus) return eff-bonus;
+  const stored=parseInt(data[label+" base"],10);
+  if(!isNaN(stored)) return stored;
+  return isNaN(eff)?null:eff;
+}
 // Base Stat Total + the top three base stats (one stat per slot, ties broken by attribute
 // order), from the cat's BASE stats (trinket bonuses excluded). Only when all seven are
 // known — a partial fetch shouldn't imply a full total. Powers the "BST" column.
@@ -1852,9 +1883,8 @@ function catStatSummary(cat){
   const data=(cat&&cat.data)||{};
   const vals=[];
   ATTRS.forEach(a=>{
-    let raw=data[a.label+" base"]; if(raw==null||raw==="") raw=data[a.label];   // base, else the shown value
-    const n=parseInt(raw,10);
-    if(raw==null||raw===""||isNaN(n)) return;
+    const n=catBaseStat(data, a.label);   // true base (trinket bonus removed), else shown value
+    if(n==null) return;
     vals.push({name:a.label, abbr:a.abbr, n});
   });
   if(vals.length!==ATTRS.length) return null;   // need all seven for a meaningful total
@@ -2126,13 +2156,14 @@ function rosterRender(){
           } else cell = "—";
         }
         else if(g.key==="stats" && isData && attrLabels.has(leaf.key.slice(5))){
-          const label=leaf.key.slice(5), base=(c.data||{})[label+" base"], gr=statGrade(parseInt(v,10));
+          const label=leaf.key.slice(5), gr=statGrade(parseInt(v,10));
+          const bs=catBaseStat(c.data, label), base=bs==null?null:String(bs);   // trinket bonus removed
           if(gr){ addcls(gr.cls); tdtitle=`${label}: ${gr.label} · ${gr.dice}`; }
           const dice = gr?`<span class="dice">${gr.dice}</span>`:"";
-          const adjusted = v!=="" && base!=null && base!=="" && String(base)!==String(v);
+          const adjusted = v!=="" && base!=null && base!=="" && base!==String(v);
           if(adjusted){
-            addcls("statsplit"); tdtitle=`${label}: ${gr?gr.label+" · "+gr.dice+" · ":""}adjusted ${esc(v)} / base ${esc(String(base))}`;
-            cell = `<div class="stat-adj"><span class="trink">${esc(v)}</span>${dice}</div><div class="stat-base" title="base (no trinket)">${esc(String(base))}</div>`;
+            addcls("statsplit"); tdtitle=`${label}: ${gr?gr.label+" · "+gr.dice+" · ":""}adjusted ${esc(v)} / base ${esc(base)}`;
+            cell = `<div class="stat-adj"><span class="trink">${esc(v)}</span>${dice}</div><div class="stat-base" title="base (no trinket)">${esc(base)}</div>`;
           } else cell = esc(v) + dice;
         }
         else if(leaf.key.indexOf("job:")===0){ cell = v?esc(v):"—"; }
@@ -2352,7 +2383,14 @@ function saveCatEditor(id){
   // Stats & Personality: write the value (and base, so the Stats cell shows it cleanly),
   // or clear when the field is blank. Blank = untouched here since the input keeps "".
   const numVal=rid=>{ const el=$(rid); if(!el) return undefined; const t=(el.value||"").trim(); return t===""?"":String(parseInt(t,10)||0); };
-  ATTRS.forEach(a=>{ const v=numVal("#rc-a-"+a.key); if(v===undefined) return; if(v===""){ delete c.data[a.label]; delete c.data[a.label+" base"]; } else { c.data[a.label]=v; c.data[a.label+" base"]=v; } });
+  ATTRS.forEach(a=>{ const nv=numVal("#rc-a-"+a.key); if(nv===undefined) return;
+    if(nv===""){ delete c.data[a.label]; delete c.data[a.label+" base"]; return; }
+    // The field holds the EFFECTIVE (shown) value. Preserve any trinket offset by shifting the
+    // stored base by the same delta, instead of flattening base to equal the effective value.
+    const oldEff=parseInt(c.data[a.label],10), oldBase=parseInt(c.data[a.label+" base"],10), neu=parseInt(nv,10);
+    const base = (!isNaN(oldEff)&&!isNaN(oldBase)) ? oldBase+(neu-oldEff) : neu;
+    c.data[a.label]=nv; c.data[a.label+" base"]=String(base);
+  });
   PERS.forEach(p=>{ const v=numVal("#rc-p-"+p.key); if(v===undefined) return; if(v===""){ delete c.data[p.label]; } else { c.data[p.label]=v; } });
   ATTRS.forEach(a=>[a.label,a.label+" base"].forEach(h=>{ if(c.data[h]!=null && !r.headers.some(x=>x.toLowerCase()===h.toLowerCase())) r.headers.push(h); }));
   PERS.forEach(p=>{ if(c.data[p.label]!=null && !r.headers.some(x=>x.toLowerCase()===p.label.toLowerCase())) r.headers.push(p.label); });
