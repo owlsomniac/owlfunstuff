@@ -2778,19 +2778,22 @@ function whiteOutcomeDist(R){
   const m=new Map();
   const noW=R.whiteVisible.get("No-white")||0, yesW=R.whiteVisible.get("White")||0;
   const lvl0=R.whiteLevel.get(0)||0;
-  const none=noW + yesW*lvl0;                 // no white shown, or white gene but level 0
-  if(none>0) m.set("none", none);
+  if(lvl0>0) m.set("none", lvl0);             // level 0 → no white marking (whether shown or not)
+  // level>0 splits by visibility: "w:" shows the white, "h:" carries it hidden (NN vis) —
+  // just like a parent's own [NN1C] reads "Hidden, Classic, C1, Locket" instead of "None".
   R.whiteLevel.forEach((pl,L)=>{ if(L<=0) return;
-    R.whiteType.forEach((pt,T)=>{ const v=yesW*pl*pt; if(v>0) mapAdd(m,"w:"+L+":"+T,v); });
+    R.whiteType.forEach((pt,T)=>{
+      const shown=yesW*pl*pt, hidden=noW*pl*pt;
+      if(shown>0)  mapAdd(m,"w:"+L+":"+T, shown);
+      if(hidden>0) mapAdd(m,"h:"+L+":"+T, hidden);
+    });
   });
   return m;
 }
 function whiteOutcomeLabel(k){
   if(k==="none") return "None";
-  const m=String(k).match(/^w:(\d+):([CPLRIT])$/); if(!m) return k;
-  const L=parseInt(m[1],10), T=m[2];
-  const mark=whiteMarkName(T,L);
-  return "Lv "+L+" "+(WHITE_TYPE[T]||T)+(mark?(" — "+mark):"");
+  const m=String(k).match(/^([wh]):(\d+):([CPLRIT])$/); if(!m) return k;
+  return whiteDesc(m[1]==="w", m[3], parseInt(m[2],10));   // shown → "Classic, C1, Locket"; hidden → "Hidden, Classic, C1, Locket"
 }
 
 /* ---------- full litter prediction ---------- */
@@ -3267,7 +3270,11 @@ function offspringGeneString(o){
   let patSec;
   if(o.patterned){ const pr=PATTERN_REV[String(o.patName||"").toLowerCase()]; patSec="Y?"+(pr?pr.join(""):"??"); }
   else patSec="NN??";
-  const whiteSec = (o.wLevel>0) ? ("Y?"+o.wLevel+(o.wType||"C")) : "NN0?";
+  // shown → Y? (one white allele shows, other hidden); hidden → NN (both no-white, carries
+  // the level/type it doesn't express); none → level 0, type genuinely unknown.
+  const whiteSec = o.wVis==="shown"  ? ("Y?"+o.wLevel+(o.wType||"C"))
+                 : o.wVis==="hidden" ? ("NN"+o.wLevel+(o.wType||"C"))
+                 : "NN0?";
   return `[${sp}] [${windSec}] [${furSec}] [${coatSec}] [${patSec}] [${whiteSec}] [??] [${o.accGeno||"??"}]`;
 }
 // A gallery of every possible kitten coat, with a row of Wind / Pattern / White
@@ -3312,8 +3319,13 @@ function kittenGallery(R,A,B){
   if(previewSel.pattern==="any"){ patterned=(patMap.get("Solid")||0)<0.5; patName=topPatEntry?topPatEntry[0]:"Mackerel"; }
   else if(previewSel.pattern==="Solid"){ patterned=false; patName="Mackerel"; }
   else { patterned=true; patName=previewSel.pattern; }
-  let wLevel=0, wType="C";
-  if(previewSel.white!=="any" && previewSel.white!=="none"){ const m=String(previewSel.white).match(/^w:(\d+):([CPLRIT])$/); if(m){ wLevel=parseInt(m[1],10); wType=m[2]; } }
+  // White the previews render: the picked outcome, else the most-likely one. vis is
+  // "shown" (draws the marking), "hidden" (carries it under NN visibility — no marking drawn
+  // but the genes record it) or "none" (level 0). level/type are the inherited genes.
+  let wVis="none", wLevel=0, wType="C";
+  { const key = previewSel.white!=="any" ? previewSel.white : (whiteOut[0]?whiteOut[0][0]:"none");
+    const m=String(key).match(/^([wh]):(\d+):([CPLRIT])$/);
+    if(m){ wVis=m[1]==="w"?"shown":"hidden"; wLevel=parseInt(m[2],10); wType=m[3]; } }
 
   // The accent is resolved to ONE genotype (chosen from the accent selector) and rides
   // in the kitten's normal 8-section string — even for a Not-cat, whose accent the game
@@ -3334,10 +3346,10 @@ function kittenGallery(R,A,B){
     const pct=prob*100;
     const hex=cc.hex.get(label);
     const img=catPreview({colorName:primaryColorWord(label), colorName2:secondaryColorWord(label), coatType,
-      patternName:patName, patterned, species, accentColor:tailAccent, whiteType:wType, whiteLevel:wLevel, hex, fur, size:96, title:label});
+      patternName:patName, patterned, species, accentColor:tailAccent, whiteType:wType, whiteLevel:wVis==="shown"?wLevel:0, hex, fur, size:96, title:label});
     const windForStr = previewSel.wind!=="any" ? previewSel.wind
       : coatType==="tortoiseshell"||coatType==="watercolor" ? "Trade" : coatType==="snow" ? "Null" : "North";
-    const gstr=offspringGeneString({species, wind:windForStr, coatType, label, patterned, patName, fur, wLevel, wType, accGeno:selAcc.geno});
+    const gstr=offspringGeneString({species, wind:windForStr, coatType, label, patterned, patName, fur, wVis, wLevel, wType, accGeno:selAcc.geno});
     return `<figure class="kitten">${img}
       <figcaption><span class="knm">${esc(label)}</span><span class="kpct">${pct<9.95?pct.toFixed(1):Math.round(pct)}%</span></figcaption>
       <button type="button" class="gene-copy" data-gene="${esc(gstr)}" title="Copy this genetic string">${esc(gstr)}</button>

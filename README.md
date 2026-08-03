@@ -154,7 +154,10 @@ white / pose) across reloads, so you land right back where you left off.
 
 Either way you get each kitten's odds for **coat colour** (standard / watercolor / tortoiseshell / snow, with swatches),
 **colour density** (1–4, the dilution level), **wind**, **fur length**, **pattern** (all 15 named combinations — Mackerel,
-Rosette, Karpati…), **white markings** (named per level &amp; type, e.g. *Bib &amp; Boots*), **accent colour** (Ruby, Amber,
+Rosette, Karpati…), **white markings** (named per level &amp; type, e.g. *Bib &amp; Boots*) — including a distinct **Hidden**
+outcome for kittens that inherit a white type &amp; level but don't express it (no-white visibility), so it reads
+*Hidden, Classic, C1, Locket* and its gene string records the real type (`[NN1C]`) instead of collapsing to *None* / `[NN0?]`,
+just like the parents' own hidden white — **accent colour** (Ruby, Amber,
 Teal…), and **species** — the result blocks are ordered to mirror the finder's inputs (Species first). Under every outcome the
 possible **allele pairs** are listed (e.g. accent `[RR]` × `[LL]` → *Pink* `[RL] / [LR]`); colour alleles honour each parent's
 **wind** (which slot each donates), and traits that aren't a two-allele cross (species, white type & level, density) show a short
