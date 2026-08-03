@@ -271,7 +271,7 @@
   .rostercat .rc-sug{color:var(--good-ink);font-weight:700}
   .rosterempty{padding:16px;color:var(--muted);font-size:13px;text-align:center}
   /* a real styled roster table — echoes the list's look with zebra rows */
-  #rosterTable{margin-top:10px;border:1px solid var(--line-soft);border-radius:var(--radius-sm);overflow:auto;max-height:max(280px, calc(100vh - 320px));background:var(--panel2)}
+  #rosterTable{margin-top:10px;border:1px solid var(--line-soft);border-radius:var(--radius-sm);overflow:auto;height:max(280px, calc(100vh - 320px));background:var(--panel2)}
   #rosterTable table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
   #rosterTable thead{position:sticky;top:0;z-index:2}
   #rosterTable th,#rosterTable td{border-bottom:1px solid var(--line-soft);border-right:1px solid var(--line-soft);padding:7px 6px;text-align:left;white-space:nowrap;vertical-align:middle}
@@ -2145,14 +2145,18 @@ function rosterRender(){
   T.innerHTML=`<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
   fitRosterHeight();
 }
-// Size the scroll region to the space left below its top edge, so the whole table fits on
-// one screen (sticky header up top, last rows + scrollbar at the bottom) without zooming out.
+// Size the scroll region to the space left below its top edge so it FILLS the screen (sticky
+// header up top, scrollbar at the bottom) — even with only a few cats. We set an explicit
+// height (not just max-height, which would let a short table collapse and leave dead space);
+// many cats then scroll inside it.
 function fitRosterHeight(){
   const el=document.getElementById("rosterTable");
   if(!el || el.offsetParent===null) return;                 // hidden → leave the CSS fallback
   const top=el.getBoundingClientRect().top;
   if(top<=0) return;
-  el.style.maxHeight=Math.max(280, window.innerHeight - top - 16)+"px";
+  const h=Math.max(280, window.innerHeight - top - 16);
+  el.style.height=h+"px";
+  el.style.maxHeight="none";
 }
 if(window.addEventListener) window.addEventListener("resize", fitRosterHeight);
 
