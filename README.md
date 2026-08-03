@@ -42,7 +42,8 @@ to fold it away to the left. Groups are separated by clear **3px dividers**, and
 rule** so the data reads as a clean grid; cell padding is tight so more columns fit without scrolling. The table
 **sizes itself to the viewport** — its scroll region fills the space down to the bottom of the screen, with the header
 row pinned, so you see the top and bottom at once without zooming out (many rows scroll *inside* the table, not the page).
-A wider, collapsible **Quick View** column gives the at-a-glance summary (appearance, current job & class, recommended
+A wider, collapsible **Quick View** column gives the at-a-glance summary (appearance, current job & class, a **Best Stats**
+line with the cat's top three base stats abbreviated — *Str (20), Agi (18), Luck (17)* — recommended
 job/class, and the cat's genetics as **one click-copy block** — the whole **Genes + Carries** section copies together:
 you get the genetic string (ready to paste into Breeding) with a `Carries: …` line appended when there is one. Below the
 string, a **Carries:** line lists the alleles a cat is hiding — *Longhair* (`[SL]`),
@@ -86,9 +87,11 @@ sort.** Highlights:
   then set it here so every future cross is exact. (**Growth** has no dropdown — it's an unobservable gene, so it's always
   written as `??` rather than guessed.) The **Stats** section edits the 7 attributes and **Personality** the 5 traits;
   saving writes them to the roster and **re-runs that cat's class/job recommendation** on the spot.
-- **Stats** — each total is tinted by its game **grade** (ROYGBP pastels: Poor · Average · Good · Very Good ·
-  Excellent · Exceptional) and shows its **dice pool** (1d6–9d6). A trinket-adjusted stat **splits** the cell — the
-  adjusted total on top, the base value below — and sorts by the (higher) adjusted number.
+- **Stats** — a **BST** column leads the group with the cat's **Base Stat Total** and its **top three** base stats
+  (number + name, ranked, one stat per slot), sortable by the total. Then each attribute total is tinted by its game
+  **grade** (ROYGBP pastels: Poor · Average · Good · Very Good · Excellent · Exceptional) and shows its **dice pool**
+  (1d6–9d6). A trinket-adjusted stat **splits** the cell — the adjusted total on top, the base value below — and sorts
+  by the (higher) adjusted number.
 - **Jobs** — **Suggested jobs** leads the group, then one column per day job (alphabetized) reading **`Lv. N (+M)`**:
   its level plus its governing attribute's modifier.
 - **Adventure Classes** — **Suggested class** leads (its class name over a sortable **Fit %**), then one column per

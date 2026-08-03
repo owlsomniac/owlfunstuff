@@ -712,13 +712,13 @@
    0. DATA MODEL  (from the Adventuring Guide + Pixel Cat's End community data)
    ========================================================================= */
 const ATTRS = [
-  {key:"strength",   label:"Strength",   short:"physical might",        jobs:["Builder","Mason","Blacksmith","Miner"]},
-  {key:"agility",    label:"Agility",    short:"speed & dexterity",     jobs:["Hunter","Fisher","Bug Catcher"]},
-  {key:"health",     label:"Health",     short:"resilience & healing",  jobs:[]},
-  {key:"finesse",    label:"Finesse",    short:"precision & detail",    jobs:["Clothier","Artist","Craftscat"]},
-  {key:"cleverness", label:"Cleverness", short:"intellect & knowledge", jobs:["Herbalist","Apothecary","Scribe"]},
-  {key:"perception", label:"Perception", short:"awareness & focus",     jobs:["Gatherer","Gardener","Farmer","Flockherd","Baker"]},
-  {key:"luck",       label:"Luck",       short:"fortune & rare finds",  jobs:[]}
+  {key:"strength",   label:"Strength",   abbr:"Str",  short:"physical might",        jobs:["Builder","Mason","Blacksmith","Miner"]},
+  {key:"agility",    label:"Agility",    abbr:"Agi",  short:"speed & dexterity",     jobs:["Hunter","Fisher","Bug Catcher"]},
+  {key:"health",     label:"Health",     abbr:"Hea",  short:"resilience & healing",  jobs:[]},
+  {key:"finesse",    label:"Finesse",    abbr:"Fin",  short:"precision & detail",    jobs:["Clothier","Artist","Craftscat"]},
+  {key:"cleverness", label:"Cleverness", abbr:"Cle",  short:"intellect & knowledge", jobs:["Herbalist","Apothecary","Scribe"]},
+  {key:"perception", label:"Perception", abbr:"Per",  short:"awareness & focus",     jobs:["Gatherer","Gardener","Farmer","Flockherd","Baker"]},
+  {key:"luck",       label:"Luck",       abbr:"Luck", short:"fortune & rare finds",  jobs:[]}
 ];
 const PERS = [
   {key:"bravery",      label:"Bravery",      low:"Timid",     high:"Fearless"},
@@ -1812,12 +1812,30 @@ function rosterEnrichFromCat(id, cat){
 
 let rosterFilter="all", rosterSort=null, bulkStop=false, bulkRunning=false;
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+// Base Stat Total + the top three base stats (one stat per slot, ties broken by attribute
+// order), from the cat's BASE stats (trinket bonuses excluded). Only when all seven are
+// known — a partial fetch shouldn't imply a full total. Powers the "BST" column.
+function catStatSummary(cat){
+  const data=(cat&&cat.data)||{};
+  const vals=[];
+  ATTRS.forEach(a=>{
+    let raw=data[a.label+" base"]; if(raw==null||raw==="") raw=data[a.label];   // base, else the shown value
+    const n=parseInt(raw,10);
+    if(raw==null||raw===""||isNaN(n)) return;
+    vals.push({name:a.label, abbr:a.abbr, n});
+  });
+  if(vals.length!==ATTRS.length) return null;   // need all seven for a meaningful total
+  const total=vals.reduce((s,v)=>s+v.n,0);
+  const top=[...vals].sort((a,b)=>b.n-a.n).slice(0,3);   // top three overall (stable → ties keep attr order)
+  return {total, top};
+}
 function rosterCellValue(r,cache,id,key){
   if(key==="name") return r.cats[id].name||"";
   if(key==="id")   return id;
   if(key==="white") return catWhiteText(r.cats[id].data);
   if(key==="accent") return catAccentText(r.cats[id]);
   if(key==="density") return catDensity(r.cats[id]);
+  if(key==="bst"){ const s=catStatSummary(r.cats[id]); return s?String(s.total):""; }   // sorts by the total
   if(key==="sugclass")    return (cache[id]&&cache[id].className)||"";
   if(key==="sugclasspct") return (cache[id]&&cache[id].classPct)?cache[id].classPct+"%":"";
   if(key==="sugjobs")     return (cache[id]&&cache[id].jobs||[]).join(", ");
@@ -1931,6 +1949,7 @@ function rosterColumnModel(r){
       }
       if(hasWhite) cols.push({key:"white",label:"White"});
       if(cols.length) cols.push({key:"accent",label:"Accent"}); }   // Accent after White
+    if(gk==="stats" && hasStats) cols.unshift({key:"bst",label:"BST"});   // Base Stat Total + highest, leads the Stats group
     if(gk==="jobs" && hasJobData) JOB_SKILLS.forEach(js=>cols.push({key:"job:"+js.job, label:js.job}));
     // Adventure Classes: one dual (Lv + Fit%) column per class, in class order.
     if(gk==="class" && hasClassData) CLASSES.forEach(C=>cols.push({label:C.name, dual:true,
@@ -2016,6 +2035,8 @@ function rosterRender(){
     const job=notNA(col(c,/occupation/i)), cls=notNA(col(c,/^class$/i))||notNA(col(c,/adventuring/i));
     const recJob=(s.jobs&&s.jobs.length)?s.jobs.join(", "):"", recCls=s.className?(s.className+(s.classPct?(" ("+s.classPct+"%)"):"")):"";
     const line=(k,v,vc)=> v?`<div><span class="qv-k">${k}</span> <span class="${vc||""}">${esc(v)}</span></div>`:"";
+    const ss=catStatSummary(c);   // top three base stats, e.g. "Str (20), Agi (18), Luck (17)"
+    const bestStats = ss ? ss.top.map(t=>`${t.abbr} (${t.n})`).join(", ") : "";
     // The cat's genetic string (revealed / page-derived, accent pinned to what's known) plus
     // the recessives it hides — the WHOLE block is one click-copy. Copying yields the gene
     // string (ready to paste into Breeding) with a "Carries: …" line appended when there is one.
@@ -2030,7 +2051,7 @@ function rosterRender(){
         + carriesInner
         + `</button>`;
     }
-    return `<div class="qv-appr">${esc(appr||"—")}</div>`+line("Job:",job)+line("Class:",cls)+line("Rec Job:",recJob,"qv-rec")+line("Rec Class:",recCls,"qv-rec")+genesBlock;
+    return `<div class="qv-appr">${esc(appr||"—")}</div>`+line("Job:",job)+line("Class:",cls)+line("Best Stats:",bestStats)+line("Rec Job:",recJob,"qv-rec")+line("Rec Class:",recCls,"qv-rec")+genesBlock;
   };
   const attrLabels=new Set(ATTRS.map(a=>a.label));   // to flag trinket-boosted stat totals
   const body=tids.slice(0,400).map(id=>{
@@ -2062,6 +2083,15 @@ function rosterRender(){
             return `<div>${ln[0]?`<span class="qv-k">${esc(ln[0])}</span> `:""}${val?`<span class="${ln[2]||''}">${esc(val)}</span>`:"—"}</div>`; }).join("");
         }
         else if(leaf.key==="sugclass"||leaf.key==="sugjobs"||leaf.key==="sugclasspct"){ cell = v?`<span class="sug">${esc(v)}</span>`:"—"; }
+        else if(leaf.key==="bst"){
+          addcls("classcell");                          // multi-line layout like the class cells
+          const s=catStatSummary(c);
+          if(s){ tdtitle=`Base stat total ${s.total} · top ${s.top.map(t=>t.n+" "+t.name).join(", ")}`;
+            cell = `<div><span class="qv-k">Total:</span> <b>${s.total}</b></div>`+
+                   `<div><span class="qv-k">Top 3:</span></div>`+
+                   s.top.map(t=>`<div>${t.n} ${esc(t.name)}</div>`).join("");
+          } else cell = "—";
+        }
         else if(g.key==="stats" && isData && attrLabels.has(leaf.key.slice(5))){
           const label=leaf.key.slice(5), base=(c.data||{})[label+" base"], gr=statGrade(parseInt(v,10));
           if(gr){ addcls(gr.cls); tdtitle=`${label}: ${gr.label} · ${gr.dice}`; }
