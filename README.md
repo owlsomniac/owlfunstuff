@@ -113,12 +113,17 @@ to it on your next visit, so nothing is ever lost.
 
 ### What it computes
 
+Bravery, Benevolence and Spite each grant a **number of adventuring dice** (like the seven stats), not a flat bonus.
+Trait value → dice: **1**→1, **2–3**→2, **4–7**→3, **8–9**→4, **10–11**→5, **12–13**→6, **14**→7, **15**→8. Spite
+scales *inversely* with Benevolence (≤-2→6, -1..1→5, 2–3→4, 4–5→3, 6+→1 dice), so every cat has both a Benevolence-die
+and a Spite-die count.
+
 | Trait | Effect |
 |-------|--------|
-| **Bravery** | `+min(5, floor(v/2))` to mental-fortitude pools and Spite defense. |
-| **Benevolence 8+** | up to **+5 Benevolence** (Befriend / cooperative rolls); unlocks caring day jobs. |
-| **Benevolence 0–1** | **+5 Spite** (Intimidate, Bluff, Hiss…); resisted by the target's Bravery. |
-| **Energy / Extroversion / Dedication** | Situational *exploration* advantages only — no combat dice bonus. |
+| **Bravery** | Rolls its dice on brave checks and when *defending against Spite* — broadly useful on every quest. |
+| **Benevolence (high)** | Its dice power the **Befriend** scenario skill (pacify/recruit to skip a fight) — a skill-challenge tool, not combat damage; also gates caring day jobs. |
+| **Spite (low Benevolence)** | The offensive engine for **Intimidate / Bluff** and the Bard's **Hiss**; resisted by the target's Bravery. Most valuable on a **Bard**. |
+| **Energy / Extroversion / Dedication** | Day-job & *exploration* advantages only — no adventuring combat dice. |
 
 Class fit = `0.55 × attribute-fit + 0.45 × personality-fit` across Fighter, Guardian, Thief, Ranger, Medic, Scout, Bard.
 Day jobs come from the strongest attributes; high Benevolence/Bravery surface specialty roles (Caregiver, Doctor,

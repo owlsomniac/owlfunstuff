@@ -1088,15 +1088,25 @@ function extractCatIdsFromProfile(html){
 /* =========================================================================
    3. ENGINE  — bonuses, class fit, job fit  (rules from the guide)
    ========================================================================= */
-function braveryBonus(v){ return v==null?null:clamp(Math.floor(v/2),0,5); }
-
+// Bravery, Benevolence and Spite each grant a NUMBER OF DICE for their adventuring rolls
+// (just like the 7 stats do) — not a flat additive bonus. Points normally run 1–10, but
+// trinkets/ascension can push higher. Curve from the game's personality tables.
+function persTraitDice(v){                 // Bravery / Benevolence dice by trait value
+  if(v==null) return null;
+  if(v<=1) return 1; if(v<=3) return 2; if(v<=7) return 3; if(v<=9) return 4;
+  if(v<=11) return 5; if(v<=13) return 6; if(v<=14) return 7; return 8;
+}
+function spiteDice(v){                      // Spite dice — LOW Benevolence gives MORE
+  if(v==null) return null;
+  if(v<=-2) return 6; if(v<=1) return 5; if(v<=3) return 4; if(v<=5) return 3; return 1;
+}
+function braveryBonus(v){ return persTraitDice(v); }   // # of Bravery dice (brave rolls + defending vs Spite)
+// Every cat has BOTH a Benevolence-dice and a Spite-dice count from its single Benevolence
+// stat: high favours the Befriend skill, low favours Intimidate/Bluff.
 function benevolenceOutcome(v){
   if(v==null) return null;
-  if(v<=1)  return {mode:"Malice",     benevolence:0, spite:5};
-  if(v<=3)  return {mode:"Spiteful",   benevolence:0, spite:3};
-  if(v<=5)  return {mode:"Cool",       benevolence:0, spite:1};
-  if(v<=7)  return {mode:"Amiable",    benevolence:1, spite:0};
-  return     {mode:"Benevolent", benevolence:clamp(Math.floor(v/2),0,5), spite:0};   // 8+
+  return {mode: v>=8?"Benevolent" : v<=3?"Spiteful" : "Balanced",
+          benevolence: persTraitDice(v), spite: spiteDice(v)};
 }
 
 function attrRating(v){
@@ -1187,7 +1197,7 @@ function recommendJobs(cat){
     if((A.cleverness??0)>=14) roles.push(["🩺","Doctor (strong)","Benevolence "+ben+" paired with Cleverness "+A.cleverness+" makes a potent party-healing Doctor."]);
     roles.push(["🕊️","Diplomat Bard","Max Benevolence makes an ideal peace-making, Befriend-focused Bard."]);
   }
-  if(spite && spite.spite>=3){
+  if(spite && spite.spite>=4){   // ≥4 Spite dice = Benevolence ≤3 (genuinely low)
     roles.push(["😾","Spite Bard","Very low Benevolence maximises the Bard's Hiss debuff and Intimidate/Bluff skills."]);
   }
   if((P.bravery??0)>=8){
@@ -1277,32 +1287,23 @@ function renderResults(cat){
   // combat bonus cards
   const bonusCards=[];
   if(bb!=null){
-    const strong=bb>=4;
+    const strong=bb>=4, die=bb===1?'die':'dice';
     bonusCards.push(`<div class="bonus"><div class="em">🦁</div><div class="body">
-      <b>Bravery → +${bb} Bravery</b> <span class="pill ${strong?'g':bb>=2?'c':'w'}">${strong?'Fearless':bb>=2?'Steady':'Skittish'}</span>
-      <p>Adds <b>+${bb}</b> to mental-fortitude dice pools and to <b>defending against Spite</b> (Growl, Screech, Hiss).
-      ${bb<=1?'Low Bravery is a pure liability on quests — prone to fleeing and unmitigated psychological damage.':'High Bravery is universally wanted for adventuring.'}</p>
+      <b>Bravery → ${bb} ${die}</b> <span class="pill ${strong?'g':bb>=3?'c':'w'}">${strong?'Fearless':bb>=3?'Steady':'Skittish'}</span>
+      <p>Rolls <b>${bb} ${die}</b> on Bravery checks and when <b>defending against Spite</b> (Intimidate, Bluff, the Bard's Hiss).
+      Broadly useful on every quest — ${bb<=2?'low Bravery leaves a cat prone to fleeing and unmitigated psychological damage.':'high Bravery is universally wanted for adventuring.'}</p>
     </div></div>`);
   }
   if(bo){
-    if(bo.spite>0){
-      bonusCards.push(`<div class="bonus"><div class="em">😾</div><div class="body">
-        <b>Low Benevolence → +${bo.spite} Spite</b> <span class="pill b">${esc(bo.mode)}</span>
-        <p>Powers <b>Intimidate</b> &amp; <b>Bluff</b> and armor-piercing psychological attacks (Growl, Screech, and the Bard's <b>Hiss</b>). Resisted by the target's Bravery.</p>
-      </div></div>`);
-    }
-    if(bo.benevolence>0){
-      bonusCards.push(`<div class="bonus"><div class="em">💞</div><div class="body">
-        <b>Benevolence → +${bo.benevolence} Benevolence</b> <span class="pill g">${esc(bo.mode)}</span>
-        <p>Adds <b>+${bo.benevolence}</b> to cooperative/friendly dice pools and the <b>Befriend</b> skill — pacify or recruit wild creatures to skip combat. Also gates caring day jobs.</p>
-      </div></div>`);
-    }
-    if(bo.spite===0 && bo.benevolence===0){
-      bonusCards.push(`<div class="bonus"><div class="em">🤝</div><div class="body">
-        <b>Benevolence → neutral</b> <span class="pill n">${esc(bo.mode)}</span>
-        <p>Mid-range Benevolence grants no combat bonus either way — neither the Befriend boost (needs 8+) nor the Spite engine (needs 0–1).</p>
-      </div></div>`);
-    }
+    const sDie=bo.spite===1?'die':'dice', bDie=bo.benevolence===1?'die':'dice';
+    bonusCards.push(`<div class="bonus"><div class="em">😾</div><div class="body">
+      <b>Spite → ${bo.spite} ${sDie}</b> <span class="pill ${bo.spite>=4?'b':'n'}">${bo.spite>=4?'Spiteful':bo.spite>=3?'Edgy':'Kind'}</span>
+      <p>The offensive engine for <b>Intimidate</b> &amp; <b>Bluff</b> and the Bard's <b>Hiss</b> (armour-piercing psychological damage, resisted by the target's Bravery). <b>Low Benevolence</b> maximises it — most valuable on a <b>Bard</b>.</p>
+    </div></div>`);
+    bonusCards.push(`<div class="bonus"><div class="em">💞</div><div class="body">
+      <b>Benevolence → ${bo.benevolence} ${bDie}</b> <span class="pill ${bo.benevolence>=4?'g':'n'}">${esc(bo.mode)}</span>
+      <p>Rolls <b>${bo.benevolence} ${bDie}</b> on the <b>Befriend</b> skill — a scenario/skill-challenge tool to pacify or recruit creatures and skip a fight, not combat damage. High Benevolence also gates caring day jobs.</p>
+    </div></div>`);
   }
   // situational (non-combat) traits
   const sit=[];
@@ -1406,18 +1407,21 @@ function renderResults(cat){
 
   <details class="notes">
     <summary>How these numbers are calculated</summary>
-    <h4>Personality → combat bonus rules</h4>
+    <h4>Personality → adventuring dice</h4>
+    <p>Bravery and Benevolence each grant a <b>number of dice</b> (like the seven stats), not a flat bonus:</p>
     <div class="scrollx"><table>
-      <tr><th>Trait value</th><th>Bravery bonus</th><th>Benevolence value</th><th>Result</th></tr>
-      <tr><td>10+</td><td>+5</td><td>0–1</td><td>+5 Spite (Malice)</td></tr>
-      <tr><td>8–9</td><td>+4</td><td>2–3</td><td>+3 Spite (Spiteful)</td></tr>
-      <tr><td>6–7</td><td>+3</td><td>4–5</td><td>+1 Spite (Cool)</td></tr>
-      <tr><td>4–5</td><td>+2</td><td>6–7</td><td>+1 Benevolence (Amiable)</td></tr>
-      <tr><td>2–3</td><td>+1</td><td>8–9</td><td>+4 Benevolence</td></tr>
-      <tr><td>0–1</td><td>+0</td><td>10+</td><td>+5 Benevolence</td></tr>
+      <tr><th>Trait value</th><th>1</th><th>2–3</th><th>4–7</th><th>8–9</th><th>10–11</th><th>12–13</th><th>14</th><th>15</th></tr>
+      <tr><td>Bravery / Benevolence dice</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td></tr>
     </table></div>
-    <p>Bravery bonus = <code>min(5, floor(value ÷ 2))</code>. Energy, Extroversion and Dedication give
-    <b>situational exploration advantages only</b> — the guide is explicit that they do not feed dedicated combat stats or scale heals.</p>
+    <p><b>Spite</b> dice scale <i>inversely</i> with Benevolence — every cat has both a Benevolence-dice and a Spite-dice count:</p>
+    <div class="scrollx"><table>
+      <tr><th>Benevolence</th><th>≤ -2</th><th>-1 to 1</th><th>2–3</th><th>4–5</th><th>6+</th></tr>
+      <tr><td>Spite dice</td><td>6</td><td>5</td><td>4</td><td>3</td><td>1</td></tr>
+    </table></div>
+    <p><b>Bravery</b> rolls power brave checks and defending against Spite (broadly useful). <b>Spite</b> (low Benevolence)
+    powers Intimidate/Bluff and the Bard's Hiss. <b>High Benevolence</b> powers the <b>Befriend</b> scenario skill — not
+    combat damage. <b>Energy, Extroversion and Dedication</b> give <b>day-job &amp; exploration bonuses only</b> — the guide
+    is explicit that they do not feed adventuring combat dice.</p>
     <h4>Effective totals &amp; equipment</h4>
     <p>Each stat's big number is the <b>effective total</b> (base + equipped items), read straight from the cat's stat boxes.
     When a held trinket boosts a stat, the row also shows <code>base · +N Item name</code> — e.g. <code>base 24 · +3 Raw Essence Crystal</code>
