@@ -127,7 +127,9 @@ and a Spite-die count.
 | **Energy / Extroversion / Dedication** | Day-job & *exploration* advantages only — no adventuring combat dice. |
 
 Class fit = `0.80 × attribute-fit + 0.20 × personality-fit` for most classes across Fighter, Guardian, Thief, Ranger,
-Medic, Scout, Bard — a class lives or dies on its **stats**, so personality is only a light ~20% adjustment.
+Medic, Scout, Bard — a class lives or dies on its **stats**, so personality is only a light ~20% adjustment. Fit is
+computed on the cat's **base stats** (held-trinket bonuses removed): class fit is about innate aptitude, so a removable
+item — e.g. a Guardian's Medallion pumping Health — can't circularly recommend the class it favours.
 Attribute-fit weights each class's **core stat** heavily (Fighter = Strength, Guardian = Health, Thief = Agility, Ranger =
 Finesse, Medic = Cleverness, Scout/Bard = Perception), and three stats help **every** cat as a baseline — **Agility**
 (movement tiles), **Perception** (initiative) and **Health** (HP). A class's own stats are **added on top of** that

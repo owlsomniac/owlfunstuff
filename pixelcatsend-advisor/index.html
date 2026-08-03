@@ -1271,9 +1271,19 @@ function breakdownLine(d){
   return `<div class="rate" title="base ${d.base} ${sign}${d.equipSum} equip = ${d.total} total">base ${d.base} · ${items}</div>`;
 }
 
+// Class fit reflects a cat's INNATE aptitude, so strip held-trinket bonuses before scoring: a
+// removable item (e.g. a Guardian's Medallion pumping Health) must not tilt the recommendation
+// toward the class that item happens to favour. Returns a scoring copy with BASE attributes.
+function catForClassFit(cat){
+  const out={...cat, attributes:{...(cat.attributes||{})}};
+  ATTRS.forEach(a=>{ const d=(cat.details||{})[a.key]; if(d && d.equipSum && d.base!=null) out.attributes[a.key]=d.base; });
+  return out;
+}
+
 function renderResults(cat){
-  const classes = scoreClasses(cat);
-  const jobsData = recommendJobs(cat);
+  const fit = catForClassFit(cat);            // base stats — gear must not decide the class
+  const classes = scoreClasses(fit);
+  const jobsData = recommendJobs(fit);
   // remember this cat's suggestion so the roster list/table can show it
   if(cat.id){ try{ const c=suggestLoad(); c[cat.id]={className:classes[0]?classes[0].name:"", classPct:classes[0]?classes[0].pct:0, pcts:classPctMap(classes), jobs:jobsData.jobs.flatMap(j=>j.jobs).slice(0,4), ts:nowTs()}; suggestSave(c); rosterRender(); }catch(e){} }
   const arch = archetype(cat.personality);
@@ -1452,7 +1462,9 @@ function renderResults(cat){
     <h4>Effective totals &amp; equipment</h4>
     <p>Each stat's big number is the <b>effective total</b> (base + equipped items), read straight from the cat's stat boxes.
     When a held trinket boosts a stat, the row also shows <code>base · +N Item name</code> — e.g. <code>base 24 · +3 Raw Essence Crystal</code>
-    for an effective Luck of 27. Recommendations use the effective total.</p>
+    for an effective Luck of 27. <b>Class fit is computed on the base stats</b> — a removable trinket shouldn't decide which class
+    suits a cat (a Guardian's Medallion pumping Health mustn't circularly recommend Guardian) — while the grades, dice and day-job
+    modifiers shown reflect the effective total.</p>
     <h4>Class fit</h4>
     <p>For most classes each score is <code>0.80 × attribute-fit + 0.20 × personality-fit</code> — a class lives or dies on its core
     <b>stats</b>, so personality is only a light ~20% adjustment. Attribute-fit weights that class's core stat highest
@@ -1766,7 +1778,7 @@ const ROSTER_BOOKMARKLET = "javascript:(function(){try{var h=document.documentEl
 function classPctMap(classesArr){ const m={}; (classesArr||[]).forEach(c=>{ if(c&&c.name) m[c.name]=c.pct; }); return m; }
 // Bump whenever scoreClasses / recommendJobs scoring changes, so cached suggestions
 // (pce-suggest-v1) recompute on next load instead of showing stale numbers.
-const ALGO_VERSION = 4;
+const ALGO_VERSION = 5;
 function computeSuggestion(cat){
   const classes=scoreClasses(cat), cls=classes[0];
   const jobs=recommendJobs(cat).jobs.flatMap(j=>j.jobs).slice(0,4);
@@ -1774,10 +1786,11 @@ function computeSuggestion(cat){
 }
 function cacheSuggestion(id,cat){ if(!id) return; const c=suggestLoad(); c[id]=computeSuggestion(cat); suggestSave(c); }
 // Reconstruct a scorable {attributes, personality} from a roster cat's stored stat
-// columns (the effective totals) — null if it has no stats captured yet.
+// columns — null if it has no stats captured yet. Attributes are BASE values (held-trinket
+// bonuses removed): class fit is about innate aptitude, so gear must not sway the recommendation.
 function rosterCatForScoring(rc){
   const data=(rc&&rc.data)||{}, cat={attributes:{}, personality:{}}; let any=false;
-  ATTRS.forEach(a=>{ const v=parseInt(data[a.label],10); if(!isNaN(v)){ cat.attributes[a.key]=v; any=true; } });
+  ATTRS.forEach(a=>{ const v=catBaseStat(data, a.label); if(v!=null){ cat.attributes[a.key]=v; any=true; } });
   PERS.forEach(p=>{ const v=parseInt(data[p.label],10); if(!isNaN(v)){ cat.personality[p.key]=v; any=true; } });
   return any?cat:null;
 }
