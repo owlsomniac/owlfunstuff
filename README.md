@@ -33,8 +33,11 @@ anywhere — use the row's pencil.
 The roster itself is one **searchable, filterable, sortable table** (zebra-striped, with full-size portraits).
 **Preview, Name and ID stay on the left** (Name links to the cat's own page); every other column is grouped under a
 **collapsible header** — click a group (*Basic info · Appearance · Jobs · Adventure Classes · Personality · Stats*)
-to fold it away to the left. Groups are separated by clear **3px dividers** so they never run together when expanded.
-A collapsible **Quick View** column gives the at-a-glance summary (appearance, current job & class, recommended
+to fold it away to the left. Groups are separated by clear **3px dividers**, and every column has a **1px vertical
+rule** so the data reads as a clean grid; cell padding is tight so more columns fit without scrolling. The table
+**sizes itself to the viewport** — its scroll region fills the space down to the bottom of the screen, with the header
+row pinned, so you see the top and bottom at once without zooming out (many rows scroll *inside* the table, not the page).
+A wider, collapsible **Quick View** column gives the at-a-glance summary (appearance, current job & class, recommended
 job/class, and the cat's **genetic string as a one-click copy chip** — tap it to copy, ready to paste into Breeding or
 share). Below the string, a **Carries:** line lists the alleles a cat is hiding — *Longhair* (`[SL]`),
 *Dilute* (`[FD]`), *Solid* (a patterned cat carrying solid, `[YN]`), *No-white* (`[YN]`), *Null (wind)* (`[NO]`/`[SO]`),
@@ -45,9 +48,11 @@ names the carried colour — e.g. a **North `BO`** shows Black but *carries Red*
 known: an unrevealed allele reads `?`, so a cat with `[S?]` fur makes no claim about carrying longhair. The **ID** cell is a one-click copy too — tap it to grab the cat's numeric ID. **Click any column sub-header to
 sort.** Highlights:
 
-- **Appearance** — a single **White** column (e.g. *Classic, C7, Spotted Piebald*, or *None*), a **Density** column
-  (the coat's colour density / dilution level, **1–4**, recovered from its colour) and an **Accent** column (the game
-  shows accent only when it's visible, so cats without a revealed accent read **Unknown**). The White label respects the
+- **Appearance** — the coat is split into a **Color** column (just the shade — *Charcoal-Buff*, *Chocolate-Brown*,
+  *Beige*) and its own **Color Type** column (*Standard · Watercolor · Tortoiseshell*), so you can sort or scan by type
+  without the word cluttering every colour. Then a **White** column (e.g. *Classic, C7, Spotted Piebald*, or *None*), a
+  **Density** column (the coat's colour density / dilution level, **1–4**, recovered from its colour) and an **Accent**
+  column (the game shows accent only when it's visible, so cats without a revealed accent read **Unknown**). The White label respects the
   visibility gene, so a white that's **carried but not shown** (`[NN5C]`) reads *Hidden, Classic, C5, …* and one that
   **expresses white at level 0** (`[YY0C]`) reads *Classic, C0, None* — the type and level are kept instead of collapsing
   to a bare *None* (an ordinary no-white cat still just reads *None*).
