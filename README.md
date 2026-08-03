@@ -138,7 +138,8 @@ Each class's score is a blend of six parts (weights sum to 100):
 - **Key attributes — 60.** The class's core + secondary stats, weighted internally (core ×2): Fighter = Strength·Health·Agility,
   Guardian = Health·Agility, Thief = Agility·Health, Ranger = Finesse·Perception, Medic = Cleverness·Agility, Scout = Perception,
   **Bard = low Benevolence·Perception**.
-- **Other attributes — 10.** The class's remaining stats, averaged — a rock-bottom off-stat dings fit a little; it never drives the pick.
+- **Other attributes — 10.** Overall stat wellness — the average of *all* the cat's stats (the same for every class, so a maxed
+  off-stat can't tilt a class that doesn't use it above one that does; a weak stat still drags it down a little).
 - **Personality — 10.** Overall personality level (Bravery included). **Benevolence is scored as polarization** — only very high (Befriend)
   or very low (Spite) is useful; the wishy-washy middle isn't.
 - **Agility · Perception · Health — 10.** Averaged: movement, initiative and HP help every cat.

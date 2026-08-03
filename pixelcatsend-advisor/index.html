@@ -746,8 +746,8 @@ function jobLevelFromData(str, job){
 //   KEY (0.60) — the class's core + secondary stats, with internal weights (primary 100, each
 //     secondary 50). This is what defines the class. For the Bard the key stat is BENEVOLENCE
 //     (low = Spite), equalized onto the attribute scale so it competes with real stats.
-//   OTHER (0.10) — the cat's remaining (non-key) attributes, equally averaged: a rock-bottom
-//     off-stat dings fit a little; it never drives the pick.
+//   OTHER (0.10) — overall stat wellness: the average of ALL the cat's attributes (same for every
+//     class, so a maxed off-stat can't tilt a class that doesn't use it; a weak stat still dings).
 //   PERSONALITY (0.10) — the cat's overall personality level (Benevolence scored as POLARIZATION,
 //     since only very high or very low is useful; the rest by level, Bravery included here too).
 //   UNIVERSAL (0.10) — Agility, Perception, Health averaged: movement / initiative / HP help all.
@@ -1228,10 +1228,10 @@ function scoreClasses(cat){
       kw+=w; ks+=w*sc;
     }
     const keyScore = kw ? ks/kw : 0;
-    // OTHER (0.10): the class's non-key attributes, equally averaged — a rock-bottom off-stat dings
-    // fit a little, but never drives the pick.
-    const keyAttr = new Set(Object.keys(c.fit).filter(k=>ATTRS.some(a=>a.key===k)));
-    const others = ATTRS.filter(a=>!keyAttr.has(a.key) && A[a.key]!=null);
+    // OTHER (0.10): overall stat wellness — the average of ALL the cat's attributes. Kept the same
+    // for every class (not just the non-key ones) so a maxed off-stat can't tilt a class that
+    // doesn't use it above one that does; a weak stat still drags the average down a little.
+    const others = ATTRS.filter(a=>A[a.key]!=null);
     const otherScore = others.length ? others.reduce((s,a)=>s+gradePercentile(A[a.key]),0)/others.length : 0;
 
     const total = FIT_WEIGHTS.key*keyScore + FIT_WEIGHTS.other*otherScore
@@ -1517,7 +1517,7 @@ function renderResults(cat){
       <li><b>Key attributes — 60%.</b> The class's core + secondary stats, weighted internally (core ×2): Fighter = Strength·Health·Agility,
       Guardian = Health·Agility, Thief = Agility·Health, Ranger = Finesse·Perception, Medic = Cleverness·Agility, Scout = Perception,
       <b>Bard = low Benevolence·Perception</b>.</li>
-      <li><b>Other attributes — 10%.</b> The class's remaining stats, averaged — a rock-bottom off-stat dings the score a little; it never drives the pick.</li>
+      <li><b>Other attributes — 10%.</b> Overall stat wellness — the average of <i>all</i> the cat's stats. A weak stat drags it down a little; a strong one lifts it. Kept the same for every class, so a maxed off-stat never tilts a class that doesn't use it.</li>
       <li><b>Personality — 10%.</b> Overall personality level (Bravery included). <b>Benevolence is scored as polarization</b> — only very high (Befriend) or very low (Spite) is useful; the middle isn't.</li>
       <li><b>Agility · Perception · Health — 10%.</b> Averaged: movement, initiative and HP help every cat.</li>
       <li><b>Bravery — 10%.</b> Counted again on its own — the defensive stat against Spite on every quest.</li>
@@ -1829,7 +1829,7 @@ const ROSTER_BOOKMARKLET = "javascript:(function(){try{var h=document.documentEl
 function classPctMap(classesArr){ const m={}; (classesArr||[]).forEach(c=>{ if(c&&c.name) m[c.name]=c.pct; }); return m; }
 // Bump whenever scoreClasses / recommendJobs scoring changes, so cached suggestions
 // (pce-suggest-v1) recompute on next load instead of showing stale numbers.
-const ALGO_VERSION = 7;
+const ALGO_VERSION = 8;
 function computeSuggestion(cat){
   const classes=scoreClasses(cat), cls=classes[0];
   const jobs=recommendJobs(cat).jobs.flatMap(j=>j.jobs).slice(0,4);
