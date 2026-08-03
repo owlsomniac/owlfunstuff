@@ -742,27 +742,28 @@ function jobLevelFromData(str, job){
 
 /* Class definitions — attribute weights + personality wants, per the guide's
    ideal profiles (section 6), with core attribute anchors from the game. */
-// Class fit weights each class's CORE attribute(s) heavily (weight 2), plus any it especially
-// values. On top of that, three attributes help EVERY cat regardless of class — Agility (more
-// movement tiles), Perception (initiative) and Health (HP) — applied as a universal floor
-// (UNIVERSAL_ATTR, merged in by max). Personality-fit is the cat's overall level (Bravery
-// double-weighted); a class may invert a trait it wants LOW — only the Bard (low Benevolence → Spite).
+// Class fit weights each class's CORE attribute(s) heavily (weight 2 so the core stays the
+// single biggest factor). Three attributes help EVERY cat as a baseline — Agility (movement),
+// Perception (initiative), Health (HP) — in UNIVERSAL_ATTR. A class's own `attrs` are ADDED on
+// top of that baseline, so a stat a class *specifically* needs (e.g. Fighter's Agility) ends up
+// weighted ABOVE the universal bump, not just at it. Personality-fit is the cat's overall level
+// (Bravery double-weighted); a class may invert a trait it wants LOW — only the Bard (low Benevolence → Spite).
 const UNIVERSAL_ATTR = {agility:.5, perception:.4, health:.35};
 const CLASSES = [
   {key:"fighter", name:"Fighter", em:"⚔️", core:"strength",
-   attrs:{strength:2, health:.6},   // Strength core (Bite/Kick); extra Health to tank constant melee
+   attrs:{strength:2, agility:.5, health:.5},   // Strength core (Bite/Kick); Agility to reach, Health to tank constant melee
    blurb:"Frontline bruiser — shrugs off fear and lands heavy Kick/Bite hits."},
   {key:"guardian", name:"Guardian", em:"🛡️", core:"health",
-   attrs:{health:2},
+   attrs:{health:2, agility:.5},   // Health core; Agility to stay in range of allies it protects
    blurb:"Damage sponge — Protects allies (150% HP) and resists status attacks."},
   {key:"thief", name:"Thief", em:"🗡️", core:"agility",
-   attrs:{agility:2},   // Agility core (Hide/Backstab); improved dodge dice cover survivability
+   attrs:{agility:2, health:.3},   // Agility core (Hide/Backstab); a little Health for melee range (less than Fighter)
    blurb:"Elusive striker — hard to hit, uses Spite for underhanded tactics."},
   {key:"ranger", name:"Ranger", em:"🏹", core:"finesse",
-   attrs:{finesse:2, perception:.6},   // Finesse core (Piercing Bolt/Double Shot); Perception for fast shots
+   attrs:{finesse:2, perception:.5},   // Finesse core (Piercing Bolt/Double Shot); Perception for fast shots
    blurb:"Precision shooter — patient, lands consecutive long-range attacks."},
   {key:"medic", name:"Medic", em:"➕", core:"cleverness",
-   attrs:{cleverness:2},
+   attrs:{cleverness:2, agility:.5},   // Cleverness core (Tend Wounds/Cooperative Care); Agility to reach the wounded
    blurb:"Field healer — Cleverness scales Tend Wounds; Benevolence buys goodwill."},
   {key:"scout", name:"Scout", em:"👁️", core:"perception",
    attrs:{perception:2},
@@ -1161,11 +1162,12 @@ const PERS_FIT_WEIGHT = {bravery:2};   // Bravery counts double in the personali
 function scoreClasses(cat){
   const {attributes:A, personality:P} = cat;
   return CLASSES.map(c=>{
-    // attribute score = weighted average, where the class's own weights are floored by the
-    // universally-useful stats (Agility movement, Perception initiative, Health HP).
+    // attribute score = weighted average. Every cat gets the universally-useful stats (Agility
+    // movement, Perception initiative, Health HP) as a baseline, and a class's own weights are
+    // ADDED on top — so a stat a class specifically needs outweighs the plain universal bump.
     const wgt = {};
-    for(const k in c.attrs) wgt[k] = c.attrs[k];
-    for(const k in UNIVERSAL_ATTR) wgt[k] = Math.max(wgt[k]||0, UNIVERSAL_ATTR[k]);
+    for(const k in UNIVERSAL_ATTR) wgt[k] = UNIVERSAL_ATTR[k];
+    for(const k in c.attrs) wgt[k] = (wgt[k]||0) + c.attrs[k];
     let aw=0, as=0, reasons=[];
     for(const k in wgt){ aw+=wgt[k]; as+=attrNorm(A[k])*wgt[k]; }
     const attrScore = aw>0? as/aw : 0;
