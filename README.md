@@ -130,11 +130,14 @@ Class fit = `0.80 × attribute-fit + 0.20 × personality-fit` for most classes a
 Medic, Scout, Bard — a class lives or dies on its **stats**, so personality is only a light ~20% adjustment. Fit is
 computed on the cat's **base stats** (held-trinket bonuses removed): class fit is about innate aptitude, so a removable
 item — e.g. a Guardian's Medallion pumping Health — can't circularly recommend the class it favours.
-Attribute-fit weights each class's **core stat** heavily (Fighter = Strength, Guardian = Health, Thief = Agility, Ranger =
-Finesse, Medic = Cleverness, Scout/Bard = Perception), and three stats help **every** cat as a baseline — **Agility**
-(movement tiles), **Perception** (initiative) and **Health** (HP). A class's own stats are **added on top of** that
-baseline, so a stat a class *specifically* needs (e.g. a Fighter's Agility to close distance, or Health to tank) is
-weighted *above* the plain universal bump — more than a class that only benefits from it generically. Personality-fit is the cat's **overall personality level**
+Attribute-fit is **anchored to the game's grade scale**, so a cat whose class stats average a given grade reads as that
+grade's percentage (value → %): **Poor** 1–6 → 0–30, **Average** 7–12 → 30–50, **Good** 13–16 → 50–65, **Very Good**
+17–20 → 65–80, **Excellent** 21–25 → 80–92, **Exceptional** 26+ → 92–100. It weights each class's **core stat** heavily
+(Fighter = Strength, Guardian = Health, Thief = Agility, Ranger = Finesse, Medic = Cleverness, Scout/Bard = Perception),
+three stats help **every** cat as a baseline — **Agility** (movement tiles), **Perception** (initiative) and **Health**
+(HP) — and every remaining stat still counts a *little*, so a class's off-stats aren't ignored (a rock-bottom stat dings
+the score a touch, far less than the core). A stat a class *specifically* needs is weighted *above* the plain universal
+bump — more than a class that only benefits from it generically. Personality-fit is the cat's **overall personality level**
 (a weighted average where **Bravery counts double**, since it defends against Spite on every quest) — among cats with
 similar stats the more well-rounded, braver one edges ahead. The **Bard** is the exception: it's personality-driven, so
 personality weighs much more (~45%) and **low Benevolence** — which fuels its Spite damage — is inverted and counts most.

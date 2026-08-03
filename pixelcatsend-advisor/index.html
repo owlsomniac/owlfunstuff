@@ -749,6 +749,10 @@ function jobLevelFromData(str, job){
 // weighted ABOVE the universal bump, not just at it. Personality-fit is the cat's overall level
 // (Bravery double-weighted); a class may invert a trait it wants LOW — only the Bard (low Benevolence → Spite).
 const UNIVERSAL_ATTR = {agility:.5, perception:.4, health:.35};
+// Every stat also counts a LITTLE toward every class (well-roundedness): a class's off-stats
+// aren't ignored, so a rock-bottom stat (a 1) dings the rating a bit vs a 10 — but at a small
+// weight, far below the core and universal stats, so it never drives the pick.
+const ATTR_FLOOR_WEIGHT = 0.2;
 const CLASSES = [
   {key:"fighter", name:"Fighter", em:"⚔️", core:"strength",
    attrs:{strength:2, agility:.5, health:.5},   // Strength core (Bite/Kick); Agility to reach, Health to tank constant melee
@@ -1147,7 +1151,28 @@ function persMatch(v, want){
   if(want==="polarized") return (v>=8||v<=3)?1 : (v>=6||v<=5)?.4 : .1;
   return 0;
 }
-const attrNorm = v => v==null?0 : clamp((v-ATTR_MIN)/(ATTR_MAX-ATTR_MIN),0,1);
+// Map a stat value to a fit fraction (0..1) anchored to Pixel Cat's End's own grade scale, so a
+// class whose stats average a given grade reads as that grade's % band. Descriptor-weighted, so
+// the positive grades read as clearly strong numbers (value → %):
+//   Poor 1–6 → 0–30 · Average 7–12 → 30–50 · Good 13–16 → 50–65 · Very Good 17–20 → 65–80 ·
+//   Excellent 21–25 → 80–92 · Exceptional 26+ → 92–100. Band edges sit at the .5 between grades.
+const GRADE_BANDS = [
+  [0.5,  6.5,   0, 30],   // Poor       (1–6)
+  [6.5,  12.5, 30, 50],   // Average    (7–12)
+  [12.5, 16.5, 50, 65],   // Good       (13–16)
+  [16.5, 20.5, 65, 80],   // Very Good  (17–20)
+  [20.5, 25.5, 80, 92],   // Excellent  (21–25)
+  [25.5, 31.5, 92, 100]   // Exceptional(26+, capped at 31.5→100)
+];
+function gradePercentile(v){
+  if(v==null || isNaN(v)) return 0;
+  if(v<=0.5)  return 0;
+  if(v>=31.5) return 1;
+  for(const [loV,hiV,loP,hiP] of GRADE_BANDS){
+    if(v<=hiV) return (loP + (v-loV)/(hiV-loV)*(hiP-loP))/100;
+  }
+  return 1;
+}
 
 function balanceScore(attributes){
   const vals = ATTRS.map(a=>attributes[a.key]).filter(v=>v!=null);
@@ -1167,17 +1192,19 @@ const PERS_WEIGHT_DEFAULT = 0.20;
 function scoreClasses(cat){
   const {attributes:A, personality:P} = cat;
   return CLASSES.map(c=>{
-    // attribute score = weighted average. Every cat gets the universally-useful stats (Agility
-    // movement, Perception initiative, Health HP) as a baseline, and a class's own weights are
-    // ADDED on top — so a stat a class specifically needs outweighs the plain universal bump.
+    // attribute score = weighted average. Every stat counts a little (well-roundedness floor), the
+    // universally-useful stats (Agility movement, Perception initiative, Health HP) add a baseline
+    // on top, and the class's own weights add the most — so a stat a class specifically needs
+    // outweighs the universal bump, which outweighs an off-stat that only nudges via the floor.
     const wgt = {};
-    for(const k in UNIVERSAL_ATTR) wgt[k] = UNIVERSAL_ATTR[k];
+    ATTRS.forEach(a=> wgt[a.key] = ATTR_FLOOR_WEIGHT);
+    for(const k in UNIVERSAL_ATTR) wgt[k] = (wgt[k]||0) + UNIVERSAL_ATTR[k];
     for(const k in c.attrs) wgt[k] = (wgt[k]||0) + c.attrs[k];
     let aw=0, as=0, reasons=[];
-    for(const k in wgt){ aw+=wgt[k]; as+=attrNorm(A[k])*wgt[k]; }
-    const attrScore = aw>0? as/aw : 0;
-    // reasons cite the class's OWN strong stats (core / above-baseline), not the universal floor
-    for(const k in c.attrs){ if(A[k]!=null && attrNorm(A[k])>=.6) reasons.push(labelOf(k)+" "+A[k]); }
+    for(const k in wgt){ aw+=wgt[k]; as+=gradePercentile(A[k])*wgt[k]; }
+    const attrScore = aw>0? as/aw : 0;   // grade-anchored: a class averaging "Very Good" reads ~65–80%
+    // reasons cite the class's OWN strong stats (Very Good or better), not the universal floor
+    for(const k in c.attrs){ if(A[k]!=null && gradePercentile(A[k])>=.65) reasons.push(labelOf(k)+" "+A[k]); }
 
     // personality score = the cat's OVERALL personality level (0..1), a WEIGHTED average where
     // Bravery counts double (it defends against Spite on every quest). Higher personality means
@@ -1467,9 +1494,12 @@ function renderResults(cat){
     modifiers shown reflect the effective total.</p>
     <h4>Class fit</h4>
     <p>For most classes each score is <code>0.80 × attribute-fit + 0.20 × personality-fit</code> — a class lives or dies on its core
-    <b>stats</b>, so personality is only a light ~20% adjustment. Attribute-fit weights that class's core stat highest
-    (e.g. Fighter = Strength, Ranger = Finesse), and three stats help <i>every</i> cat as a baseline — <b>Agility</b> (movement tiles),
-    <b>Perception</b> (initiative) and <b>Health</b> (HP). Personality-fit is the cat's <b>overall personality level</b> (a weighted average
+    <b>stats</b>, so personality is only a light ~20% adjustment. Attribute-fit is <b>anchored to the game's grade scale</b>: each stat
+    maps to a % band by its grade — <b>Poor</b> 1–6 → 0–30%, <b>Average</b> 7–12 → 30–50%, <b>Good</b> 13–16 → 50–65%,
+    <b>Very Good</b> 17–20 → 65–80%, <b>Excellent</b> 21–25 → 80–92%, <b>Exceptional</b> 26+ → 92–100% — so a cat whose class stats
+    average "Very Good" reads in the mid-70s. It weights that class's core stat highest (e.g. Fighter = Strength, Ranger = Finesse),
+    three stats help <i>every</i> cat as a baseline — <b>Agility</b> (movement tiles), <b>Perception</b> (initiative) and <b>Health</b> (HP) —
+    and every remaining stat still counts a <i>little</i>, so a rock-bottom off-stat dings the score a touch. Personality-fit is the cat's <b>overall personality level</b> (a weighted average
     where <b>Bravery counts double</b>, since it's the
     defensive stat against Spite on every quest) — higher personality means more dice and better odds across skill checks, day jobs and
     scenarios, so among cats with similar stats the more well-rounded one edges ahead. The <b>Bard</b> is the exception: it's
@@ -1778,7 +1808,7 @@ const ROSTER_BOOKMARKLET = "javascript:(function(){try{var h=document.documentEl
 function classPctMap(classesArr){ const m={}; (classesArr||[]).forEach(c=>{ if(c&&c.name) m[c.name]=c.pct; }); return m; }
 // Bump whenever scoreClasses / recommendJobs scoring changes, so cached suggestions
 // (pce-suggest-v1) recompute on next load instead of showing stale numbers.
-const ALGO_VERSION = 5;
+const ALGO_VERSION = 6;
 function computeSuggestion(cat){
   const classes=scoreClasses(cat), cls=classes[0];
   const jobs=recommendJobs(cat).jobs.flatMap(j=>j.jobs).slice(0,4);
