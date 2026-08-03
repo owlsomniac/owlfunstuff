@@ -133,17 +133,19 @@ in the low-mid 70s is **genuinely Very Good** for that class, not a C — and th
 so it isn't misread. Fit runs on the cat's **base stats** (held-trinket bonuses removed): a removable item — e.g. a
 Guardian's Medallion pumping Health — can't circularly recommend the class it favours.
 
-Each class's score is a blend of six parts (weights sum to 100):
+Each class's score is a blend of six parts (weights sum to 100) — core stats decide a cat's class, personality/scenario factors
+are only seasoning:
 
-- **Key attributes — 60.** The class's core + secondary stats, weighted internally (core ×2): Fighter = Strength·Health·Agility,
+- **Key attributes — 65.** The class's core + secondary stats, weighted internally (core ×2): Fighter = Strength·Health·Agility,
   Guardian = Health·Agility, Thief = Agility·Health, Ranger = Finesse·Perception, Medic = Cleverness·Agility, Scout = Perception,
   **Bard = low Benevolence·Perception**.
 - **Other attributes — 10.** Overall stat wellness — the average of *all* the cat's stats (the same for every class, so a maxed
   off-stat can't tilt a class that doesn't use it above one that does; a weak stat still drags it down a little).
-- **Personality — 10.** Overall personality level (Bravery included). **Benevolence is scored as polarization** — only very high (Befriend)
-  or very low (Spite) is useful; the wishy-washy middle isn't.
 - **Agility · Perception · Health — 10.** Averaged: movement, initiative and HP help every cat.
 - **Bravery — 10.** Counted again on its own — the defensive stat against Spite on every quest.
+- **Personality — 5.** Overall personality level (Bravery included) — a light scenario factor; scenarios are fun but don't decide
+  the game. **Benevolence is scored as polarization** — only very high (Befriend) or very low (Spite) is useful; the middle isn't.
+  Low personality values are softened, so one timid trait dings a cat rather than dragging it down a whole grade band.
 
 The **Bard** is special: its key stat is **Benevolence** with **low** being ideal (Spite). Since personality runs 1–10 but stats run
 1–26, the Bard's Benevolence is equalized onto the stat scale, inverted — Benevolence 1 counts as an Exceptional stat, lower still as 27+.

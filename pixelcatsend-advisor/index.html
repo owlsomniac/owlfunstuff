@@ -742,19 +742,20 @@ function jobLevelFromData(str, job){
 
 /* Class definitions — attribute weights + personality wants, per the guide's
    ideal profiles (section 6), with core attribute anchors from the game. */
-// Class fit is a blend of six 0..1 components whose weights sum to 1 (see FIT_WEIGHTS):
-//   KEY (0.60) — the class's core + secondary stats, with internal weights (primary 100, each
+// Class fit is a blend of six 0..1 components whose weights sum to 1 (see FIT_WEIGHTS). Core stats
+// decide a cat's class; personality/scenario factors are only seasoning, so they weigh light:
+//   KEY (0.65) — the class's core + secondary stats, with internal weights (primary 100, each
 //     secondary 50). This is what defines the class. For the Bard the key stat is BENEVOLENCE
 //     (low = Spite), equalized onto the attribute scale so it competes with real stats.
 //   OTHER (0.10) — overall stat wellness: the average of ALL the cat's attributes (same for every
 //     class, so a maxed off-stat can't tilt a class that doesn't use it; a weak stat still dings).
-//   PERSONALITY (0.10) — the cat's overall personality level (Benevolence scored as POLARIZATION,
-//     since only very high or very low is useful; the rest by level, Bravery included here too).
 //   UNIVERSAL (0.10) — Agility, Perception, Health averaged: movement / initiative / HP help all.
 //   BRAVERY (0.10) — weighted again on its own: the defensive stat vs Spite on every quest.
+//   PERSONALITY (0.05) — the cat's overall personality level, a light scenario factor (Benevolence
+//     scored as POLARIZATION, since only very high or very low is useful; the rest by level).
 // Every stat rides Pixel Cat's End's grade scale (gradePercentile), so a cat's % matches the grade
 // its stats would read as in-game.
-const FIT_WEIGHTS = {key:0.60, other:0.10, pers:0.10, universal:0.10, bravery:0.10};
+const FIT_WEIGHTS = {key:0.65, other:0.10, pers:0.05, universal:0.10, bravery:0.10};
 const CLASSES = [
   {key:"fighter", name:"Fighter", em:"⚔️", core:"strength",
    fit:{strength:100, health:50, agility:50},   // Strength core (Bite/Kick); Agility to reach, Health to tank melee
@@ -1183,7 +1184,10 @@ function balanceScore(attributes){
   const sd = Math.sqrt(varc);
   return clamp(1 - sd/6, 0, 1);   // lower spread → higher balance
 }
-const persLevelNorm = v => v==null?0 : clamp((v-1)/9, 0, 1);   // personality value → 0..1 level (1→0, 10→1)
+// Personality value → 0..1 level, softened at the LOW end so a below-average trait isn't treated as
+// near-zero: 1 → 0.35 (not 0), 10 → 1. A timid or reserved cat is dinged, not devastated — one low
+// personality trait shouldn't drag an otherwise-strong cat down a whole grade band on its own.
+const persLevelNorm = v => v==null?0 : clamp(0.35 + 0.65*(v-1)/9, 0, 1);
 // Benevolence AS THE BARD'S KEY STAT: LOW is desirable (Spite), and personality only runs 1–10
 // while stats run 1–26+, so equalize it onto the attribute scale, inverted — Ben 1 → 26
 // (Exceptional), Ben 10 → 1 (Poor), Ben < 1 → 27+ (off the top) — then read its grade band so it
@@ -1514,13 +1518,13 @@ function renderResults(cat){
     <b>Excellent</b> 21–25 → 80–92%, <b>Exceptional</b> 26+ → 92–100%. A cat whose class stats average "Very Good" lands in the low-mid
     70s — that's a <i>genuinely Very Good</i> cat for the class, not a C. The score is a blend of six parts:</p>
     <ul>
-      <li><b>Key attributes — 60%.</b> The class's core + secondary stats, weighted internally (core ×2): Fighter = Strength·Health·Agility,
+      <li><b>Key attributes — 65%.</b> The class's core + secondary stats, weighted internally (core ×2): Fighter = Strength·Health·Agility,
       Guardian = Health·Agility, Thief = Agility·Health, Ranger = Finesse·Perception, Medic = Cleverness·Agility, Scout = Perception,
-      <b>Bard = low Benevolence·Perception</b>.</li>
+      <b>Bard = low Benevolence·Perception</b>. Core stats decide a cat's class.</li>
       <li><b>Other attributes — 10%.</b> Overall stat wellness — the average of <i>all</i> the cat's stats. A weak stat drags it down a little; a strong one lifts it. Kept the same for every class, so a maxed off-stat never tilts a class that doesn't use it.</li>
-      <li><b>Personality — 10%.</b> Overall personality level (Bravery included). <b>Benevolence is scored as polarization</b> — only very high (Befriend) or very low (Spite) is useful; the middle isn't.</li>
       <li><b>Agility · Perception · Health — 10%.</b> Averaged: movement, initiative and HP help every cat.</li>
       <li><b>Bravery — 10%.</b> Counted again on its own — the defensive stat against Spite on every quest.</li>
+      <li><b>Personality — 5%.</b> Overall personality level (Bravery included) — a light scenario factor; scenarios are fun but don't decide the game. <b>Benevolence is scored as polarization</b> — only very high (Befriend) or very low (Spite) is useful; the middle isn't. Low personality values are softened, so one timid trait dings a cat rather than devastating it.</li>
     </ul>
     <p>The <b>Bard</b> is special: its key stat is <b>Benevolence</b> with <b>low</b> being ideal (Spite). Since personality runs 1–10 but
     stats run 1–26, the Bard's Benevolence is equalized onto the stat scale, inverted — Benevolence 1 counts as an Exceptional stat, and
@@ -1829,7 +1833,7 @@ const ROSTER_BOOKMARKLET = "javascript:(function(){try{var h=document.documentEl
 function classPctMap(classesArr){ const m={}; (classesArr||[]).forEach(c=>{ if(c&&c.name) m[c.name]=c.pct; }); return m; }
 // Bump whenever scoreClasses / recommendJobs scoring changes, so cached suggestions
 // (pce-suggest-v1) recompute on next load instead of showing stale numbers.
-const ALGO_VERSION = 8;
+const ALGO_VERSION = 9;
 function computeSuggestion(cat){
   const classes=scoreClasses(cat), cls=classes[0];
   const jobs=recommendJobs(cat).jobs.flatMap(j=>j.jobs).slice(0,4);
