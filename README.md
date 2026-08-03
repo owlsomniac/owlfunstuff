@@ -21,7 +21,12 @@ collapsible rows (open one at a time):
    white, genetics and real portrait, **then opens each cat's page** to add its **7 attributes (base / trinket /
    total), equipped trinkets, current day job & adventuring class, every day-job level and all 7 class levels**. All
    from public pages. A small **↻ Fetch stats & levels** button appears only if some cats still need it (a relay
-   hiccup) and hides itself once they're done.
+   hiccup) and hides itself once they're done. **Re-pulling is non-destructive to your genetics work.** A cat's genes
+   never change in-game, but the game's own genetic string shows `?` for alleles it hasn't revealed — the very hidden
+   recessives and tested accents you discover in the breeding sandbox and record by hand. So a pull **only ever *adds*
+   resolution**: it accepts a freshly-pulled string when that string agrees with every concrete allele you already have
+   and merely fills in some `?`s; if it would blank out or disagree with an allele you know, your value is kept. Hours
+   of test-crossing survive every re-pull; new cats and newly game-revealed alleles still flow in.
 2. **🔎 Single Cat Look-Up** — paste one cat's **ID** or **page link** and press **Add cat** to drop them straight
    into your roster. Routed through public CORS relays because the game blocks direct cross-site reads.
 3. **✏️ Enter Manually** — **Add a blank cat**, which opens the ✏️ editor so you can type in whatever you know.
@@ -38,8 +43,9 @@ rule** so the data reads as a clean grid; cell padding is tight so more columns 
 **sizes itself to the viewport** — its scroll region fills the space down to the bottom of the screen, with the header
 row pinned, so you see the top and bottom at once without zooming out (many rows scroll *inside* the table, not the page).
 A wider, collapsible **Quick View** column gives the at-a-glance summary (appearance, current job & class, recommended
-job/class, and the cat's **genetic string as a one-click copy chip** — tap it to copy, ready to paste into Breeding or
-share). Below the string, a **Carries:** line lists the alleles a cat is hiding — *Longhair* (`[SL]`),
+job/class, and the cat's genetics as **one click-copy block** — the whole **Genes + Carries** section copies together:
+you get the genetic string (ready to paste into Breeding) with a `Carries: …` line appended when there is one. Below the
+string, a **Carries:** line lists the alleles a cat is hiding — *Longhair* (`[SL]`),
 *Dilute* (`[FD]`), *Solid* (a patterned cat carrying solid, `[YN]`), *No-white* (`[YN]`), *Null (wind)* (`[NO]`/`[SO]`),
 and — for **North/South** cats — the **base colour** it doesn't show. Base colour is co-dominant *and positional*: North
 shows allele 1, South allele 2, so a het (`BO`/`OB`) hides and passes on the other pigment. The line reads the wind, then

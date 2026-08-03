@@ -348,12 +348,14 @@
   #rosterTable td.qv .qv-appr{color:var(--ink);font-weight:600;margin-bottom:1px}
   #rosterTable td.qv .qv-k{color:var(--muted)}
   #rosterTable td.qv .qv-rec{color:var(--good-ink);font-weight:700}
-  #rosterTable td.qv .qv-genes{margin-top:3px}
-  #rosterTable td.qv .rc-gene-copy{display:inline-block;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10px;line-height:1.35;color:var(--ink);background:var(--panel2);border:1px solid var(--line-soft);border-radius:6px;padding:2px 5px;margin-top:1px;cursor:pointer;white-space:normal;word-break:break-word;overflow-wrap:anywhere;text-align:left;max-width:260px;transition:border-color .12s,color .12s}
+  /* the whole Genes+Carries block is one click-copy button */
+  #rosterTable td.qv .rc-gene-copy{display:block;width:100%;box-sizing:border-box;font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--line-soft);border-radius:6px;padding:4px 6px;margin-top:3px;cursor:pointer;text-align:left;transition:border-color .12s,color .12s,background .12s}
   #rosterTable td.qv .rc-gene-copy:hover,#rosterTable td.qv .rc-gene-copy:focus-visible{border-color:var(--brand);color:var(--brand-ink);outline:none}
   #rosterTable td.qv .rc-gene-copy.copied{color:var(--good-ink);border-color:var(--good);background:var(--good-soft)}
-  #rosterTable td.qv .qv-carries{margin-top:3px;line-height:1.5}
-  #rosterTable td.qv .qv-carr{display:inline-block;font-size:10px;font-weight:600;color:var(--ink);background:var(--panel2);border:1px solid var(--line-soft);border-radius:5px;padding:1px 6px;margin:1px 3px 0 0}
+  #rosterTable td.qv .qv-genes{display:block}
+  #rosterTable td.qv .qv-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10px;line-height:1.35;word-break:break-word;overflow-wrap:anywhere}
+  #rosterTable td.qv .qv-carries{display:block;margin-top:3px;line-height:1.5}
+  #rosterTable td.qv .qv-carr{display:inline-block;font-size:10px;font-weight:600;color:var(--ink);background:var(--panel);border:1px solid var(--line-soft);border-radius:5px;padding:1px 6px;margin:1px 3px 0 0}
   #rosterTable .sug{color:var(--good-ink);font-weight:700}
   #rosterTable .trink{color:var(--good-ink);font-weight:800}   /* stat total boosted by a trinket */
   #rosterTable .trink-up{color:var(--good-ink);font-size:9px;font-weight:900;vertical-align:top;margin-left:2px;line-height:1}
@@ -1628,6 +1630,32 @@ function rosterMerge(parsed){
   const hs=new Set(r.headers||[]); parsed.headers.forEach(h=>hs.add(h)); r.headers=[...hs];
   r.ts=nowTs(); rosterSave(r); return r;
 }
+// Non-destructive genotype merge for re-pulls. A cat's genes never change in-game, but the
+// game's own genetic string shows "?" for alleles it hasn't revealed — the very hidden
+// recessives & accents you discover by test-crossing and record by hand. So a re-pull only
+// ever ADDS resolution: it adopts the freshly-pulled string when that string agrees with
+// every concrete allele you already have and merely fills in some "?"; if the fresh string
+// would blank out an allele you know, or disagrees on one, we keep yours. Provably never
+// loses a concrete allele you've stored.
+function mergeGeneStrings(stored, fresh){
+  if(!stored) return fresh||null;
+  if(!fresh)  return stored;
+  const secs=s=>[...String(s).matchAll(/\[([^\]]*)\]/g)].map(m=>m[1].replace(/[\s|]/g,"").toUpperCase());
+  const A=secs(stored), B=secs(fresh);
+  if(!A.length || A.length!==B.length) return stored;         // shape mismatch → keep ours
+  let adds=false;
+  for(let i=0;i<A.length;i++){
+    const a=A[i], b=B[i];
+    if(a.length!==b.length) return stored;                    // section format mismatch → keep ours
+    for(let j=0;j<a.length;j++){
+      const ca=a[j], cb=b[j];
+      if(ca!=="?" && cb!=="?" && ca!==cb) return stored;      // conflict on a known allele → keep ours
+      if(ca!=="?" && cb==="?")            return stored;      // fresh would drop a known allele → keep ours
+      if(ca==="?" && cb!=="?")            adds=true;          // fresh reveals a "?" we didn't have
+    }
+  }
+  return adds ? fresh : stored;                               // swap in only when it strictly adds resolution
+}
 // Merge rich records from a Cats/profile page: real image layers, a derived
 // genetic string, and phenotype columns — everything the game shows, no fetch.
 function mergeCatsPageCats(cats){
@@ -1637,7 +1665,8 @@ function mergeCatsPageCats(cats){
     const cur=r.cats[c.id]||{id:c.id,name:c.name,data:{}};
     if(c.name) cur.name=c.name;
     if(c.imgLayers&&c.imgLayers.length) cur.img=c.imgLayers;
-    if(c.genes){ cur.genes=c.genes; cur.geneInfo=c.geneInfo||null; }
+    if(c.genes){ const merged=mergeGeneStrings(cur.genes, c.genes);   // never obliterate hand-tested genes
+      if(merged!==cur.genes){ cur.genes=merged; cur.geneInfo=c.geneInfo||null; } }
     const p=c.pheno||{};
     const setc=(k,v)=>{ if(v!=null&&v!=="") cur.data[k]=v; };
     setc("Species",p.species);
@@ -1767,9 +1796,14 @@ function rosterEnrichFromCat(id, cat){
   if(cat.name && !cur.name) cur.name=cat.name;
   Object.assign(cur.data, catRosterColumns(cat));
   if(cat.imgLayers && cat.imgLayers.length) cur.img=cat.imgLayers;
+  // Candidate string from this pull: the game's own genetic code if present, else re-derived
+  // from the visible columns. Merged non-destructively so hand-tested alleles survive.
   const gs=(cat.geneString||"").trim();
-  if(gs && !parseGeneString(gs).error){ cur.genes=gs; cur.geneInfo={resolved:["revealed genetic string"], guessed:[]}; }
-  else { const res=rosterCatToGeneString(Object.assign({}, cur, {genes:null})); if(res && res.str){ cur.genes=res.str; cur.geneInfo={resolved:res.resolved, guessed:res.guessed}; } }
+  let cand=null, candInfo=null;
+  if(gs && !parseGeneString(gs).error){ cand=gs; candInfo={resolved:["revealed genetic string"], guessed:[]}; }
+  else { const res=rosterCatToGeneString(Object.assign({}, cur, {genes:null})); if(res && res.str){ cand=res.str; candInfo={resolved:res.resolved, guessed:res.guessed}; } }
+  if(cand){ const merged=mergeGeneStrings(cur.genes, cand);
+    if(merged!==cur.genes){ cur.genes=merged; cur.geneInfo=(merged===cand)?candInfo:(cur.geneInfo||candInfo); } }
   r.cats[id]=cur;
   r.sets.all=r.sets.all||[]; if(r.sets.all.indexOf(id)<0) r.sets.all.push(id);
   const hs=new Set(r.headers||[]); Object.keys(cur.data).forEach(h=>hs.add(h)); r.headers=[...hs];
@@ -1982,14 +2016,21 @@ function rosterRender(){
     const job=notNA(col(c,/occupation/i)), cls=notNA(col(c,/^class$/i))||notNA(col(c,/adventuring/i));
     const recJob=(s.jobs&&s.jobs.length)?s.jobs.join(", "):"", recCls=s.className?(s.className+(s.classPct?(" ("+s.classPct+"%)"):"")):"";
     const line=(k,v,vc)=> v?`<div><span class="qv-k">${k}</span> <span class="${vc||""}">${esc(v)}</span></div>`:"";
-    // The cat's genetic string (revealed / page-derived, accent pinned to what's known) —
-    // one click copies it, so it's ready to paste into Breeding or share.
+    // The cat's genetic string (revealed / page-derived, accent pinned to what's known) plus
+    // the recessives it hides — the WHOLE block is one click-copy. Copying yields the gene
+    // string (ready to paste into Breeding) with a "Carries: …" line appended when there is one.
     const gsr=rosterCatToGeneString(c), gstr=(gsr&&gsr.str)?gsr.str:"";
-    const genesLine = gstr ? `<div class="qv-genes"><span class="qv-k">Genes:</span> <button type="button" class="rc-gene-copy" data-gene="${esc(gstr)}" title="Click to copy this cat's genetic string">${esc(gstr)}</button></div>` : "";
-    // Recessives hiding under a dominant allele (only the ones we can actually be sure of).
-    const carr = gstr ? carriesList(parseGeneString(gstr)) : [];
-    const carriesLine = carr.length ? `<div class="qv-carries"><span class="qv-k">Carries:</span> ${carr.map(x=>`<span class="qv-carr">${esc(x)}</span>`).join("")}</div>` : "";
-    return `<div class="qv-appr">${esc(appr||"—")}</div>`+line("Job:",job)+line("Class:",cls)+line("Rec Job:",recJob,"qv-rec")+line("Rec Class:",recCls,"qv-rec")+genesLine+carriesLine;
+    const carr = gstr ? carriesList(parseGeneString(gstr)) : [];   // recessives hiding under a dominant (only the sure ones)
+    let genesBlock="";
+    if(gstr){
+      const carriesInner = carr.length
+        ? `<span class="qv-carries"><span class="qv-k">Carries:</span> ${carr.map(x=>`<span class="qv-carr">${esc(x)}</span>`).join("")}</span>` : "";
+      genesBlock = `<button type="button" class="rc-gene-copy qv-copyblock" data-gene="${esc(gstr)}"${carr.length?` data-carries="${esc(carr.join(", "))}"`:""} title="Click to copy the genetic string${carr.length?" &amp; carries":""}">`
+        + `<span class="qv-genes"><span class="qv-k">Genes:</span> <span class="qv-mono">${esc(gstr)}</span></span>`
+        + carriesInner
+        + `</button>`;
+    }
+    return `<div class="qv-appr">${esc(appr||"—")}</div>`+line("Job:",job)+line("Class:",cls)+line("Rec Job:",recJob,"qv-rec")+line("Rec Class:",recCls,"qv-rec")+genesBlock;
   };
   const attrLabels=new Set(ATTRS.map(a=>a.label));   // to flag trinket-boosted stat totals
   const body=tids.slice(0,400).map(id=>{
@@ -3394,7 +3435,9 @@ function pbSync(c){          // set the builder dropdowns from the target box's 
   pbShade(c);
 }
 function copyGeneString(btn){
-  const s=btn.getAttribute("data-copy")||btn.getAttribute("data-gene")||"";
+  let s=btn.getAttribute("data-copy")||btn.getAttribute("data-gene")||"";
+  const carr=btn.getAttribute("data-carries");           // whole-block copy → append the Carries line
+  if(carr) s += "\nCarries: "+carr;
   const restore=btn.innerHTML;
   try{
     if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(s).catch(()=>{}); }
