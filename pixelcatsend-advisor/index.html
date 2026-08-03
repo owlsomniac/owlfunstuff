@@ -2056,7 +2056,7 @@ function windEditKey(sec){ const s=String(sec||"").toUpperCase().replace(/[^NSO]
 // the two have identical options & order (genome order). Value = the section fragment,
 // label = human name ("X carries Y" for a hidden recessive). See §6 dominance map.
 const FUR_ALLELE_OPTS  = [["SS","Shorthair"],["SL","Shorthair (carries Longhair)"],["LL","Longhair"]];
-const BASE_COLOR_OPTS  = [["BB","Black-based · BB"],["OO","Red-based · OO"],["BO","Tortoiseshell · BO"]];  // co-dominant
+const BASE_COLOR_OPTS  = [["BB","Black · BB"],["OO","Red · OO"],["BO","Black-based · BO"],["OB","Red-based · OB"]];  // co-dominant AND positional (order matters)
 const DILUTION_OPTS    = [["FF","Full"],["FD","Full (carries Dilute)"],["DD","Dilute"]];
 const DENSITY_OPTS     = [["1","1"],["2","2"],["3","3"],["4","4"]];
 const PATVIS_OPTS      = [["YY","Patterned"],["YN","Patterned (carries Solid)"],["NN","Solid"]];
@@ -2067,7 +2067,9 @@ const WHITEVIS_OPTS    = [["YY","White"],["YN","White (carries No-white)"],["NN"
 function patTypeOpts(){ return [["Unknown","Unknown"]].concat([...new Set(Object.values(PATTERN_NAME))].map(n=>[n,n])); }
 // reverse-map raw section alleles back onto a carrier dropdown value (for sync/seed).
 function furEditKey(sec){ const s=String(sec||"").toUpperCase().replace(/[^SL]/g,""); if(s==="LL") return "LL"; if(/L/.test(s)&&/S/.test(s)) return "SL"; if(s==="L") return "LL"; return "SS"; }
-function baseColorKey(c1,c2){ const a=String(c1||"").toUpperCase(), b=String(c2||"").toUpperCase(); const hasB=a==="B"||b==="B", hasO=a==="O"||b==="O"; if(hasB&&hasO) return "BO"; if(hasO) return "OO"; return "BB"; }
+function baseColorKey(c1,c2){ const a=String(c1||"").toUpperCase(), b=String(c2||"").toUpperCase();
+  if((a==="B"||a==="O")&&(b==="B"||b==="O")) return a+b;   // positional: BB/OO/BO/OB — order is preserved (North shows allele 1, South allele 2, Trade primary=allele 1)
+  const hasB=a==="B"||b==="B", hasO=a==="O"||b==="O"; if(hasB&&hasO) return "BO"; if(hasO) return "OO"; return "BB"; }
 function dilutionKey(d1,d2){ const a=String(d1||"").toUpperCase(), b=String(d2||"").toUpperCase(); if(a==="D"&&b==="D") return "DD"; if(a==="D"||b==="D") return "FD"; return "FF"; }
 function ynKey(a,b){ a=String(a||"").toUpperCase(); b=String(b||"").toUpperCase(); if(a==="Y"&&b==="Y") return "YY"; if(a==="Y"||b==="Y") return "YN"; return "NN"; }
 // Assemble an 8-section gene string from the full carrier-editor control set — the ONE
@@ -2076,7 +2078,7 @@ function assembleGenotype(v){
   const sp = v.species==="Mercat" ? "M" : "C";
   const windSec = /^[NSO]{2}$/.test(v.wind) ? v.wind : "NN";
   const furSec  = /^(SS|SL|LL)$/.test(v.fur) ? v.fur : "SS";
-  const base    = /^(BB|OO|BO)$/.test(v.base) ? v.base : "BB";
+  const base    = /^(BB|OO|BO|OB)$/.test(v.base) ? v.base : "BB";
   const dil     = /^(FF|FD|DD)$/.test(v.dil) ? v.dil : "FF";
   const density = Math.max(1,Math.min(4, parseInt(v.density,10)||4));
   const coatSec = base[0]+base[1]+dil[0]+dil[1]+density;
@@ -2094,13 +2096,6 @@ function assembleGenotype(v){
 // both). "BO" is stored canonically B-first, but a revealed het cat may be "OB" — flipping
 // it would swap a North/South cat's displayed colour. So when the base set is unchanged from
 // the cat's original coat, keep the original allele order.
-function preserveBaseOrder(str, origPair){
-  const o=String(origPair||"").toUpperCase().replace(/[^BO]/g,""); if(o.length!==2) return str;
-  const secs=[...String(str||"").matchAll(/\[([^\]]*)\]/g)].map(m=>m[1]);
-  const coat=secs[3]||"", cur=coat.slice(0,2), key=s=>s.split("").sort().join("");
-  if(key(cur)==="BO" && key(o)==="BO" && cur!==o){ secs[3]=o+coat.slice(2); return secs.map(s=>"["+s+"]").join(" "); }
-  return str;
-}
 // Live derived-coat readout from Wind + Base colour + Dilution + Density (the shade name is
 // DERIVED, never picked directly — one dropdown per genotype axis, per the user's spec).
 function coatShadeReadout(windSec, base, dil, density){
@@ -2217,8 +2212,8 @@ function saveCatEditor(id){
   };
   if(name) c.name=name;
   // one shared encoder builds every section — the whole genotype is now editable.
-  const origCoat=(geneSecs(catBaseGenes(c))[3]||"");
-  const str=preserveBaseOrder(assembleGenotype(v), origCoat.slice(0,2));
+  // Base colour keeps its positional order (BB/OO/BO/OB) straight from the dropdown.
+  const str=assembleGenotype(v);
   // reflect the derived phenotype into the roster data columns
   c.data["Accent"]=/^unknown$/i.test(val("#rcAccent"))?"Unknown":val("#rcAccent");
   c.data["Species"]=v.species;
@@ -3329,13 +3324,12 @@ function pbAssemble(c){
     whiteType:v("pb-wtype"), whiteLevel:v("pb-wlevel"), whiteVis:v("pb-wvis"),
     accent:accentAlleleStr(v("pb-accent"))
   });
-  return preserveBaseOrder(str, c.dataset.baseOrder||"");   // keep a synced het cat's B/O order
+  return str;   // base colour keeps its positional BO/OB order straight from the dropdown
 }
 function pbSync(c){          // set the builder dropdowns from the target box's current string
   const box=document.getElementById(c.getAttribute("data-target")), g=box?parseGeneString((box.value||"").trim()):null;
   const set=(cls,val)=>{ const el=c.querySelector("."+cls); if(el&&val!=null) el.value=val; };
   if(g && !g.error){
-    c.dataset.baseOrder=(g.color||[]).join("");   // remember the coat's B/O order for re-assembly
     set("pb-species", g.species==="M"?"Mercat":"Not-cat");
     set("pb-wind", windEditKey((g.wind||[]).join("")));
     set("pb-fur", furEditKey((g.fur||[]).join("")));

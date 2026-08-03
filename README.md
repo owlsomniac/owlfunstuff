@@ -61,8 +61,10 @@ sort.** Highlights:
   **Personality**. **Appearance** is the full genotype: every locus is its own dropdown, in
   genome order, and the ones that can hide a recessive offer an **"X carries Y"** option: **Wind** (*North (NN)*, *North
   (carries Null) (NO)*, *South (SS)*, *South (carries Null) (SO)*, *Trade (NS)*, *Null (OO)*), **Fur** (*Shorthair (SS)*,
-  *Shorthair (carries Longhair) (SL)*, *Longhair (LL)*), **Base colour** (*BB / OO / BO* — the co-dominant black/red pair
-  that makes a tortoiseshell), **Dilution** (*Full (FF)*, *Full (carries Dilute) (FD)*, *Dilute (DD)*), **Density** (1–4),
+  *Shorthair (carries Longhair) (SL)*, *Longhair (LL)*), **Base colour** — the co-dominant **and positional** black/red pair,
+  where **order matters**: *Black (BB)*, *Red (OO)*, *Black-based (BO)* and *Red-based (OB)*. `BO` vs `OB` decides which pigment is
+  primary — a Trade `BO` is a black-based tortoiseshell (e.g. *Silver-Beige*) while `OB` is red-based (*Beige-Silver*), and for
+  North/South it flips which allele shows. **Dilution** (*Full (FF)*, *Full (carries Dilute) (FD)*, *Dilute (DD)*), **Density** (1–4),
   **Pattern type** (the 15 named patterns, kept even under a solid coat) and **Pattern shown** (*Patterned (YY)*, *Patterned
   (carries Solid) (YN)*, *Solid (NN)*), **White type & level** and **White shown** (*White (YY)*, *White (carries No-white)
   (YN)*, *No-white (NN)*), plus **Accent** (a 10-colour dropdown that shows each colour's genotype — *Green (BY)*, *Indigo
