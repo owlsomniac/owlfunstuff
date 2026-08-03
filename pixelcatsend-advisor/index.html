@@ -742,39 +742,40 @@ function jobLevelFromData(str, job){
 
 /* Class definitions — attribute weights + personality wants, per the guide's
    ideal profiles (section 6), with core attribute anchors from the game. */
-// Class fit weights each class's CORE attribute(s) heavily (weight 2 so the core stays the
-// single biggest factor). Three attributes help EVERY cat as a baseline — Agility (movement),
-// Perception (initiative), Health (HP) — in UNIVERSAL_ATTR. A class's own `attrs` are ADDED on
-// top of that baseline, so a stat a class *specifically* needs (e.g. Fighter's Agility) ends up
-// weighted ABOVE the universal bump, not just at it. Personality-fit is the cat's overall level
-// (Bravery double-weighted); a class may invert a trait it wants LOW — only the Bard (low Benevolence → Spite).
-const UNIVERSAL_ATTR = {agility:.5, perception:.4, health:.35};
-// Every stat also counts a LITTLE toward every class (well-roundedness): a class's off-stats
-// aren't ignored, so a rock-bottom stat (a 1) dings the rating a bit vs a 10 — but at a small
-// weight, far below the core and universal stats, so it never drives the pick.
-const ATTR_FLOOR_WEIGHT = 0.2;
+// Class fit is a blend of six 0..1 components whose weights sum to 1 (see FIT_WEIGHTS):
+//   KEY (0.60) — the class's core + secondary stats, with internal weights (primary 100, each
+//     secondary 50). This is what defines the class. For the Bard the key stat is BENEVOLENCE
+//     (low = Spite), equalized onto the attribute scale so it competes with real stats.
+//   OTHER (0.10) — the cat's remaining (non-key) attributes, equally averaged: a rock-bottom
+//     off-stat dings fit a little; it never drives the pick.
+//   PERSONALITY (0.10) — the cat's overall personality level (Benevolence scored as POLARIZATION,
+//     since only very high or very low is useful; the rest by level, Bravery included here too).
+//   UNIVERSAL (0.10) — Agility, Perception, Health averaged: movement / initiative / HP help all.
+//   BRAVERY (0.10) — weighted again on its own: the defensive stat vs Spite on every quest.
+// Every stat rides Pixel Cat's End's grade scale (gradePercentile), so a cat's % matches the grade
+// its stats would read as in-game.
+const FIT_WEIGHTS = {key:0.60, other:0.10, pers:0.10, universal:0.10, bravery:0.10};
 const CLASSES = [
   {key:"fighter", name:"Fighter", em:"⚔️", core:"strength",
-   attrs:{strength:2, agility:.5, health:.5},   // Strength core (Bite/Kick); Agility to reach, Health to tank constant melee
+   fit:{strength:100, health:50, agility:50},   // Strength core (Bite/Kick); Agility to reach, Health to tank melee
    blurb:"Frontline bruiser — shrugs off fear and lands heavy Kick/Bite hits."},
   {key:"guardian", name:"Guardian", em:"🛡️", core:"health",
-   attrs:{health:2, agility:.5},   // Health core; Agility to stay in range of allies it protects
+   fit:{health:100, agility:50},   // Health core; Agility to stay in range of allies it protects
    blurb:"Damage sponge — Protects allies (150% HP) and resists status attacks."},
   {key:"thief", name:"Thief", em:"🗡️", core:"agility",
-   attrs:{agility:2, health:.3},   // Agility core (Hide/Backstab); a little Health for melee range (less than Fighter)
+   fit:{agility:100, health:50},   // Agility core (Hide/Backstab); a little Health for melee range (less than Fighter)
    blurb:"Elusive striker — hard to hit, uses Spite for underhanded tactics."},
   {key:"ranger", name:"Ranger", em:"🏹", core:"finesse",
-   attrs:{finesse:2, perception:.5},   // Finesse core (Piercing Bolt/Double Shot); Perception for fast shots
+   fit:{finesse:100, perception:50},   // Finesse core (Piercing Bolt/Double Shot); Perception for fast shots
    blurb:"Precision shooter — patient, lands consecutive long-range attacks."},
   {key:"medic", name:"Medic", em:"➕", core:"cleverness",
-   attrs:{cleverness:2, agility:.5},   // Cleverness core (Tend Wounds/Cooperative Care); Agility to reach the wounded
+   fit:{cleverness:100, agility:50},   // Cleverness core (Tend Wounds/Cooperative Care); Agility to reach the wounded
    blurb:"Field healer — Cleverness scales Tend Wounds; Benevolence buys goodwill."},
   {key:"scout", name:"Scout", em:"👁️", core:"perception",
-   attrs:{perception:2},
+   fit:{perception:100},
    blurb:"Skill-check specialist — +150% initiative, thrives on active events."},
-  {key:"bard", name:"Bard", em:"🎵", core:"perception",
-   attrs:{perception:.6}, persInvert:["benevolence"],   // no attribute core — Spite (LOW Benevolence) is it; Perception speeds Rally
-   persWeight:0.45, persFit:{benevolence:3},   // Bard is personality-driven: LOW Benevolence is its main "stat"
+  {key:"bard", name:"Bard", em:"🎵", core:"benevolence",
+   fit:{benevolence:100, perception:50},   // Spite (LOW Benevolence) is the Bard's key stat; Perception speeds Rally
    blurb:"Team amplifier — buffs everyone's Bravery/Benevolence/Spite rolls."}
 ];
 
@@ -1183,54 +1184,69 @@ function balanceScore(attributes){
   return clamp(1 - sd/6, 0, 1);   // lower spread → higher balance
 }
 const persLevelNorm = v => v==null?0 : clamp((v-1)/9, 0, 1);   // personality value → 0..1 level (1→0, 10→1)
-const PERS_FIT_WEIGHT = {bravery:2};   // Bravery counts double in the personality total — it's the DEFENSIVE stat vs Spite on every quest
-// How much of a class's fit is personality vs attributes. Personality is a MINOR factor for most
-// classes (~20%) — a class lives or dies on its core STATS. The Bard is the exception: LOW
-// Benevolence is its primary damage stat (Spite), so its personality side carries much more.
-const PERS_WEIGHT_DEFAULT = 0.20;
+// Benevolence AS THE BARD'S KEY STAT: LOW is desirable (Spite), and personality only runs 1–10
+// while stats run 1–26+, so equalize it onto the attribute scale, inverted — Ben 1 → 26
+// (Exceptional), Ben 10 → 1 (Poor), Ben < 1 → 27+ (off the top) — then read its grade band so it
+// competes fairly against real stats in the 60% key slot.
+function benevolenceKeyScore(ben){
+  if(ben==null) return 0;
+  return gradePercentile(26 - (ben - 1)/9 * 25);
+}
+// Benevolence IN THE PERSONALITY TOTAL is POLARIZED: only very high (Befriend) or very low
+// (Intimidate/Bluff/Spite) is useful for scenarios — the wishy-washy middle isn't. Distance from a
+// neutral ~5.5, so ≈1 or ≈10 → ~1.0 and ≈5–6 → ~0.
+function benevolencePolar(ben){
+  if(ben==null) return 0;
+  return clamp(Math.abs(ben - 5.5) / 4.5, 0, 1);
+}
+// The grade descriptor a fit % (or any grade-anchored 0–100 score) lands in — the SAME bands that
+// anchor the stat scores, so a 70% fit reads as "Very Good", not a C. Shown next to the %.
+function fitGrade(pct){
+  return pct>=92?"Exceptional" : pct>=80?"Excellent" : pct>=65?"Very Good"
+       : pct>=50?"Good" : pct>=30?"Average" : "Poor";
+}
 
 function scoreClasses(cat){
   const {attributes:A, personality:P} = cat;
+  const gp = k => gradePercentile(A[k]);
+  // Cat-wide components (same for every class): overall personality level (Benevolence polarized,
+  // the rest — Bravery included — by level), the three universal stats, and Bravery on its own.
+  const persTraits = PERS.filter(p=>P[p.key]!=null);
+  const persScore = persTraits.length
+    ? persTraits.reduce((s,p)=> s + (p.key==="benevolence" ? benevolencePolar(P[p.key]) : persLevelNorm(P[p.key])), 0) / persTraits.length
+    : .5;
+  const braveryScore = P.bravery!=null ? persLevelNorm(P.bravery) : .5;
+  const universal = (gp("agility") + gp("health") + gp("perception")) / 3;
+
   return CLASSES.map(c=>{
-    // attribute score = weighted average. Every stat counts a little (well-roundedness floor), the
-    // universally-useful stats (Agility movement, Perception initiative, Health HP) add a baseline
-    // on top, and the class's own weights add the most — so a stat a class specifically needs
-    // outweighs the universal bump, which outweighs an off-stat that only nudges via the floor.
-    const wgt = {};
-    ATTRS.forEach(a=> wgt[a.key] = ATTR_FLOOR_WEIGHT);
-    for(const k in UNIVERSAL_ATTR) wgt[k] = (wgt[k]||0) + UNIVERSAL_ATTR[k];
-    for(const k in c.attrs) wgt[k] = (wgt[k]||0) + c.attrs[k];
-    let aw=0, as=0, reasons=[];
-    for(const k in wgt){ aw+=wgt[k]; as+=gradePercentile(A[k])*wgt[k]; }
-    const attrScore = aw>0? as/aw : 0;   // grade-anchored: a class averaging "Very Good" reads ~65–80%
-    // reasons cite the class's OWN strong stats (Very Good or better), not the universal floor
-    for(const k in c.attrs){ if(A[k]!=null && gradePercentile(A[k])>=.65) reasons.push(labelOf(k)+" "+A[k]); }
-
-    // personality score = the cat's OVERALL personality level (0..1), a WEIGHTED average where
-    // Bravery counts double (it defends against Spite on every quest). Higher personality means
-    // more dice and better odds across skill checks, day jobs and scenarios, so a well-rounded
-    // cat is a stronger pick for ANY class. A class may want a trait LOW instead (persInvert):
-    // only the Bard does, since LOW Benevolence fuels its Spite damage.
-    const invert = new Set(c.persInvert||[]);
-    const persW = Object.assign({}, PERS_FIT_WEIGHT, c.persFit||{});   // class may weight a trait higher (Bard: Benevolence)
-    const knownP = PERS.filter(p=>P[p.key]!=null);
-    let persScore = .5;
-    if(knownP.length){
-      let sum=0, wsum=0;
-      knownP.forEach(p=>{ const w=persW[p.key]||1, n=persLevelNorm(P[p.key]);
-        sum += w*(invert.has(p.key)?(1-n):n); wsum += w; });
-      persScore = wsum ? sum/wsum : .5;
+    // KEY (0.60): the class's core + secondary stats, weighted internally (primary 100, secondary
+    // 50). The Bard's key stat is Benevolence, equalized to the attribute scale (low = high).
+    let kw=0, ks=0, reasons=[];
+    for(const stat in c.fit){
+      const w=c.fit[stat];
+      const sc = stat==="benevolence" ? benevolenceKeyScore(P.benevolence) : gradePercentile(A[stat]);
+      kw+=w; ks+=w*sc;
     }
-    // reasons: notably-high traits (and, for a persInvert trait, a desirable LOW value)
-    knownP.forEach(p=>{
-      const v=P[p.key];
-      if(invert.has(p.key)){ if(v<=3) reasons.push("low "+p.label+" "+v+(p.key==="benevolence"?" (Spite)":"")); return; }
-      if(v>=8) reasons.push(p.high+" ("+v+")");
-    });
+    const keyScore = kw ? ks/kw : 0;
+    // OTHER (0.10): the class's non-key attributes, equally averaged — a rock-bottom off-stat dings
+    // fit a little, but never drives the pick.
+    const keyAttr = new Set(Object.keys(c.fit).filter(k=>ATTRS.some(a=>a.key===k)));
+    const others = ATTRS.filter(a=>!keyAttr.has(a.key) && A[a.key]!=null);
+    const otherScore = others.length ? others.reduce((s,a)=>s+gradePercentile(A[a.key]),0)/others.length : 0;
 
-    const pw = c.persWeight!=null ? c.persWeight : PERS_WEIGHT_DEFAULT;   // personality ~20% (Bard: more)
-    const total = (1-pw)*attrScore + pw*persScore;
-    return {...c, attrScore, persScore, total, pct:Math.round(total*100), reasons};
+    const total = FIT_WEIGHTS.key*keyScore + FIT_WEIGHTS.other*otherScore
+                + FIT_WEIGHTS.pers*persScore + FIT_WEIGHTS.universal*universal
+                + FIT_WEIGHTS.bravery*braveryScore;
+    const pct = Math.round(total*100);
+
+    // reasons: strong key stats (Very Good+), a Bard's desirably-low Benevolence, and high Bravery
+    for(const stat in c.fit){
+      if(stat==="benevolence"){ if(P.benevolence!=null && P.benevolence<=3) reasons.push("low Benevolence "+P.benevolence+" (Spite)"); }
+      else if(A[stat]!=null && gradePercentile(A[stat])>=.65) reasons.push(labelOf(stat)+" "+A[stat]);
+    }
+    if(P.bravery!=null && P.bravery>=8) reasons.push("Fearless ("+P.bravery+")");
+
+    return {...c, keyScore, attrScore:keyScore, persScore, total, pct, grade:fitGrade(pct), reasons};
   }).sort((x,y)=>y.total-x.total);
 }
 function labelOf(k){ const a=ATTRS.find(x=>x.key===k); return a?a.label:k; }
@@ -1392,7 +1408,7 @@ function renderResults(cat){
     <div class="rank">
       <span class="nm">${c.em} ${c.name}</span>
       <span class="mini"><span style="width:${c.pct}%"></span></span>
-      <span class="val" style="font-size:13px">${c.pct}%</span>
+      <span class="val" style="font-size:13px">${c.pct}% <span style="color:var(--muted);font-weight:600;font-size:11px">${esc(c.grade)}</span></span>
     </div>`).join("");
 
   // jobs
@@ -1441,6 +1457,7 @@ function renderResults(cat){
 
       <div class="card">
         <h2><span class="em">🎓</span> Recommended adventuring class</h2>
+        <p class="sub">Fit is on the game's own grade scale, so the % reads like a stat: <b>50–65% Good · 65–80% Very Good · 80–92% Excellent · 92%+ Exceptional</b>. A cat in the low 70s is genuinely <i>Very Good</i> for this class — not a C.</p>
         <div class="rec-top" style="margin-top:10px">
           <div class="em">${top.em}</div>
           <div class="grow">
@@ -1448,7 +1465,7 @@ function renderResults(cat){
             <div class="why">${esc(top.blurb)}</div>
             ${top.reasons.length?`<div class="why" style="margin-top:6px"><b>Why:</b> ${top.reasons.slice(0,4).map(esc).join(" · ")}</div>`:""}
           </div>
-          <div class="rec-score">${top.pct}%</div>
+          <div class="rec-score">${top.pct}%<div style="font-size:12px;font-weight:600;color:var(--muted);margin-top:2px">${esc(top.grade)}</div></div>
         </div>
         <div style="font-size:12px;color:var(--muted);font-weight:700;margin:4px 0 2px">Runners-up</div>
         ${rankRows}
@@ -1489,22 +1506,26 @@ function renderResults(cat){
     <h4>Effective totals &amp; equipment</h4>
     <p>Each stat's big number is the <b>effective total</b> (base + equipped items), read straight from the cat's stat boxes.
     When a held trinket boosts a stat, the row also shows <code>base · +N Item name</code> — e.g. <code>base 24 · +3 Raw Essence Crystal</code>
-    for an effective Luck of 27. <b>Class fit is computed on the base stats</b> — a removable trinket shouldn't decide which class
-    suits a cat (a Guardian's Medallion pumping Health mustn't circularly recommend Guardian) — while the grades, dice and day-job
-    modifiers shown reflect the effective total.</p>
+    for an effective Luck of 27. Recommendations use the base stats (see Class fit below); the grades, dice and day-job modifiers shown
+    reflect the effective total.</p>
     <h4>Class fit</h4>
-    <p>For most classes each score is <code>0.80 × attribute-fit + 0.20 × personality-fit</code> — a class lives or dies on its core
-    <b>stats</b>, so personality is only a light ~20% adjustment. Attribute-fit is <b>anchored to the game's grade scale</b>: each stat
-    maps to a % band by its grade — <b>Poor</b> 1–6 → 0–30%, <b>Average</b> 7–12 → 30–50%, <b>Good</b> 13–16 → 50–65%,
-    <b>Very Good</b> 17–20 → 65–80%, <b>Excellent</b> 21–25 → 80–92%, <b>Exceptional</b> 26+ → 92–100% — so a cat whose class stats
-    average "Very Good" reads in the mid-70s. It weights that class's core stat highest (e.g. Fighter = Strength, Ranger = Finesse),
-    three stats help <i>every</i> cat as a baseline — <b>Agility</b> (movement tiles), <b>Perception</b> (initiative) and <b>Health</b> (HP) —
-    and every remaining stat still counts a <i>little</i>, so a rock-bottom off-stat dings the score a touch. Personality-fit is the cat's <b>overall personality level</b> (a weighted average
-    where <b>Bravery counts double</b>, since it's the
-    defensive stat against Spite on every quest) — higher personality means more dice and better odds across skill checks, day jobs and
-    scenarios, so among cats with similar stats the more well-rounded one edges ahead. The <b>Bard</b> is the exception: it's
-    personality-driven, so personality is weighted much more heavily (~45%) and <b>low Benevolence</b> — which fuels its Spite damage — is
-    inverted and counts most. Which class is suggested is decided mainly by attributes; personality nudges the score.</p>
+    <p>Fit is <b>anchored to the game's grade scale</b>, so the % reads like a stat, not a school grade: each value maps to a % band by
+    its grade — <b>Poor</b> 1–6 → 0–30%, <b>Average</b> 7–12 → 30–50%, <b>Good</b> 13–16 → 50–65%, <b>Very Good</b> 17–20 → 65–80%,
+    <b>Excellent</b> 21–25 → 80–92%, <b>Exceptional</b> 26+ → 92–100%. A cat whose class stats average "Very Good" lands in the low-mid
+    70s — that's a <i>genuinely Very Good</i> cat for the class, not a C. The score is a blend of six parts:</p>
+    <ul>
+      <li><b>Key attributes — 60%.</b> The class's core + secondary stats, weighted internally (core ×2): Fighter = Strength·Health·Agility,
+      Guardian = Health·Agility, Thief = Agility·Health, Ranger = Finesse·Perception, Medic = Cleverness·Agility, Scout = Perception,
+      <b>Bard = low Benevolence·Perception</b>.</li>
+      <li><b>Other attributes — 10%.</b> The class's remaining stats, averaged — a rock-bottom off-stat dings the score a little; it never drives the pick.</li>
+      <li><b>Personality — 10%.</b> Overall personality level (Bravery included). <b>Benevolence is scored as polarization</b> — only very high (Befriend) or very low (Spite) is useful; the middle isn't.</li>
+      <li><b>Agility · Perception · Health — 10%.</b> Averaged: movement, initiative and HP help every cat.</li>
+      <li><b>Bravery — 10%.</b> Counted again on its own — the defensive stat against Spite on every quest.</li>
+    </ul>
+    <p>The <b>Bard</b> is special: its key stat is <b>Benevolence</b> with <b>low</b> being ideal (Spite). Since personality runs 1–10 but
+    stats run 1–26, the Bard's Benevolence is equalized onto the stat scale, inverted — Benevolence 1 counts as an Exceptional stat, and
+    lower still counts as 27+. Class fit runs on <b>base stats</b> (a removable trinket shouldn't decide a cat's class), while the grades,
+    dice and day-job modifiers shown reflect the effective total.</p>
     <h4>Day jobs (governing attribute)</h4>
     <div class="scrollx"><table>
       <tr><th>Strength</th><th>Agility</th><th>Finesse</th><th>Cleverness</th><th>Perception</th></tr>
@@ -1808,7 +1829,7 @@ const ROSTER_BOOKMARKLET = "javascript:(function(){try{var h=document.documentEl
 function classPctMap(classesArr){ const m={}; (classesArr||[]).forEach(c=>{ if(c&&c.name) m[c.name]=c.pct; }); return m; }
 // Bump whenever scoreClasses / recommendJobs scoring changes, so cached suggestions
 // (pce-suggest-v1) recompute on next load instead of showing stale numbers.
-const ALGO_VERSION = 6;
+const ALGO_VERSION = 7;
 function computeSuggestion(cat){
   const classes=scoreClasses(cat), cls=classes[0];
   const jobs=recommendJobs(cat).jobs.flatMap(j=>j.jobs).slice(0,4);
@@ -2139,7 +2160,7 @@ function rosterRender(){
     const white=catWhiteText(c.data);
     const appr=[rosterColorText(c), notNA(col(c,/pattern/i)), (white&&white!=="None")?white:""].filter(Boolean).join(" · ");
     const job=notNA(col(c,/occupation/i)), cls=notNA(col(c,/^class$/i))||notNA(col(c,/adventuring/i));
-    const recJob=(s.jobs&&s.jobs.length)?s.jobs.join(", "):"", recCls=s.className?(s.className+(s.classPct?(" ("+s.classPct+"%)"):"")):"";
+    const recJob=(s.jobs&&s.jobs.length)?s.jobs.join(", "):"", recCls=s.className?(s.className+(s.classPct?(" ("+s.classPct+"% · "+fitGrade(s.classPct)+")"):"")):"";
     const line=(k,v,vc)=> v?`<div><span class="qv-k">${k}</span> <span class="${vc||""}">${esc(v)}</span></div>`:"";
     const ss=catStatSummary(c);   // top three base stats, e.g. "Str (20), Agi (18), Luck (17)"
     const bestStats = ss ? ss.top.map(t=>`${t.abbr} (${t.n})`).join(", ") : "";
@@ -2185,7 +2206,9 @@ function rosterRender(){
         const addcls=x=>{ tdcls=tdcls?(tdcls+" "+x):x; };
         if(leaf.dual){
           addcls("classcell");
-          cell = leaf.lines.map(ln=>{ const val=rosterCellValue(r,cache,id,ln[1]);
+          cell = leaf.lines.map(ln=>{ let val=rosterCellValue(r,cache,id,ln[1]);
+            // spell out the grade next to the Fit % so a 60s/70s score doesn't read as a C
+            if(ln[1]==="sugclasspct" && val){ const n=parseInt(val,10); if(!isNaN(n)) val=val+" · "+fitGrade(n); }
             return `<div>${ln[0]?`<span class="qv-k">${esc(ln[0])}</span> `:""}${val?`<span class="${ln[2]||''}">${esc(val)}</span>`:"—"}</div>`; }).join("");
         }
         else if(leaf.key==="sugclass"||leaf.key==="sugjobs"||leaf.key==="sugclasspct"){ cell = v?`<span class="sug">${esc(v)}</span>`:"—"; }

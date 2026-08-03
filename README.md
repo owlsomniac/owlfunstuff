@@ -97,9 +97,9 @@ sort.** Highlights:
   its level plus its governing attribute's modifier.
 - **Adventure Classes** — **Suggested class** leads (its class name over a sortable **Fit %**), then one column per
   class (Fighter … Bard) reading **`Lv: N`** / **`Fit: X%`** (level defaults to 1 when the page doesn't list it;
-  Fit % is how well the cat matches that class's ideal, `0.80 × attributes + 0.20 × personality` for most classes — the
-  Bard leans on personality more, `~0.55 / 0.45` — computed from the cat's stats). Each of these headers has separate
-  sort buttons for its two values.
+  Fit % is how well the cat matches that class's ideal, on the game's grade scale — a low-70s score is *Very Good*, and the
+  grade word is shown next to the % so it isn't misread as a C. See **What it computes** for the six-part breakdown). Each of
+  these headers has separate sort buttons for its two values.
 
 **Suggest for shown cats** computes recommendations in bulk.
 
@@ -126,23 +126,28 @@ and a Spite-die count.
 | **Spite (low Benevolence)** | The offensive engine for **Intimidate / Bluff** and the Bard's **Hiss**; resisted by the target's Bravery. Most valuable on a **Bard**. |
 | **Energy / Extroversion / Dedication** | Day-job & *exploration* advantages only — no adventuring combat dice. |
 
-Class fit = `0.80 × attribute-fit + 0.20 × personality-fit` for most classes across Fighter, Guardian, Thief, Ranger,
-Medic, Scout, Bard — a class lives or dies on its **stats**, so personality is only a light ~20% adjustment. Fit is
-computed on the cat's **base stats** (held-trinket bonuses removed): class fit is about innate aptitude, so a removable
-item — e.g. a Guardian's Medallion pumping Health — can't circularly recommend the class it favours.
-Attribute-fit is **anchored to the game's grade scale**, so a cat whose class stats average a given grade reads as that
-grade's percentage (value → %): **Poor** 1–6 → 0–30, **Average** 7–12 → 30–50, **Good** 13–16 → 50–65, **Very Good**
-17–20 → 65–80, **Excellent** 21–25 → 80–92, **Exceptional** 26+ → 92–100. It weights each class's **core stat** heavily
-(Fighter = Strength, Guardian = Health, Thief = Agility, Ranger = Finesse, Medic = Cleverness, Scout/Bard = Perception),
-three stats help **every** cat as a baseline — **Agility** (movement tiles), **Perception** (initiative) and **Health**
-(HP) — and every remaining stat still counts a *little*, so a class's off-stats aren't ignored (a rock-bottom stat dings
-the score a touch, far less than the core). A stat a class *specifically* needs is weighted *above* the plain universal
-bump — more than a class that only benefits from it generically. Personality-fit is the cat's **overall personality level**
-(a weighted average where **Bravery counts double**, since it defends against Spite on every quest) — among cats with
-similar stats the more well-rounded, braver one edges ahead. The **Bard** is the exception: it's personality-driven, so
-personality weighs much more (~45%) and **low Benevolence** — which fuels its Spite damage — is inverted and counts most.
-Day jobs come from the strongest attributes; high Benevolence/Bravery surface specialty roles (Caregiver, Doctor,
-Diplomat/Spite Bard, Adventurous Mayor).
+Class fit is **anchored to the game's own grade scale**, so the % reads like a stat, not a school grade — a cat whose
+class stats average a given grade earns that grade's band (value → %): **Poor** 1–6 → 0–30, **Average** 7–12 → 30–50,
+**Good** 13–16 → 50–65, **Very Good** 17–20 → 65–80, **Excellent** 21–25 → 80–92, **Exceptional** 26+ → 92–100. So a cat
+in the low-mid 70s is **genuinely Very Good** for that class, not a C — and the tool spells the grade word next to the %
+so it isn't misread. Fit runs on the cat's **base stats** (held-trinket bonuses removed): a removable item — e.g. a
+Guardian's Medallion pumping Health — can't circularly recommend the class it favours.
+
+Each class's score is a blend of six parts (weights sum to 100):
+
+- **Key attributes — 60.** The class's core + secondary stats, weighted internally (core ×2): Fighter = Strength·Health·Agility,
+  Guardian = Health·Agility, Thief = Agility·Health, Ranger = Finesse·Perception, Medic = Cleverness·Agility, Scout = Perception,
+  **Bard = low Benevolence·Perception**.
+- **Other attributes — 10.** The class's remaining stats, averaged — a rock-bottom off-stat dings fit a little; it never drives the pick.
+- **Personality — 10.** Overall personality level (Bravery included). **Benevolence is scored as polarization** — only very high (Befriend)
+  or very low (Spite) is useful; the wishy-washy middle isn't.
+- **Agility · Perception · Health — 10.** Averaged: movement, initiative and HP help every cat.
+- **Bravery — 10.** Counted again on its own — the defensive stat against Spite on every quest.
+
+The **Bard** is special: its key stat is **Benevolence** with **low** being ideal (Spite). Since personality runs 1–10 but stats run
+1–26, the Bard's Benevolence is equalized onto the stat scale, inverted — Benevolence 1 counts as an Exceptional stat, lower still as 27+.
+Day jobs come from the strongest attributes; high Benevolence/Bravery surface specialty roles (Caregiver, Doctor, Diplomat/Spite Bard,
+Adventurous Mayor).
 
 Fan-made; not affiliated with Pixel Cat's End. Bonus rules follow the supplied Adventuring Guide; attribute/job/class
 data cross-checked against the community [Not-Wiki](https://pixelcatsend.miraheze.org/wiki/Attributes).
