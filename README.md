@@ -126,9 +126,11 @@ and a Spite-die count.
 | **Energy / Extroversion / Dedication** | Day-job & *exploration* advantages only — no adventuring combat dice. |
 
 Class fit = `0.55 × attribute-fit + 0.45 × personality-fit` across Fighter, Guardian, Thief, Ranger, Medic, Scout, Bard.
-The attributes decide *which* class; personality-fit is the cat's **overall personality level** (a weighted average where
-**Bravery counts double**, since it defends against Spite on every quest) — a well-rounded, brave cat is a stronger pick for
-any class. The **Bard** is the one exception: **low Benevolence** is desirable (it fuels Spite damage), so that trait is inverted for it.
+Attribute-fit weights each class's **core stat** heavily (Fighter = Strength, Guardian = Health, Thief = Agility, Ranger =
+Finesse, Medic = Cleverness, Scout/Bard = Perception), and three stats help **every** cat as a baseline — **Agility**
+(movement tiles), **Perception** (initiative) and **Health** (HP). Personality-fit is the cat's **overall personality level**
+(a weighted average where **Bravery counts double**, since it defends against Spite on every quest) — a well-rounded, brave cat
+is a stronger pick for any class. The **Bard** is the one exception: **low Benevolence** is desirable (it fuels Spite damage), so that trait is inverted for it.
 Day jobs come from the strongest attributes; high Benevolence/Bravery surface specialty roles (Caregiver, Doctor,
 Diplomat/Spite Bard, Adventurous Mayor).
 

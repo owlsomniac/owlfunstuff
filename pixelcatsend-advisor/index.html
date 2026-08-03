@@ -742,31 +742,33 @@ function jobLevelFromData(str, job){
 
 /* Class definitions — attribute weights + personality wants, per the guide's
    ideal profiles (section 6), with core attribute anchors from the game. */
-// Class fit weights each class's core attribute(s). Personality-fit is the cat's OVERALL
-// personality level (higher = more capable across scenarios) — the same for every class —
-// except a class may list `persInvert` traits it wants LOW instead of high. Only the Bard
-// does: its Spite damage is fuelled by LOW Benevolence.
+// Class fit weights each class's CORE attribute(s) heavily (weight 2), plus any it especially
+// values. On top of that, three attributes help EVERY cat regardless of class — Agility (more
+// movement tiles), Perception (initiative) and Health (HP) — applied as a universal floor
+// (UNIVERSAL_ATTR, merged in by max). Personality-fit is the cat's overall level (Bravery
+// double-weighted); a class may invert a trait it wants LOW — only the Bard (low Benevolence → Spite).
+const UNIVERSAL_ATTR = {agility:.5, perception:.4, health:.35};
 const CLASSES = [
   {key:"fighter", name:"Fighter", em:"⚔️", core:"strength",
-   attrs:{strength:1,agility:.6},
+   attrs:{strength:2, health:.6},   // Strength core (Bite/Kick); extra Health to tank constant melee
    blurb:"Frontline bruiser — shrugs off fear and lands heavy Kick/Bite hits."},
   {key:"guardian", name:"Guardian", em:"🛡️", core:"health",
-   attrs:{health:1,agility:.55},
+   attrs:{health:2},
    blurb:"Damage sponge — Protects allies (150% HP) and resists status attacks."},
   {key:"thief", name:"Thief", em:"🗡️", core:"agility",
-   attrs:{agility:1,finesse:.7},
+   attrs:{agility:2},   // Agility core (Hide/Backstab); improved dodge dice cover survivability
    blurb:"Elusive striker — hard to hit, uses Spite for underhanded tactics."},
   {key:"ranger", name:"Ranger", em:"🏹", core:"finesse",
-   attrs:{finesse:1,perception:.75},
+   attrs:{finesse:2, perception:.6},   // Finesse core (Piercing Bolt/Double Shot); Perception for fast shots
    blurb:"Precision shooter — patient, lands consecutive long-range attacks."},
   {key:"medic", name:"Medic", em:"➕", core:"cleverness",
-   attrs:{cleverness:1,health:.55},
+   attrs:{cleverness:2},
    blurb:"Field healer — Cleverness scales Tend Wounds; Benevolence buys goodwill."},
   {key:"scout", name:"Scout", em:"👁️", core:"perception",
-   attrs:{perception:1,agility:.7},
+   attrs:{perception:2},
    blurb:"Skill-check specialist — +150% initiative, thrives on active events."},
   {key:"bard", name:"Bard", em:"🎵", core:"perception",
-   attrs:{perception:.55,cleverness:.45,_balanced:true}, persInvert:["benevolence"],
+   attrs:{perception:.6}, persInvert:["benevolence"],   // no attribute core — Spite (LOW Benevolence) is it; Perception speeds Rally
    blurb:"Team amplifier — buffs everyone's Bravery/Benevolence/Spite rolls."}
 ];
 
@@ -1159,16 +1161,16 @@ const PERS_FIT_WEIGHT = {bravery:2};   // Bravery counts double in the personali
 function scoreClasses(cat){
   const {attributes:A, personality:P} = cat;
   return CLASSES.map(c=>{
-    // attribute score (weighted average of wanted attrs)
+    // attribute score = weighted average, where the class's own weights are floored by the
+    // universally-useful stats (Agility movement, Perception initiative, Health HP).
+    const wgt = {};
+    for(const k in c.attrs) wgt[k] = c.attrs[k];
+    for(const k in UNIVERSAL_ATTR) wgt[k] = Math.max(wgt[k]||0, UNIVERSAL_ATTR[k]);
     let aw=0, as=0, reasons=[];
-    for(const k in c.attrs){
-      if(k==="_balanced") continue;
-      const w=c.attrs[k]; aw+=w;
-      const nv=attrNorm(A[k]); as+=nv*w;
-      if(A[k]!=null && attrNorm(A[k])>=.6) reasons.push(labelOf(k)+" "+A[k]);
-    }
-    let attrScore = aw>0? as/aw : 0;
-    if(c.attrs._balanced) attrScore = attrScore*.5 + balanceScore(A)*.5;
+    for(const k in wgt){ aw+=wgt[k]; as+=attrNorm(A[k])*wgt[k]; }
+    const attrScore = aw>0? as/aw : 0;
+    // reasons cite the class's OWN strong stats (core / above-baseline), not the universal floor
+    for(const k in c.attrs){ if(A[k]!=null && attrNorm(A[k])>=.6) reasons.push(labelOf(k)+" "+A[k]); }
 
     // personality score = the cat's OVERALL personality level (0..1), a WEIGHTED average where
     // Bravery counts double (it defends against Spite on every quest). Higher personality means
@@ -1443,8 +1445,10 @@ function renderResults(cat){
     When a held trinket boosts a stat, the row also shows <code>base · +N Item name</code> — e.g. <code>base 24 · +3 Raw Essence Crystal</code>
     for an effective Luck of 27. Recommendations use the effective total.</p>
     <h4>Class fit</h4>
-    <p>Each class scores <code>0.55 × attribute-fit + 0.45 × personality-fit</code>. Attribute-fit weights that class's core stat highest.
-    Personality-fit is the cat's <b>overall personality level</b> (a weighted average where <b>Bravery counts double</b>, since it's the
+    <p>Each class scores <code>0.55 × attribute-fit + 0.45 × personality-fit</code>. Attribute-fit weights that class's core stat highest
+    (e.g. Fighter = Strength, Ranger = Finesse), and three stats help <i>every</i> cat as a baseline — <b>Agility</b> (movement tiles),
+    <b>Perception</b> (initiative) and <b>Health</b> (HP). Personality-fit is the cat's <b>overall personality level</b> (a weighted average
+    where <b>Bravery counts double</b>, since it's the
     defensive stat against Spite on every quest) — higher personality means more dice and better odds across skill checks, day jobs and
     scenarios, so a well-rounded cat is a stronger pick for <i>any</i> class (a Fighter with the same Strength &amp; Health but higher
     personality — especially Bravery — is the better Fighter). The <b>Bard</b> is the one exception: <b>low Benevolence</b> is desirable — it
