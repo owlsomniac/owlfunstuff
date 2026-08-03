@@ -742,27 +742,31 @@ function jobLevelFromData(str, job){
 
 /* Class definitions — attribute weights + personality wants, per the guide's
    ideal profiles (section 6), with core attribute anchors from the game. */
+// Class fit weights each class's core attribute(s). Personality-fit is the cat's OVERALL
+// personality level (higher = more capable across scenarios) — the same for every class —
+// except a class may list `persInvert` traits it wants LOW instead of high. Only the Bard
+// does: its Spite damage is fuelled by LOW Benevolence.
 const CLASSES = [
   {key:"fighter", name:"Fighter", em:"⚔️", core:"strength",
-   attrs:{strength:1,agility:.6}, pers:[["bravery","high"]],
+   attrs:{strength:1,agility:.6},
    blurb:"Frontline bruiser — shrugs off fear and lands heavy Kick/Bite hits."},
   {key:"guardian", name:"Guardian", em:"🛡️", core:"health",
-   attrs:{health:1,agility:.55}, pers:[["bravery","high"],["dedication","high"]],
+   attrs:{health:1,agility:.55},
    blurb:"Damage sponge — Protects allies (150% HP) and resists status attacks."},
   {key:"thief", name:"Thief", em:"🗡️", core:"agility",
-   attrs:{agility:1,finesse:.7}, pers:[["benevolence","low"],["extroversion","low"]],
+   attrs:{agility:1,finesse:.7},
    blurb:"Elusive striker — hard to hit, uses Spite for underhanded tactics."},
   {key:"ranger", name:"Ranger", em:"🏹", core:"finesse",
-   attrs:{finesse:1,perception:.75}, pers:[["dedication","high"]],
+   attrs:{finesse:1,perception:.75},
    blurb:"Precision shooter — patient, lands consecutive long-range attacks."},
   {key:"medic", name:"Medic", em:"➕", core:"cleverness",
-   attrs:{cleverness:1,health:.55}, pers:[["benevolence","high"],["dedication","high"]],
+   attrs:{cleverness:1,health:.55},
    blurb:"Field healer — Cleverness scales Tend Wounds; Benevolence buys goodwill."},
   {key:"scout", name:"Scout", em:"👁️", core:"perception",
-   attrs:{perception:1,agility:.7}, pers:[["energy","high"]],
+   attrs:{perception:1,agility:.7},
    blurb:"Skill-check specialist — +150% initiative, thrives on active events."},
   {key:"bard", name:"Bard", em:"🎵", core:"perception",
-   attrs:{perception:.55,cleverness:.45,_balanced:true}, pers:[["benevolence","polarized"]],
+   attrs:{perception:.55,cleverness:.45,_balanced:true}, persInvert:["benevolence"],
    blurb:"Team amplifier — buffs everyone's Bravery/Benevolence/Spite rolls."}
 ];
 
@@ -1149,6 +1153,8 @@ function balanceScore(attributes){
   const sd = Math.sqrt(varc);
   return clamp(1 - sd/6, 0, 1);   // lower spread → higher balance
 }
+const persLevelNorm = v => v==null?0 : clamp((v-1)/9, 0, 1);   // personality value → 0..1 level (1→0, 10→1)
+const PERS_FIT_WEIGHT = {bravery:2};   // Bravery counts double in the personality total — it's the DEFENSIVE stat vs Spite on every quest
 
 function scoreClasses(cat){
   const {attributes:A, personality:P} = cat;
@@ -1164,16 +1170,26 @@ function scoreClasses(cat){
     let attrScore = aw>0? as/aw : 0;
     if(c.attrs._balanced) attrScore = attrScore*.5 + balanceScore(A)*.5;
 
-    // personality score
-    let ps=0;
-    c.pers.forEach(([tk,want])=>{
-      const m=persMatch(P[tk],want); ps+=m;
-      if(m>=.6){
-        const pl=PERS.find(x=>x.key===tk);
-        reasons.push((want==="low"?pl.low:want==="polarized"?"polarized "+pl.label:pl.high)+(P[tk]!=null?" ("+P[tk]+")":""));
-      }
+    // personality score = the cat's OVERALL personality level (0..1), a WEIGHTED average where
+    // Bravery counts double (it defends against Spite on every quest). Higher personality means
+    // more dice and better odds across skill checks, day jobs and scenarios, so a well-rounded
+    // cat is a stronger pick for ANY class. A class may want a trait LOW instead (persInvert):
+    // only the Bard does, since LOW Benevolence fuels its Spite damage.
+    const invert = new Set(c.persInvert||[]);
+    const knownP = PERS.filter(p=>P[p.key]!=null);
+    let persScore = .5;
+    if(knownP.length){
+      let sum=0, wsum=0;
+      knownP.forEach(p=>{ const w=PERS_FIT_WEIGHT[p.key]||1, n=persLevelNorm(P[p.key]);
+        sum += w*(invert.has(p.key)?(1-n):n); wsum += w; });
+      persScore = wsum ? sum/wsum : .5;
+    }
+    // reasons: notably-high traits (and, for a persInvert trait, a desirable LOW value)
+    knownP.forEach(p=>{
+      const v=P[p.key];
+      if(invert.has(p.key)){ if(v<=3) reasons.push("low "+p.label+" "+v+(p.key==="benevolence"?" (Spite)":"")); return; }
+      if(v>=8) reasons.push(p.high+" ("+v+")");
     });
-    const persScore = c.pers.length? ps/c.pers.length : .5;
 
     const total = 0.55*attrScore + 0.45*persScore;
     return {...c, attrScore, persScore, total, pct:Math.round(total*100), reasons};
@@ -1427,8 +1443,12 @@ function renderResults(cat){
     When a held trinket boosts a stat, the row also shows <code>base · +N Item name</code> — e.g. <code>base 24 · +3 Raw Essence Crystal</code>
     for an effective Luck of 27. Recommendations use the effective total.</p>
     <h4>Class fit</h4>
-    <p>Each class scores <code>0.55 × attribute-fit + 0.45 × personality-fit</code>. Attribute-fit weights that class's core stat highest;
-    personality-fit rewards the profile it wants (e.g. Fighter wants high Bravery, Thief wants low Benevolence + low Extroversion, Bard wants a polarised Benevolence).</p>
+    <p>Each class scores <code>0.55 × attribute-fit + 0.45 × personality-fit</code>. Attribute-fit weights that class's core stat highest.
+    Personality-fit is the cat's <b>overall personality level</b> (a weighted average where <b>Bravery counts double</b>, since it's the
+    defensive stat against Spite on every quest) — higher personality means more dice and better odds across skill checks, day jobs and
+    scenarios, so a well-rounded cat is a stronger pick for <i>any</i> class (a Fighter with the same Strength &amp; Health but higher
+    personality — especially Bravery — is the better Fighter). The <b>Bard</b> is the one exception: <b>low Benevolence</b> is desirable — it
+    fuels its Spite damage — so that single trait is inverted for it. Which class is suggested is decided by attributes; personality lifts or lowers the whole score.</p>
     <h4>Day jobs (governing attribute)</h4>
     <div class="scrollx"><table>
       <tr><th>Strength</th><th>Agility</th><th>Finesse</th><th>Cleverness</th><th>Perception</th></tr>
