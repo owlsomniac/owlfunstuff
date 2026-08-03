@@ -1756,10 +1756,13 @@ function rosterCatToGeneString(cat){
 // Bookmarklet that copies the (private) Village Manager page's HTML to the clipboard.
 const ROSTER_BOOKMARKLET = "javascript:(function(){try{var h=document.documentElement.outerHTML;function done(){alert('Village roster copied \\u2014 paste it into the Pixel Cat\\u2019s End advisor.');}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(h).then(done,function(){window.prompt('Copy this HTML, then paste into the advisor:',h);});}else{window.prompt('Copy this HTML, then paste into the advisor:',h);}}catch(e){alert('Could not copy: '+e);}})();";
 function classPctMap(classesArr){ const m={}; (classesArr||[]).forEach(c=>{ if(c&&c.name) m[c.name]=c.pct; }); return m; }
+// Bump whenever scoreClasses / recommendJobs scoring changes, so cached suggestions
+// (pce-suggest-v1) recompute on next load instead of showing stale numbers.
+const ALGO_VERSION = 3;
 function computeSuggestion(cat){
   const classes=scoreClasses(cat), cls=classes[0];
   const jobs=recommendJobs(cat).jobs.flatMap(j=>j.jobs).slice(0,4);
-  return {className:cls?cls.name:"", classPct:cls?cls.pct:0, pcts:classPctMap(classes), jobs, ts:nowTs()};
+  return {className:cls?cls.name:"", classPct:cls?cls.pct:0, pcts:classPctMap(classes), jobs, algo:ALGO_VERSION, ts:nowTs()};
 }
 function cacheSuggestion(id,cat){ if(!id) return; const c=suggestLoad(); c[id]=computeSuggestion(cat); suggestSave(c); }
 // Reconstruct a scorable {attributes, personality} from a roster cat's stored stat
@@ -1775,7 +1778,7 @@ function rosterCatForScoring(rc){
 function ensureSuggestions(r){
   const c=suggestLoad(); let dirty=false;
   Object.keys(r.cats||{}).forEach(id=>{
-    const s=c[id]; if(s && s.pcts) return;
+    const s=c[id]; if(s && s.pcts && s.algo===ALGO_VERSION) return;   // recompute when the scoring algorithm changed
     const cat=rosterCatForScoring(r.cats[id]); if(!cat) return;
     c[id]=computeSuggestion(cat); dirty=true;
   });
