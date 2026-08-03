@@ -2979,7 +2979,7 @@ const POSE_Y = {
 // m-bean-longhair-playing lands at col 2, row 5 (offY −500 = bean −400 + longhair −100).
 const STAGE_Y = {adult:0, kitten:-200, bean:-400};   // bean & adult measured; kitten inferred
 let previewPose = "standing";
-let previewSel = {species:"any", wind:"any", fur:"any", pattern:"any", white:"any", accent:"any"};   // kitten-gallery pickers (default: Any)
+let previewSel = {species:"any", wind:"any", fur:"any", coat:"any", pattern:"any", white:"any", accent:"any"};   // kitten-gallery pickers (default: Any)
 function poseOffset(species, fur, pose, stage){
   pose = (POSE_X[pose]!=null) ? pose : "standing";
   const sp = /mer/i.test(species||"") ? "m" : "c";
@@ -3216,11 +3216,15 @@ function kittenGallery(R,A,B){
   const patOut   = [...patternOutcomeDist(R).entries()].sort((a,b)=>b[1]-a[1]);
   const whiteOut = [...whiteOutcomeDist(R).entries()].sort((a,b)=>b[1]-a[1]);
   const speciesMap=new Map(speciesOut), furMap=new Map(furOut), patMap=new Map(patOut), whiteMap=new Map(whiteOut);
+  // coat type (Standard / Watercolor / Tortoiseshell / Snow) present among the colour outcomes
+  const COAT_LABELS={standard:"Standard",watercolor:"Watercolor",tortoiseshell:"Tortoiseshell",snow:"Snow"};
+  const coatOut=["standard","watercolor","tortoiseshell","snow"].filter(ct=>colors.some(([label,p])=>p>0 && coatTypeOf(label)===ct)).map(ct=>[ct,COAT_LABELS[ct]]);
 
   // keep the current selection valid for this pairing
   if(previewSel.species!=="any" && !speciesMap.has(previewSel.species))         previewSel.species="any";
   if(previewSel.wind!=="any"    && !windOut.some(([w])=>w===previewSel.wind))   previewSel.wind="any";
   if(previewSel.fur!=="any"     && !furMap.has(previewSel.fur))                 previewSel.fur="any";
+  if(previewSel.coat!=="any"    && !coatOut.some(([ct])=>ct===previewSel.coat)) previewSel.coat="any";
   if(previewSel.pattern!=="any" && !patMap.has(previewSel.pattern))             previewSel.pattern="any";
   if(previewSel.white!=="any"   && !whiteMap.has(previewSel.white))             previewSel.white="any";
 
@@ -3255,9 +3259,10 @@ function kittenGallery(R,A,B){
     const windP = previewSel.wind==="any" ? p : ((cc.windJoint.get(label)||new Map()).get(previewSel.wind)||0);
     const prob  = windP * speciesFactor * furFactor * patFactor * whiteFactor;
     if(prob<=0) return "";                          // impossible under the current picks
+    const coatType=/tortoiseshell/i.test(label)?"tortoiseshell":/watercolou?r/i.test(label)?"watercolor":/snow/i.test(label)?"snow":"standard";
+    if(previewSel.coat!=="any" && coatType!==previewSel.coat) return "";   // filtered out by the Coat pick
     const pct=prob*100;
     const hex=cc.hex.get(label);
-    const coatType=/tortoiseshell/i.test(label)?"tortoiseshell":/watercolou?r/i.test(label)?"watercolor":/snow/i.test(label)?"snow":"standard";
     const img=catPreview({colorName:primaryColorWord(label), colorName2:secondaryColorWord(label), coatType,
       patternName:patName, patterned, species, accentColor:tailAccent, whiteType:wType, whiteLevel:wLevel, hex, fur, size:96, title:label});
     const windForStr = previewSel.wind!=="any" ? previewSel.wind
@@ -3287,13 +3292,14 @@ function kittenGallery(R,A,B){
     ${sel({label:"Species",k:"species-pick"}, previewSel.species, speciesOut.map(([s])=>[s,s]))}
     ${sel({label:"Wind",k:"wind-pick"},    previewSel.wind,    windOut.map(([w])=>[w,w]))}
     ${sel({label:"Fur",k:"fur-pick"},      previewSel.fur,     furOut.map(([f])=>[f,f]))}
+    ${sel({label:"Coat",k:"coat-pick"},    previewSel.coat,    coatOut)}
     ${sel({label:"Pattern",k:"pat-pick"},  previewSel.pattern, patOut.map(([k])=>[k,k]))}
     ${sel({label:"White",k:"white-pick"},  previewSel.white,   whiteOut.map(([k])=>[k,whiteOutcomeLabel(k)]))}
     ${accentPicker}
   </div>`;
 
   const picked=[previewSel.species!=="any"?previewSel.species:null, previewSel.wind!=="any"?previewSel.wind:null,
-    previewSel.fur!=="any"?previewSel.fur:null,
+    previewSel.fur!=="any"?previewSel.fur:null, previewSel.coat!=="any"?COAT_LABELS[previewSel.coat]:null,
     previewSel.pattern!=="any"?previewSel.pattern:null, previewSel.white!=="any"?whiteOutcomeLabel(previewSel.white):null].filter(Boolean);
   return `<div class="dist-block"><h3>Likely kittens</h3>
     ${controls}
@@ -3389,7 +3395,7 @@ function breedLoad(){ try{ return JSON.parse(localStorage.getItem(BREED_KEY)||"n
 function restoreBreeding(){
   const st=breedLoad(); if(!st) return;
   if(st.pose) previewPose=st.pose;
-  if(st.sel && typeof st.sel==="object") previewSel={species:st.sel.species||"any", wind:st.sel.wind||"any", fur:st.sel.fur||"any", pattern:st.sel.pattern||"any", white:st.sel.white||"any", accent:st.sel.accent||"any"};
+  if(st.sel && typeof st.sel==="object") previewSel={species:st.sel.species||"any", wind:st.sel.wind||"any", fur:st.sel.fur||"any", coat:st.sel.coat||"any", pattern:st.sel.pattern||"any", white:st.sel.white||"any", accent:st.sel.accent||"any"};
   if(st.metaA) breedMeta.A=st.metaA; if(st.metaB) breedMeta.B=st.metaB;
   const setV=(s,val)=>{ const el=$(s); if(el) el.value=val||""; };
   setV("#pA",st.a); setV("#pB",st.b); setV("#pickA",st.pickA); setV("#pickB",st.pickB);
@@ -3735,6 +3741,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     else if(t.classList.contains("species-pick")){ previewSel.species=t.value; reBreed(); }
     else if(t.classList.contains("wind-pick")){ previewSel.wind=t.value; reBreed(); }
     else if(t.classList.contains("fur-pick")){ previewSel.fur=t.value; reBreed(); }
+    else if(t.classList.contains("coat-pick")){ previewSel.coat=t.value; reBreed(); }
     else if(t.classList.contains("pat-pick")){ previewSel.pattern=t.value; reBreed(); }
     else if(t.classList.contains("white-pick")){ previewSel.white=t.value; reBreed(); }
     else if(t.classList.contains("accent-pick")){ previewSel.accent=t.value; reBreed(); }
@@ -3849,7 +3856,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     ["#pA","#pB","#pickA","#pickB"].forEach(s=>{ const el=$(s); if(el) el.value=""; });
     $("#noteA").textContent=""; $("#noteB").textContent="";
     breedMeta.A=null; breedMeta.B=null; lastBreed=null;
-    previewSel={species:"any", wind:"any", fur:"any", pattern:"any", white:"any", accent:"any"};
+    previewSel={species:"any", wind:"any", fur:"any", coat:"any", pattern:"any", white:"any", accent:"any"};
     $("#breedResults").innerHTML=""; setStatus($("#breedStatus"),"","");
     try{ localStorage.removeItem(BREED_KEY); }catch(e){}
   });

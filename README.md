@@ -162,8 +162,9 @@ each parent's decoded phenotype (shown as **labelled facts** in the same order a
 Coat / Pattern / White / Accent — with its name/#ID linking to the cat's page when picked from your roster). Parents and
 **every** possible kitten get **composited sprite previews** built from the game's own image layers, each **cropped to a single
 pose** (correct per-species offsets for Not-cats and Mercats) — pick **standing / sitting / playing / sleeping / upsidedown**
-from the pose selector. Above the kitten gallery a row of **dropdowns — Species · Wind · Fur · Pattern · White** (plus an **Accent**
-picker whenever more than one accent is possible) — each lists **only outcomes this pairing can actually produce** (Species toggles the
+from the pose selector. Above the kitten gallery a row of **dropdowns — Species · Wind · Fur · Coat · Pattern · White** (plus an **Accent**
+picker whenever more than one accent is possible) — each lists **only outcomes this pairing can actually produce** (**Coat** filters by
+coat type — Standard / Watercolor / Tortoiseshell / Snow; Species toggles the
 previews between Not-cat and Mercat sprites); picking
 any of them narrows the previews and rewrites every kitten's % to the **true overall chance** of a kitten with that coat *and*
 the chosen
