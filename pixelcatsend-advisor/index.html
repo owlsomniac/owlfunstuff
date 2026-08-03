@@ -714,9 +714,9 @@
 const ATTRS = [
   {key:"strength",   label:"Strength",   abbr:"Str",  short:"physical might",        jobs:["Builder","Mason","Blacksmith","Miner"]},
   {key:"agility",    label:"Agility",    abbr:"Agi",  short:"speed & dexterity",     jobs:["Hunter","Fisher","Bug Catcher"]},
-  {key:"health",     label:"Health",     abbr:"Hea",  short:"resilience & healing",  jobs:[]},
+  {key:"health",     label:"Health",     abbr:"Hlth", short:"resilience & healing",  jobs:[]},
   {key:"finesse",    label:"Finesse",    abbr:"Fin",  short:"precision & detail",    jobs:["Clothier","Artist","Craftscat"]},
-  {key:"cleverness", label:"Cleverness", abbr:"Cle",  short:"intellect & knowledge", jobs:["Herbalist","Apothecary","Scribe"]},
+  {key:"cleverness", label:"Cleverness", abbr:"Clev", short:"intellect & knowledge", jobs:["Herbalist","Apothecary","Scribe"]},
   {key:"perception", label:"Perception", abbr:"Per",  short:"awareness & focus",     jobs:["Gatherer","Gardener","Farmer","Flockherd","Baker"]},
   {key:"luck",       label:"Luck",       abbr:"Luck", short:"fortune & rare finds",  jobs:[]}
 ];
@@ -2051,7 +2051,7 @@ function rosterRender(){
         + carriesInner
         + `</button>`;
     }
-    return `<div class="qv-appr">${esc(appr||"—")}</div>`+line("Job:",job)+line("Class:",cls)+line("Best Stats:",bestStats)+line("Rec Job:",recJob,"qv-rec")+line("Rec Class:",recCls,"qv-rec")+genesBlock;
+    return `<div class="qv-appr">${esc(appr||"—")}</div>`+line("Job:",job)+line("Class:",cls)+line("Best Stats:",bestStats)+line("BST:",ss?String(ss.total):"")+line("Rec Job:",recJob,"qv-rec")+line("Rec Class:",recCls,"qv-rec")+genesBlock;
   };
   const attrLabels=new Set(ATTRS.map(a=>a.label));   // to flag trinket-boosted stat totals
   const body=tids.slice(0,400).map(id=>{

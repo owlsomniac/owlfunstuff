@@ -43,8 +43,9 @@ rule** so the data reads as a clean grid; cell padding is tight so more columns 
 **sizes itself to the viewport** — its scroll region fills the space down to the bottom of the screen, with the header
 row pinned, so you see the top and bottom at once without zooming out (many rows scroll *inside* the table, not the page).
 A wider, collapsible **Quick View** column gives the at-a-glance summary (appearance, current job & class, a **Best Stats**
-line with the cat's top three base stats abbreviated — *Str (20), Agi (18), Luck (17)* — recommended
-job/class, and the cat's genetics as **one click-copy block** — the whole **Genes + Carries** section copies together:
+line with the cat's top three base stats abbreviated — *Str (20), Agi (18), Luck (17)* — with the base-stat total on a
+**BST** line beneath it, recommended job/class, and the cat's genetics as **one click-copy block** — the whole
+**Genes + Carries** section copies together:
 you get the genetic string (ready to paste into Breeding) with a `Carries: …` line appended when there is one. Below the
 string, a **Carries:** line lists the alleles a cat is hiding — *Longhair* (`[SL]`),
 *Dilute* (`[FD]`), *Solid* (a patterned cat carrying solid, `[YN]`), *No-white* (`[YN]`), *Null (wind)* (`[NO]`/`[SO]`),
