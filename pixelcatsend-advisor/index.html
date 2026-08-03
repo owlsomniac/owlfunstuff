@@ -1805,6 +1805,7 @@ function rosterCellValue(r,cache,id,key){
   if(key.indexOf("clsfit:")===0){                    // the cat's fit % for one class
     const s=cache[id]; return (s&&s.pcts&&s.pcts[key.slice(7)]!=null) ? (s.pcts[key.slice(7)]+"%") : "";
   }
+  if(key==="data:Color"||key==="data:Colour") return rosterColorText(r.cats[id]);
   if(key.indexOf("data:")===0) return (r.cats[id].data||{})[key.slice(5)]||"";
   return "";
 }
@@ -1974,7 +1975,7 @@ function rosterRender(){
   const quickCell=id=>{
     const c=r.cats[id], s=cache[id]||{};
     const white=catWhiteText(c.data);
-    const appr=[notNA(col(c,/^colou?r$/i)), notNA(col(c,/pattern/i)), (white&&white!=="None")?white:""].filter(Boolean).join(" · ");
+    const appr=[rosterColorText(c), notNA(col(c,/pattern/i)), (white&&white!=="None")?white:""].filter(Boolean).join(" · ");
     const job=notNA(col(c,/occupation/i)), cls=notNA(col(c,/^class$/i))||notNA(col(c,/adventuring/i));
     const recJob=(s.jobs&&s.jobs.length)?s.jobs.join(", "):"", recCls=s.className?(s.className+(s.classPct?(" ("+s.classPct+"%)"):"")):"";
     const line=(k,v,vc)=> v?`<div><span class="qv-k">${k}</span> <span class="${vc||""}">${esc(v)}</span></div>`:"";
@@ -2371,6 +2372,18 @@ function withKnownAccent(str, cat){
   return secs.map(s=>"["+s+"]").join(" ");
 }
 // A roster cat's coat-colour density (1–4) — the "dilution level" of its shade.
+// A roster cat's coat-colour label for display. A single-shade watercolour is always stale
+// (the game — and our renderer — name both shades, e.g. "Chocolate-Brown"), so upgrade it
+// from the genes when we can. Everything else keeps the stored/game colour string verbatim.
+function rosterColorText(c){
+  c=c||{};
+  const stored=notNA(col(c,/^colou?r$/i));
+  if(/watercolou?r/i.test(stored) && !stored.includes("-") && c.genes){
+    const g=parseGeneString(c.genes);
+    if(!g.error){ const d=phenotype(g).color; if(/watercolou?r/i.test(d)) return d; }
+  }
+  return stored;
+}
 // Read from its genetic string when we have one, else recovered from the displayed
 // colour name (each colour word pins a group + dilute + density).
 function catDensity(cat){
