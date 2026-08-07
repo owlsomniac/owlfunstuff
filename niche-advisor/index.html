@@ -423,14 +423,17 @@ function mutationPlan(cats){
   const needSex=!(pool.some(c=>c.sex==="F")&&pool.some(c=>c.sex==="M"));
   const res={ceilTotal, steps:[], seed:null, finalScore:0, needSex, noMut:ceilTotal===0};
   if(res.noMut || res.needSex) return res;
+  const opp=s=>s==="F"?"M":"F";
   const seed=pool.slice().sort((a,b)=>mutationScore(b.geno)-mutationScore(a.geno)||a.id-b.id)[0];
   res.seed={name:seed.name, sex:seed.sex, score:mutationScore(seed.geno)};
   const line=geneMaxLevels(seed.geno), used=new Set([seed.id]);
   const lineScore=()=>GENES.reduce((s,g)=>s+line[g.key],0);
   let guard=0;
   while(lineScore()<ceilTotal && guard++<pool.length+2){
+    const firstCross=res.steps.length===0;   // the seed itself is a parent here, so its first mate must be opposite-sex
     let best=null,bestGain=0,bestAdds=null;
-    pool.forEach(c=>{ if(used.has(c.id)) return; const m=geneMaxLevels(c.geno); let gain=0, adds=[];
+    pool.forEach(c=>{ if(used.has(c.id)) return; if(firstCross && c.sex!==opp(seed.sex)) return;
+      const m=geneMaxLevels(c.geno); let gain=0, adds=[];
       GENES.forEach(g=>{ if(m[g.key]>line[g.key]){ gain+=m[g.key]-line[g.key]; const t=topMutAllele(c.geno,g.key); adds.push({gene:g.key, level:m[g.key], base:t?t.base:""}); } });
       if(gain>bestGain){ bestGain=gain; best=c; bestAdds=adds; }
     });
@@ -438,7 +441,10 @@ function mutationPlan(cats){
     used.add(best.id); bestAdds.forEach(a=>line[a.gene]=a.level);
     res.steps.push({partner:best.name, partnerSex:best.sex, gain:bestGain, adds:bestAdds, scoreAfter:lineScore()});
   }
+  // each kept pup becomes the next parent, so it must be opposite-sex to the NEXT cross's partner
+  res.steps.forEach((s,i)=>{ s.keepPupSex = (i+1<res.steps.length) ? opp(res.steps[i+1].partnerSex) : null; });
   res.finalScore=lineScore();
+  res.incomplete = res.finalScore<ceilTotal;   // couldn't chain everything (e.g. all remaining ✦ on the seed's own sex)
   return res;
 }
 
@@ -802,10 +808,13 @@ function runMutPlan(){
     } else {
       html+=plan.steps.map((s,i)=>{
         const adds=s.adds.map(a=>`${esc(a.base)} ✦+${a.level}`).join(", ");
-        return `<div class="prob" style="margin-bottom:2px"><span class="nm2">Gen ${i+1}: line × ${esc(s.partner)} ${sx(s.partnerSex)}</span>
-          <span class="muted" style="flex:1;min-width:150px">gains ${adds} → line at ✦+${s.scoreAfter}</span></div>`;
+        const left = i===0 ? `${esc(plan.seed.name)} ${sx(plan.seed.sex)}` : "the kept pup";
+        const keep = s.keepPupSex ? ` <b>— keep a ${sx(s.keepPupSex)} pup</b>` : "";
+        return `<div style="margin:0 0 6px"><div style="font-weight:600;font-size:13px">Gen ${i+1}: ${left} × ${esc(s.partner)} ${sx(s.partnerSex)}</div>
+          <div class="muted" style="font-size:12px">gains ${adds} → line at ✦+${s.scoreAfter}${keep}</div></div>`;
       }).join("");
       html+=`<div style="font-weight:700;margin-top:6px">Result: a nicheling at <b>✦+${plan.finalScore}</b>.</div>`;
+      if(plan.incomplete) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Some ✦ couldn't be chained in (they sit on nichelings the same sex as your seed with no opposite-sex carrier to bridge through) — recruit or breed a bridging mate to reach them.</p>`;
     }
     html+=`<p class="muted" style="font-size:11.5px;margin:8px 0 0">Each cross is ♀×♂, and a parent passes only <b>one</b> of its two alleles (so a nicheling holding the same allele at ✦+3 and ✦+1 passes just one of them). After a cross, keep a pup that inherited the ✦ allele — it may take a few tries, and you'll want one of the sex the next step needs — then breed that. Mutations stick to their allele and don't stack, so this <b>gathers</b> your best existing ✦ into one line.</p>`;
   }
