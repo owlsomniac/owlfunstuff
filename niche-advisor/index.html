@@ -61,9 +61,9 @@
   .mutn{width:46px;padding:5px 4px;text-align:center;flex:0 0 auto}
   .grp-body{background:var(--g-body)} .grp-color{background:var(--g-color)} .grp-pattern{background:var(--g-pattern)}
   .nlist{display:flex;flex-direction:column;gap:8px}
-  .retired-box,.found-box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow);margin:0 0 16px}
-  .retired-box>summary,.found-box>summary{cursor:pointer;font-weight:700;font-size:15px}
-  .retired-box .nrow{opacity:.72} .found-box .nrow{opacity:.92}
+  .retired-box,.sideline-box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow);margin:0 0 16px}
+  .retired-box>summary,.sideline-box>summary{cursor:pointer;font-weight:700;font-size:15px}
+  .retired-box .nrow{opacity:.72} .sideline-box .nrow{opacity:.94}
   .nrow{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--panel)}
   .nrow .grow{flex:1;min-width:0}
   .nrow .nm{font-weight:700}
@@ -422,7 +422,7 @@ function blendSwatch(a,b){
    ========================================================================= */
 const KEY="niche-roster-v1";
 function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)); if(r&&r.cats){
-    r.cats.forEach(c=>{ if(!c.status) c.status=c.retired?"retired":"active"; delete c.retired; });  // migrate old retired flag
+    r.cats.forEach(c=>{ if(!c.status) c.status=c.retired?"retired":"active"; if(c.status==="found") c.status="sideline"; delete c.retired; });  // migrate old retired flag / found→sideline
     return r; } }catch(e){} return {cats:[], seq:1}; }
 function save(r){ try{ localStorage.setItem(KEY, JSON.stringify(r)); }catch(e){} }
 let DB=load();
@@ -434,14 +434,13 @@ function newCat(name,status){ return {id:DB.seq++, name:name||("Nicheling "+DB.s
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const groupCls=g=>g==="body"?"grp-body":g==="color"?"grp-color":"grp-pattern";
-let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeRetired:false,includeFound:false};
-/* A nicheling's status: "active" (in your tribe, breedable), "retired" (archived — can be brought
-   back), or "found" (spotted in the wild, tracked but not yet added to the tribe). Retired & found
-   are both kept out of breeding unless the user opts each in. */
+let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeRetired:false};
+/* A nicheling's status: "active" (in your tribe), "sideline" (not in the tribe yet but kept on the
+   bench — fully available for breeding everywhere), or "retired" (archived — can be brought back).
+   Both active and sideline are always in the breeding pool; retired only when the user opts in. */
 const activeCats=()=>DB.cats.filter(c=>c.status==="active");
-const breedingPool=()=>DB.cats.filter(c=> c.status==="active"
-  || (breed.includeRetired && c.status==="retired")
-  || (breed.includeFound   && c.status==="found"));
+const breedingPool=()=>DB.cats.filter(c=> c.status==="active" || c.status==="sideline"
+  || (breed.includeRetired && c.status==="retired"));
 
 const TABS=[["nichelings","🐾 My nichelings"],["breeding","💞 Breeding"],["retire","🧹 Retire"],["genes","📖 Gene reference"]];
 function renderTabs(){
@@ -481,22 +480,22 @@ function phenoSummary(geno){
    ========================================================================= */
 function renderNichelings(){
   const v=$("#view-nichelings");
-  const active=DB.cats.filter(c=>c.status==="active"), found=DB.cats.filter(c=>c.status==="found"), retired=DB.cats.filter(c=>c.status==="retired");
+  const active=DB.cats.filter(c=>c.status==="active"), sideline=DB.cats.filter(c=>c.status==="sideline"), retired=DB.cats.filter(c=>c.status==="retired");
   const glyph=c=>c.sex==="F"?"♀":c.sex==="M"?"♂":"";
   const abLine=c=>{ const t=abilityTotals(c.geno);
     return ABILITIES.filter(a=>t[a]).sort((x,y)=>t[y]-t[x]).slice(0,4).map(a=>`${AB_SHORT[a]} +${t[a]}`).join(" · ")||"no ability bonuses"; };
   let html=`<div class="card"><div class="row" style="justify-content:space-between">
       <h2 style="margin:0"><span class="em">🐾</span> My nichelings <span class="muted" style="font-weight:400;font-size:13px">(${active.length})</span></h2>
       <div class="row">
-        <button class="btn sm" id="addCat">+ Add nicheling</button>
-        <button class="btn sm gray" id="addFound">🔍 Add found</button>
+        <button class="btn sm" id="addCat">+ Add to tribe</button>
+        <button class="btn sm gray" id="addSideline">+ Add sideline</button>
         <button class="btn sm gray" id="fromCode">⌗ From code</button>
         <button class="btn sm gray" id="exp">⬇︎ Export</button>
         <button class="btn sm gray" id="impBtn">⬆︎ Import</button>
         <input type="file" id="impFile" accept="application/json" class="hide">
       </div></div>`;
-  if(!DB.cats.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings yet. Add one and set its two alleles per gene, then head to <b>Breeding</b> to predict a pairing. Use <b>🔍 Add found</b> to note a wild nicheling you haven't recruited.</p>`;
-  else if(!active.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings in your tribe yet — add one, bring one back from <b>Retired</b>, or <b>Add to tribe</b> a <b>Found</b> one below.</p>`;
+  if(!DB.cats.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings yet. Add one and set its two alleles per gene, then head to <b>Breeding</b> to predict a pairing. Use <b>+ Add sideline</b> for a nicheling you're eyeing but haven't taken into the tribe.</p>`;
+  else if(!active.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings in your tribe yet — add one, bring one back from <b>Retired</b>, or <b>Add to tribe</b> a <b>Sideline</b> one below.</p>`;
   html+=`</div>`;
   html+=`<div id="editor"></div>`;   // editor sits above the list, so a just-added nicheling's form is right at the top
   html+=`<div class="nlist">`+active.slice().reverse().map(c=>{   // newest first, so a just-added nicheling is at the top
@@ -511,10 +510,10 @@ function renderNichelings(){
       <button class="btn sm gray del" data-id="${c.id}" title="Delete permanently">🗑</button>
     </div>`;
   }).join("")+`</div>`;
-  if(found.length){
-    html+=`<details class="found-box" open><summary>🔍 Found <span class="muted" style="font-weight:400;font-size:13px">(not added yet · ${found.length})</span></summary>
-      <p class="muted" style="font-size:12px;margin:8px 0 10px">Spotted in the wild — record their genes here for reference. Kept out of breeding unless you tick <b>Include found</b>. Hit <b>Add to tribe</b> once you recruit one.</p>
-      <div class="nlist">`+found.slice().reverse().map(c=>`<div class="nrow" data-id="${c.id}">
+  if(sideline.length){
+    html+=`<details class="sideline-box" open><summary>🪑 Sidelines <span class="muted" style="font-weight:400;font-size:13px">(not in tribe · ${sideline.length})</span></summary>
+      <p class="muted" style="font-size:12px;margin:8px 0 10px">Not in your tribe yet, but <b>available everywhere for breeding</b> (parents, finders, best-mate). Record their genes; hit <b>Add to tribe</b> when you take one in.</p>
+      <div class="nlist">`+sideline.slice().reverse().map(c=>`<div class="nrow" data-id="${c.id}">
         <div class="grow"><div class="nm">${esc(c.name)} <span class="muted" style="font-weight:400">${glyph(c)}</span></div>
           <div class="ab">${abLine(c)}</div></div>
         <button class="btn sm gray edit" data-id="${c.id}">✏️ Edit</button>
@@ -534,7 +533,7 @@ function renderNichelings(){
   }
   v.innerHTML=html;
   $("#addCat").onclick=()=>{ const c=newCat(); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); };
-  $("#addFound").onclick=()=>{ const c=newCat(null,"found"); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); };
+  $("#addSideline").onclick=()=>{ const c=newCat(null,"sideline"); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); };
   $("#fromCode").onclick=()=>{
     const code=prompt("Paste a gene code (starts with NB1-):"); if(!code) return;
     const geno=codeToGeno(code); if(!geno){ alert("That doesn't look like a valid gene code."); return; }
@@ -623,20 +622,17 @@ function importRoster(e){
 function renderBreeding(){
   const v=$("#view-breeding");
   if(!DB.cats.length){ v.innerHTML=`<div class="card"><p class="muted">Add at least one nicheling under <b>My nichelings</b> first. You can breed a nicheling with itself or with any other.</p></div>`; return; }
-  const retiredCount=DB.cats.filter(c=>c.status==="retired").length, foundCount=DB.cats.filter(c=>c.status==="found").length;
-  const boxes=[];
-  if(retiredCount) boxes.push(`<label class="row" style="gap:5px;font-weight:600;font-size:12.5px"><input type="checkbox" id="incRetired" ${breed.includeRetired?"checked":""}> retired (${retiredCount})</label>`);
-  if(foundCount) boxes.push(`<label class="row" style="gap:5px;font-weight:600;font-size:12.5px"><input type="checkbox" id="incFound" ${breed.includeFound?"checked":""}> found (${foundCount})</label>`);
-  const incBox = boxes.length?`<div class="row" style="gap:12px;align-items:center"><span class="muted" style="font-size:12px">Include:</span>${boxes.join("")}</div>`:"";
-  const wireInc=()=>{ if($("#incRetired")) $("#incRetired").onchange=e=>{ breed.includeRetired=e.target.checked; renderBreeding(); };
-    if($("#incFound"))   $("#incFound").onchange=e=>{ breed.includeFound=e.target.checked; renderBreeding(); }; };
+  const retiredCount=DB.cats.filter(c=>c.status==="retired").length;
+  const tag=c=>c.status==="sideline"?" · sideline":c.status==="retired"?" · retired":"";
+  const incBox = retiredCount?`<label class="row" style="gap:6px;font-weight:600;font-size:12.5px"><input type="checkbox" id="incRetired" ${breed.includeRetired?"checked":""}> Include retired (${retiredCount})</label>`:"";
+  const wireInc=()=>{ if($("#incRetired")) $("#incRetired").onchange=e=>{ breed.includeRetired=e.target.checked; renderBreeding(); }; };
   const pool=breedingPool();
   if(!pool.length){
     v.innerHTML=`<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0"><span class="em">💞</span> Breeding</h2>${incBox}</div>
-      <p class="muted" style="margin:10px 0 0">No nichelings in your breeding pool. ${boxes.length?"Tick a box above to include retired/found, or ":""}add or bring back a nicheling under <b>My nichelings</b>.</p></div>`;
+      <p class="muted" style="margin:10px 0 0">No nichelings to breed with. ${retiredCount?"Tick <b>Include retired</b> above, or ":""}add one (tribe or sideline) under <b>My nichelings</b>.</p></div>`;
     wireInc(); return;
   }
-  const opt=(sel)=>pool.map(c=>`<option value="${c.id}" ${c.id===sel?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}</option>`).join("");
+  const opt=(sel)=>pool.map(c=>`<option value="${c.id}" ${c.id===sel?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}${tag(c)}</option>`).join("");
   if(!pool.some(c=>c.id===breed.mom)) breed.mom=pool[0].id;
   if(!pool.some(c=>c.id===breed.dad)) breed.dad=pool[Math.min(1,pool.length-1)].id;
   let html=`<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0"><span class="em">💞</span> Predict a pairing</h2>${incBox}</div>
@@ -665,7 +661,7 @@ function renderBreeding(){
   </div>`;
   html+=`<div class="card"><h2>💘 Find best mate for…</h2>
     <div class="row" style="margin-top:8px">
-      <label>Nicheling <select id="bmCat">${pool.map(c=>`<option value="${c.id}" ${c.id===breed.mom?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}</option>`).join("")}</select></label>
+      <label>Nicheling <select id="bmCat">${pool.map(c=>`<option value="${c.id}" ${c.id===breed.mom?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}${tag(c)}</option>`).join("")}</select></label>
       <label>Maximize <select id="bmMetric"><option value="__total">Total stats (all abilities)</option>${ABILITIES.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join("")}</select></label>
       <button class="btn sm" id="bmRun">Find best mate</button>
     </div>
