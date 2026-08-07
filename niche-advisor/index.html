@@ -363,40 +363,53 @@ function findRetirements(cats, opts){
   return res;
 }
 
-/* alleles in carryA that NO carry in `others` holds at an equal-or-higher level, over `keys` */
-function uniqueAlleles(carryA, others, keys){
-  const uniq=[];
-  keys.forEach(k=>{ const A=carryA[k]||{};
-    Object.keys(A).forEach(b=>{ const L=A[b];
-      if(!others.some(o=>{ const B=o[k]||{}; return (b in B) && B[b]>=L; })) uniq.push({gene:k, base:b, level:L});
-    });
+/* ---- value model for culling ----
+   What a nicheling is worth KEEPING for is the bonus it can pass per ability, per gene — not which
+   allele it happens to carry. So a zero-bonus allele (Blind Eyes, No Horns, No Tail) is worth nothing,
+   and a lower-bonus allele (Deformed Paw Col+1) is fully covered by any higher-bonus one for the same
+   ability (Nimble Col+2, Digging Col+3). Mutation level adds to the bonus. Cosmetic genes (colours /
+   patterns / eye / mask / plain mane, no bonus) keep an identity notion so a unique colour still counts
+   in "all genes" mode. `catAssets` → { "gene|ability" or "gene|allele" : best value }. */
+const isAbilityGene = g => g.alleles.some(al=>Object.keys(al.eff).length);
+function catAssets(geno, keys){
+  const a={};
+  keys.forEach(k=>{ const g=GENE_BY_KEY[k]; if(!g) return; const pair=geno[k]||[];
+    if(isAbilityGene(g)){
+      pair.forEach(x=>{ const al=g.alleles.find(z=>z.k===baseK(x)); if(!al) return; const lv=mutLevel(x);
+        for(const ab in al.eff){ const v=al.eff[ab]+lv; if(v>0){ const key=k+"|"+ab; if(v>(a[key]||0)) a[key]=v; } } });
+    } else {
+      pair.forEach(x=>{ const key=k+"|"+baseK(x), v=1+mutLevel(x); if(v>(a[key]||0)) a[key]=v; });   // identity: a distinct colour = value 1
+    }
   });
-  return uniq;
+  return a;
 }
-const alleleStatSum=(geneKey,base)=>{ const g=GENE_BY_KEY[geneKey]; if(!g) return 0;
-  const al=g.alleles.find(a=>a.k===base); return al?Object.keys(al.eff).reduce((s,x)=>s+al.eff[x],0):0; };
-/* how costly it is to lose a set of unique alleles (count + mutation level + stat weight) */
-const lossValue=uniq=>uniq.reduce((s,u)=> s + 1 + u.level + alleleStatSum(u.gene,u.base), 0);
+const coveredBy=(A,B)=>Object.keys(A).every(k=>(B[k]||0)>=A[k]);            // B provides every trait of A at >= value
+const uniqueAssetKeys=(A,others)=>Object.keys(A).filter(k=>!others.some(o=>(o[k]||0)>=A[k]));
+function assetLabel(key, value){ const i=key.indexOf("|"), gk=key.slice(0,i), rest=key.slice(i+1), g=GENE_BY_KEY[gk];
+  if(g && isAbilityGene(g)) return `${AB_SHORT[rest]||rest} +${value}${g?` (${g.label})`:""}`;   // rest = ability
+  return `${rest}${value>1?` ✦+${value-1}`:""}${g?` (${g.label})`:""}`; }                          // rest = colour/allele
 
 /* Ranked retirement suggestions — so this is never a flat "nothing to retire" when you need space.
-   Greedy, per sex: repeatedly pick the nicheling whose removal loses the least given the others still
-   kept, record it, remove it, repeat. Consume the list top-down: each entry's `loses` is what retiring
-   it costs ASSUMING the ones ranked above it are already gone. `kept` = same-sex nichelings that would
-   remain (so kept===0 marks the last survivor of a sex — never suggest retiring it). */
+   Greedy, per sex: repeatedly pick the nicheling whose removal loses the least VALUE given the others
+   still kept, record it, remove it, repeat. Consume the list top-down: each entry's `loses` is what
+   retiring it costs ASSUMING the ones ranked above it are already gone. `kept` = same-sex nichelings
+   that would remain (so kept===0 marks the last survivor of a sex — never suggest retiring it). */
 function retirementRanking(cats, opts){
   opts=opts||{}; const keys = opts.abilityOnly ? ABILITY_GENE_KEYS : GENES.map(g=>g.key);
   const res=[];
   ["F","M"].forEach(sex=>{
-    let kept = cats.filter(c=>c.sex===sex).map(c=>({c, carry:carryMap(c.geno)}));
+    let kept = cats.filter(c=>c.sex===sex).map(c=>({c, assets:catAssets(c.geno, keys)}));
     while(kept.length){
       let best=null;
       kept.forEach(A=>{ const others=kept.filter(x=>x!==A);
-        const uniq=uniqueAlleles(A.carry, others.map(o=>o.carry), keys), val=lossValue(uniq);
+        const uniq=uniqueAssetKeys(A.assets, others.map(o=>o.assets));
+        const val=uniq.reduce((s,k)=>s+A.assets[k],0);
         if(!best || val<best.val) best={A, uniq, val, others};
       });
       let keeper=null;
-      if(best.val===0){ const dom=best.others.find(o=>carryDominates(o.carry,best.A.carry,keys)); keeper=dom?dom.c:null; }
-      res.push({id:best.A.c.id, name:best.A.c.name, sex, status:best.A.c.status, loses:best.uniq, lossValue:best.val,
+      if(best.val===0){ const dom=best.others.find(o=>coveredBy(best.A.assets,o.assets)); keeper=dom?dom.c:null; }
+      res.push({id:best.A.c.id, name:best.A.c.name, sex, status:best.A.c.status,
+                loses:best.uniq.map(k=>assetLabel(k, best.A.assets[k])), lossValue:best.val,
                 kept:best.others.length, keepId:keeper?keeper.id:null, keepName:keeper?keeper.name:null});
       kept=kept.filter(x=>x!==best.A);
     }
@@ -481,6 +494,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const groupCls=g=>g==="body"?"grp-body":g==="color"?"grp-color":"grp-pattern";
 let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeSideline:true,includeRetired:false};
+let finderTargets={};   // trait finder: { geneKey: targetAlleleKey } — one target per gene, persists across re-renders
 /* A nicheling's status: "active" (in your tribe), "sideline" (not in the tribe yet but kept on the
    bench — available for breeding), or "retired" (archived — can be brought back). Active is always in
    the breeding pool; sideline is in by default (toggle on) and retired is out by default (toggle off). */
@@ -702,13 +716,15 @@ function renderBreeding(){
     <p class="muted" style="font-size:12px;margin:8px 0 0">Each pup gets one allele per gene from each parent (50/50). Percentages below are the chance a pup <b>shows</b> that trait. <b>Save a possible pup</b> rolls one random outcome into your roster.</p>
   </div>`;
   // finders sit right under the pairing controls
-  html+=`<div class="card">${hdr('🎯 Find a pairing for a trait')}
+  html+=`<div class="card">${hdr('🎯 Find a pairing for traits')}
     <div class="row" style="margin-top:8px">
       <label>Gene <select id="fGene">${GENES.map(g=>`<option value="${g.key}">${g.label}</option>`).join("")}</select></label>
       <label>Target <select id="fAllele"></select></label>
+      <button class="btn sm gray" id="fAdd">＋ Add trait</button>
       <button class="btn sm" id="fRun">Rank my pairings</button>
     </div>
-    <div id="finderOut" class="muted" style="margin-top:10px;font-size:13px">Pick a gene and target trait, then rank every pair in your roster by the chance their pup shows it.</div>
+    <div id="fTargets" class="row" style="margin-top:8px;gap:6px"></div>
+    <div id="finderOut" class="muted" style="margin-top:10px;font-size:13px">Add one or more target traits, then rank every ♀×♂ pair by the chance their pup shows them all at once.</div>
   </div>`;
   html+=`<div class="card">${hdr('🏆 Find optimal pairings')}
     <div class="row" style="margin-top:8px">
@@ -740,6 +756,8 @@ function renderBreeding(){
     alert('Added "'+c.name+'" to My nichelings — one random possible outcome of this pairing.'); };
   const fillAlleles=()=>{ const g=GENE_BY_KEY[$("#fGene").value]; $("#fAllele").innerHTML=g.alleles.map(a=>`<option value="${esc(a.k)}">${esc(a.name)}</option>`).join(""); };
   $("#fGene").onchange=fillAlleles; fillAlleles();
+  $("#fAdd").onclick=()=>{ finderTargets[$("#fGene").value]=$("#fAllele").value; renderFinderTargets(); };
+  renderFinderTargets();
   wireInc();
   $("#fRun").onclick=runFinder;
   $("#oRun").onclick=runOptimal;
@@ -863,26 +881,40 @@ const canPair=(a,b)=>(a.sex==="F"&&b.sex==="M")||(a.sex==="M"&&b.sex==="F");
 const hasFM=list=>list.some(c=>c.sex==="F")&&list.some(c=>c.sex==="M");
 const needSexMsg='<p class="muted">Pairings need one ♀ and one ♂ — set each nicheling\'s sex in its editor (the ♀/♂ dropdown).</p>';
 
-/* rank every ♀×♂ pair in the roster by P(pup shows the chosen allele's phenotype) */
+/* render the chosen target-trait chips (one per gene; removable). Survives breeding re-renders. */
+function renderFinderTargets(){
+  const el=$("#fTargets"); if(!el) return;
+  const keys=Object.keys(finderTargets);
+  el.innerHTML = keys.length
+    ? keys.map(k=>{ const g=GENE_BY_KEY[k], al=g.alleles.find(a=>a.k===finderTargets[k]);
+        return `<span class="pill"><b>${esc(g.label)}:</b> ${esc(al?al.name:finderTargets[k])} <a href="#" data-rm="${k}" style="text-decoration:none;color:var(--warn)">✕</a></span>`; }).join("")
+      +`<button class="btn sm gray" id="fClear" style="margin-left:4px">Clear all</button>`
+    : `<span class="muted" style="font-size:12px">No target traits yet — pick a gene &amp; allele and hit <b>＋ Add trait</b>. Add several (across genes) to find a pair that hits them all.</span>`;
+  $$("#fTargets [data-rm]").forEach(a=>a.onclick=e=>{ e.preventDefault(); delete finderTargets[a.dataset.rm]; renderFinderTargets(); });
+  if($("#fClear")) $("#fClear").onclick=()=>{ finderTargets={}; renderFinderTargets(); };
+}
+/* rank every ♀×♂ pair by the JOINT chance the pup shows ALL selected target traits (genes are independent). */
 function runFinder(){
-  const gkey=$("#fGene").value, target=$("#fAllele").value, g=GENE_BY_KEY[gkey], pool=breedingPool();
+  const pool=breedingPool(), gkeys=Object.keys(finderTargets);
+  if(!gkeys.length){ $("#finderOut").innerHTML=`<p class="muted">Add at least one target trait with <b>＋ Add trait</b>.</p>`; return; }
   if(!hasFM(pool)){ $("#finderOut").innerHTML=needSexMsg; return; }
   const rows=[];
   for(let i=0;i<pool.length;i++) for(let j=i+1;j<pool.length;j++){
     const a=pool[i], b=pool[j]; if(!canPair(a,b)) continue;
-    const {pheno}=offspringPhenotypeDist(g, a.geno[gkey], b.geno[gkey]);
-    let p=0;
-    pheno.forEach(ph=>{ if(ph.label.split(" + ").map(baseK).includes(target)) p+=ph.prob; });
-    if(p>0){ const F=a.sex==="F"?a:b, M=a.sex==="F"?b:a; rows.push({F:F.name, M:M.name, p}); }
+    let joint=1;
+    gkeys.forEach(gk=>{ const g=GENE_BY_KEY[gk], res=offspringPhenotypeDist(g, a.geno[gk], b.geno[gk]);
+      let p=0; res.pheno.forEach(ph=>{ if(ph.label.split(" + ").map(baseK).includes(finderTargets[gk])) p+=ph.prob; });
+      joint*=p; });
+    if(joint>0){ const F=a.sex==="F"?a:b, M=a.sex==="F"?b:a; rows.push({F:F.name, M:M.name, joint}); }
   }
-  rows.sort((x,y)=>y.p-x.p);
+  rows.sort((x,y)=>y.joint-x.joint);
   const top=rows.slice(0,12);
-  const al=g.alleles.find(a=>a.k===target);
-  let html=`<div style="font-weight:700;margin-bottom:6px">Chance the pup shows <b>${esc(al?al.name:target)}</b> (${g.label}):</div>`;
-  if(!top.length) html+=`<p class="muted">No ♀×♂ pairing in your roster can produce it — none of your opposite-sex pairs carries the allele.</p>`;
+  const names=gkeys.map(gk=>{ const g=GENE_BY_KEY[gk], al=g.alleles.find(a=>a.k===finderTargets[gk]); return al?al.name:finderTargets[gk]; }).join(" + ");
+  let html=`<div style="font-weight:700;margin-bottom:6px">Chance the pup shows <b>${esc(names)}</b>${gkeys.length>1?` (all ${gkeys.length})`:""}:</div>`;
+  if(!top.length) html+=`<p class="muted">No ♀×♂ pairing in your roster can produce ${gkeys.length>1?"all of those together":"it"} — at least one target isn't carried by any opposite-sex pair.</p>`;
   else html+=top.map(r=>{
-    const pct=Math.round(r.p*100);
-    return `<div class="prob"><span class="nm2">${esc(r.F)} ♀ × ${esc(r.M)} ♂</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">${pct}%</span></div>`;
+    const pct=r.joint*100, pv=pct>=0.5?Math.round(pct)+"%":"<1%", w=Math.max(2,Math.round(pct));
+    return `<div class="prob"><span class="nm2">${esc(r.F)} ♀ × ${esc(r.M)} ♂</span><span class="bar"><span style="width:${w}%"></span></span><span class="pv">${pv}</span></div>`;
   }).join("");
   $("#finderOut").innerHTML=html;
 }
@@ -893,7 +925,7 @@ function runFinder(){
 function renderRetire(){
   const v=$("#view-retire");
   v.innerHTML=`<div class="card"><h2><span class="em">🧹</span> Who to retire</h2>
-    <p class="muted" style="font-size:12.5px;margin:2px 0 0">Out of space? This ranks your nichelings from safest-to-retire to most valuable, comparing each against others of the <b>same sex</b>. The top ones lose nothing (another nicheling already carries their genes); further down, it shows exactly what each retirement would cost.</p>
+    <p class="muted" style="font-size:12.5px;margin:2px 0 0">Out of space? This ranks your nichelings from safest-to-retire to most valuable, comparing each against others of the <b>same sex</b>. The top ones lose nothing (another nicheling already gives every trait they do at an equal-or-better bonus — undesirable/low-bonus alleles don't count); further down, it shows exactly what each retirement would cost.</p>
     <div class="row" style="margin-top:10px">
       <label>Compare on <select id="rMode"><option value="ability">Ability &amp; resistance genes</option><option value="all">All genes (incl. colours)</option></select></label>
       <button class="btn sm" id="rRun">Rank who to retire</button>
@@ -906,11 +938,9 @@ function renderRetire(){
 }
 
 const sx=s=>s==="F"?"♀":"♂";
-/* Human-readable "what you'd lose" — allele names (with mutation level), first few. */
+/* Human-readable "what you'd lose" — pre-formatted trait labels (ability +bonus, or colour), first few. */
 function describeLoss(loses){
-  const names=loses.map(u=>{ const g=GENE_BY_KEY[u.gene], al=g&&g.alleles.find(a=>a.k===u.base);
-    return (al?al.name:u.base)+(u.level?` ✦+${u.level}`:""); });
-  return esc(names.slice(0,4).join(", "))+(names.length>4?` <span class="muted">+${names.length-4} more</span>`:"");
+  return esc(loses.slice(0,4).join(", "))+(loses.length>4?` <span class="muted">+${loses.length-4} more</span>`:"");
 }
 /* one ranked row, shared by Retire (archive) and Release (delete). o={actClass,actLabel,showStatus} */
 function cullRow(r, o){
@@ -947,7 +977,7 @@ function runRetire(){
   const abilityOnly=$("#rMode").value==="ability";
   $("#retireOut").innerHTML=cullSections(activeCats(), abilityOnly, {actClass:"rtire", actLabel:"Retire", showStatus:false,
     oneNote:"Only one nicheling per sex — you can't retire either without losing your breeding stock.",
-    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already carries everything it does (at an equal-or-higher mutation level). <b>Retire</b> archives it to your <b>Retired</b> list (bring it back anytime); the list re-ranks after each one.</p>`});
+    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already gives <b>every trait it does at an equal-or-better bonus</b> — zero-bonus alleles (No Horns, Blind Eyes, No Tail) and lower-bonus ones don't count. <b>Retire</b> archives it to your <b>Retired</b> list (bring it back anytime); the list re-ranks after each one.</p>`});
   $$("#retireOut .rtire").forEach(b=>b.onclick=()=>{ const id=+b.dataset.id, c=DB.cats.find(x=>x.id===id);
     if(c && confirm('Retire "'+c.name+'"? It moves to your Retired list — bring it back anytime from My nichelings.')){
       c.status="retired"; if(editId===id) editId=null; save(DB); runRetire(); } });
@@ -959,7 +989,7 @@ function runRetire(){
 function renderRelease(){
   const v=$("#view-release");
   v.innerHTML=`<div class="card"><h2><span class="em">🕊️</span> Who to release</h2>
-    <p class="muted" style="font-size:12.5px;margin:2px 0 0">Ranks every nicheling in your <b>whole roster</b> (tribe, sidelines &amp; retired) by how safely it can be <b>released — permanently deleted</b>. The top ones lose nothing (another same-sex nicheling already carries their genes); each shows its group.</p>
+    <p class="muted" style="font-size:12.5px;margin:2px 0 0">Ranks every nicheling in your <b>whole roster</b> (tribe, sidelines &amp; retired) by how safely it can be <b>released — permanently deleted</b>. The top ones lose nothing (another same-sex nicheling already gives every trait they do at an equal-or-better bonus — undesirable/low-bonus alleles don't count); each shows its group.</p>
     <div class="row" style="margin-top:10px">
       <label>Compare on <select id="rlMode"><option value="ability">Ability &amp; resistance genes</option><option value="all">All genes (incl. colours)</option></select></label>
       <button class="btn sm" id="rlRun">Rank who to release</button>
@@ -975,7 +1005,7 @@ function runRelease(){
   const abilityOnly=$("#rlMode").value==="ability";
   $("#releaseOut").innerHTML=cullSections(DB.cats, abilityOnly, {actClass:"rlease", actLabel:"Release", showStatus:true,
     oneNote:"Only one nicheling per sex — releasing it would lose that gene line entirely.",
-    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already carries everything it does. <b>Release permanently deletes</b> the nicheling — it does <b>not</b> go to Retired. The list re-ranks after each one.</p>`});
+    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already gives <b>every trait it does at an equal-or-better bonus</b> — zero-bonus alleles (No Horns, Blind Eyes, No Tail) and lower-bonus ones don't count. <b>Release permanently deletes</b> the nicheling — it does <b>not</b> go to Retired. The list re-ranks after each one.</p>`});
   $$("#releaseOut .rlease").forEach(b=>b.onclick=()=>{ const id=+b.dataset.id, c=DB.cats.find(x=>x.id===id);
     if(c && confirm('Release (permanently delete) "'+c.name+'"? This cannot be undone — use Retire if you might want it back.')){
       DB.cats=DB.cats.filter(x=>x.id!==id); if(editId===id) editId=null; save(DB); runRelease(); } });
@@ -1009,7 +1039,7 @@ function renderGenes(){
 /* ---- expose for tests (node/vm) ---- */
 if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILITIES,defaultGenotype,expressGene,phenotype,
   abilityTotals,offspringGenotypeDist,offspringPhenotypeDist,offspringAbilityOutlook,genoToCode,codeToGeno,sampleOffspring,
-  baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,uniqueAlleles,
+  baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catAssets,
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS};
 
 /* ---- boot (only in a real browser) ---- */
