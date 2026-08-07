@@ -1,0 +1,551 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Niche: Breed &amp; Evolve — Genetics Advisor</title>
+<meta name="description" content="Track nicheling genes and predict breeding outcomes for Niche: Breed & Evolve.">
+<style>
+  :root{
+    --bg:#eef3ec; --bg2:#e2ecde; --panel:#fbfdf8; --ink:#28302a; --muted:#6f7d70;
+    --line:#d7e2d2; --line-soft:#e6ede2; --brand:#4f8f5a; --brand-ink:#367043; --brand-soft:#d8ecd9;
+    --chip:#eef5ec; --warn:#b06a2b; --shadow:0 1px 2px rgba(30,50,35,.06),0 10px 28px rgba(30,50,35,.09);
+    --g-body:#e7f0e6; --g-color:#f0ecdd; --g-pattern:#e6edf2;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#161d18; --bg2:#101511; --panel:#1e261f; --ink:#e6efe4; --muted:#8ea08e;
+      --line:#33413400; --line:#33413a; --line-soft:#2a332c; --brand:#63b06f; --brand-ink:#8fd39a; --brand-soft:#26382a;
+      --chip:#232d24; --warn:#e0955a; --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.4);
+      --g-body:#212c22; --g-color:#2b281f; --g-pattern:#1f272c; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);line-height:1.5;
+    background:radial-gradient(1100px 520px at 15% -10%,var(--bg2),transparent 60%),var(--bg);min-height:100vh}
+  .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 60px}
+  a{color:var(--brand-ink)}
+  h1{font-size:24px;letter-spacing:-.4px;margin:0 0 2px;display:flex;align-items:center;gap:10px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 18px}
+  .tab{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:8px 15px;
+    font-size:14px;font-weight:600;cursor:pointer}
+  .tab.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--shadow);margin:0 0 16px}
+  .card h2{margin:0 0 4px;font-size:16px}
+  .card h2 .em{margin-right:6px}
+  button{font-family:inherit}
+  .btn{border:1px solid var(--brand);background:var(--brand);color:#fff;border-radius:10px;padding:8px 13px;font-size:13.5px;font-weight:600;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--brand-ink)}
+  .btn.sm{padding:5px 9px;font-size:12.5px;border-radius:8px}
+  .btn.gray{border-color:var(--line);background:var(--panel);color:var(--ink)}
+  .btn:disabled{opacity:.5;cursor:default}
+  select,input[type=text]{font-family:inherit;font-size:13.5px;color:var(--ink);background:var(--panel);
+    border:1px solid var(--line);border-radius:8px;padding:6px 8px;max-width:100%}
+  label{font-size:12.5px;color:var(--muted);font-weight:600}
+  .muted{color:var(--muted)}
+  .pill{display:inline-block;background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:1px 9px;font-size:12px;margin:2px 3px 2px 0}
+  .swatch{display:inline-block;width:13px;height:13px;border-radius:3px;border:1px solid rgba(0,0,0,.25);vertical-align:-2px;margin-right:5px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  th{color:var(--muted);font-weight:700;font-size:12px}
+  .scrollx{overflow-x:auto}
+  .abil{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .abil .a{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:3px 9px;font-size:12.5px;font-weight:600}
+  .abil .a b{color:var(--brand-ink)}
+  .genogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+  .slot{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--panel)}
+  .slot .nm{font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px}
+  .slot .sel{display:flex;gap:6px}
+  .slot select{flex:1;min-width:0}
+  .grp-body{background:var(--g-body)} .grp-color{background:var(--g-color)} .grp-pattern{background:var(--g-pattern)}
+  .nlist{display:flex;flex-direction:column;gap:8px}
+  .nrow{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--panel)}
+  .nrow .grow{flex:1;min-width:0}
+  .nrow .nm{font-weight:700}
+  .nrow .ab{font-size:12px;color:var(--muted)}
+  .prob{display:flex;align-items:center;gap:8px;margin:3px 0}
+  .prob .bar{flex:1;height:8px;background:var(--line-soft);border-radius:6px;overflow:hidden;min-width:60px;max-width:180px}
+  .prob .bar>span{display:block;height:100%;background:var(--brand)}
+  .prob .pv{font-variant-numeric:tabular-nums;font-weight:700;font-size:12.5px;min-width:42px;text-align:right}
+  .prob .nm2{min-width:150px}
+  details.gene{border:1px solid var(--line);border-radius:10px;margin:0 0 8px;background:var(--panel)}
+  details.gene>summary{cursor:pointer;padding:9px 12px;font-weight:700;font-size:14px;list-style:none}
+  details.gene>summary::-webkit-details-marker{display:none}
+  details.gene>summary .mode{font-size:11.5px;color:var(--muted);font-weight:600;margin-left:6px}
+  details.gene .body{padding:0 12px 10px}
+  .note{background:var(--brand-soft);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:12.5px;margin:0 0 12px}
+  .hide{display:none}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:680px){.two{grid-template-columns:1fr}.prob .nm2{min-width:110px}}
+  code{background:var(--chip);border:1px solid var(--line);border-radius:5px;padding:0 4px;font-size:12px}
+  .foot{color:var(--muted);font-size:12px;text-align:center;margin-top:24px}
+</style>
+
+<div class="wrap">
+  <h1><span aria-hidden="true">🧬</span> Niche: Breed &amp; Evolve — Genetics Advisor</h1>
+  <p class="sub">Track your nichelings' genes and predict what a pairing will produce. Genes &amp; dominance from the
+    <a href="https://niche.fandom.com/wiki/Genes_(Niche_-_B%26E)" target="_blank" rel="noopener">Niche Wiki (B&amp;E)</a>. Everything stays in your browser.</p>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div id="view-nichelings"></div>
+  <div id="view-breeding" class="hide"></div>
+  <div id="view-genes" class="hide"></div>
+
+  <p class="foot">Fan-made · not affiliated with Niche / Team Niche · data from the community wiki · <a href="https://github.com/owlsomniac/owlfunstuff" target="_blank" rel="noopener">source</a></p>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   Niche: Breed & Evolve — Genetics Advisor
+   Single-file, no dependencies. Gene data from the Niche Wiki B&E gene page.
+   ========================================================================= */
+
+/* ---- ability list (the only stats B&E genes grant) ---- */
+const ABILITIES = ["Perception","Strength","Collecting","Fishing","Swimming","Cold Resistance","Heat Resistance","Poison Resistance"];
+const AB_SHORT = {"Perception":"Per","Strength":"Str","Collecting":"Col","Fishing":"Fish","Swimming":"Swim",
+  "Cold Resistance":"Cold","Heat Resistance":"Heat","Poison Resistance":"Poison"};
+
+/* ---- colour shades + hex (for incomplete-dominance blend swatches) ---- */
+const SHADE_HEX = {White:"#f0ebe0",Beige:"#d9c6a2","Moss Brown":"#8c8759",Yellow:"#e6c34d",Orange:"#d8813a",
+  Red:"#b23b2e","Chestnut Brown":"#9c5b33",Brown:"#7a4a2b","Dark Brown":"#4f3320",Black:"#2b2622"};
+const FUR_SHADES  = ["White","Beige","Moss Brown","Yellow","Orange","Chestnut Brown","Brown","Dark Brown","Black"];
+const PAT_SHADES  = ["White","Beige","Moss Brown","Yellow","Orange","Red","Chestnut Brown","Brown","Dark Brown","Black"];
+const HORN_SHADES = ["White","Beige","Red","Brown","Black"];
+const EYECOL_HEX = {"Black Eyes":"#26221f","Brown Eyes":"#6b4a2b","Yellow Eyes":"#e6c34d","Green Eyes":"#4c8a3a",
+  "Blue Eyes":"#3a6ea5","Leaf Green Eyes":"#5aa03a","Light Green Eyes":"#8fc46a","Teal Eyes":"#2f9c93",
+  "Light Blue Eyes":"#86c1e0","Violet Eyes":"#8a5bd0","Orange Eyes":"#e07f2f","Pink Eyes":"#e58fb0","Red Eyes":"#c23b2e"};
+
+/* Effect helper: build an allele {k,name,eff,cat}. eff maps ability->value. */
+function A(name, eff, cat){ return {k:name, name, eff:eff||{}, cat:cat||"Basic"}; }
+/* Colour alleles (no stats) from a shade list. */
+function shadeAlleles(list){ return list.map(s=>({k:s, name:s, eff:{}, cat:"Basic", shade:s})); }
+
+/* ---- the 18 gene categories, alleles listed MOST-DOMINANT first (for linear) ---- */
+const GENES = [
+  // ----- body / ability genes (linear complete dominance) -----
+  {key:"ears", label:"Ears", mode:"linear", group:"body", alleles:[
+    A("Medium Ears",{Perception:1}), A("Big Ears",{"Heat Resistance":2},"Hot"), A("Fluffy Ears",{"Cold Resistance":1},"Cold"),
+    A("Round Ears",{Perception:1},"Cold"), A("Rabbit Ears",{Perception:3},"Grass"), A("Floppy Ears",{Perception:2},"Cold"),
+    A("Pointy Ears",{Perception:2},"Grass") ]},
+  {key:"horns", label:"Horns", mode:"linear", group:"body", alleles:[
+    A("No Horns",{}), A("Goat Horns",{Strength:1}), A("Ram Horns",{Strength:2},"Hot"),
+    A("Savanna Horns",{"Heat Resistance":1},"Hot"), A("Antlers",{"Cold Resistance":1},"Cold") ]},
+  {key:"eyes", label:"Eyes", mode:"linear", group:"body", alleles:[
+    A("Eyes",{Perception:2}), A("Shortsighted Eyes",{Perception:1}), A("Blind Eyes",{}) ]},
+  {key:"head", label:"Head / Snout", mode:"linear", group:"body", alleles:[
+    A("Derp Snout",{Perception:1}), A("Short Snout",{Perception:2}), A("Big Nose",{Perception:3},"Grass"),
+    A("Cracker Jaw",{Collecting:2},"Hot"), A("Poison Fangs",{"Poison Resistance":2},"Poison"), A("Boar Tusks",{Strength:1},"Grass"),
+    A("Platypus Beak",{Fishing:1},"Water"), A("Sabertooth Fangs",{Strength:2},"Cold"), A("Sticky Tongue",{Collecting:2},"Hot"),
+    A("Purr Snout",{Perception:2},"Grass"), A("Digging Trunk",{Collecting:2},"Hot"), A("Bird Beak",{Collecting:2},"Grass") ]},
+  {key:"body", label:"Body", mode:"linear", group:"body", alleles:[
+    A("Medium Body",{Strength:1}), A("Spiky Body",{Strength:2},"Hot") ]},
+  {key:"paws", label:"Paws / Hands", mode:"paws", group:"body", alleles:[
+    A("Nimble Fingers",{Collecting:2}), A("Claw",{Strength:1},"Grass"), A("Digging Paw",{Collecting:3},"Grass"),
+    A("Strong Paw",{Strength:1},"Cold"), A("Hoof",{Strength:2},"Grass"), A("Deformed Paw",{Collecting:1}),
+    A("Fluffy Paw",{"Cold Resistance":1},"Cold"), A("Carnivore Claw",{Fishing:2},"Hot") ]},
+  {key:"hindlegs", label:"Hind Legs", mode:"linear", group:"body", alleles:[
+    A("Hind Legs",{Strength:1}), A("Carnivore Hind Legs",{Fishing:2},"Grass") ]},
+  {key:"tail", label:"Tail", mode:"linear", group:"body", alleles:[
+    A("Medium Tail",{"Cold Resistance":1}), A("No Tail",{}), A("Swimming Tail",{Swimming:1},"Water"),
+    A("Fishing Tail",{Fishing:2},"Grass"), A("Warm Tail",{"Cold Resistance":2},"Cold"), A("Long Tail",{Collecting:1},"Grass"),
+    A("Stinky Tail",{"Poison Resistance":1},"Poison"), A("Scorpion Tail",{"Heat Resistance":1},"Hot"), A("Hammer Tail",{Strength:2},"Cold") ]},
+  // ----- colours (incomplete dominance — both alleles blend) -----
+  {key:"furcolor", label:"Fur Color", mode:"incomplete", group:"color", alleles:shadeAlleles(FUR_SHADES)},
+  {key:"manecolor", label:"Mane Color", mode:"incomplete", group:"color", alleles:shadeAlleles(FUR_SHADES)},
+  {key:"horncolor", label:"Horn Color", mode:"incomplete", group:"color", alleles:shadeAlleles(HORN_SHADES)},
+  {key:"patterncolor", label:"Pattern Color", mode:"incomplete", group:"color", alleles:shadeAlleles(PAT_SHADES)},
+  // ----- eye colour is LINEAR in B&E (not a blend) -----
+  {key:"eyecolor", label:"Eye Color", mode:"linear", group:"color", alleles:[
+    A("Black Eyes"), A("Brown Eyes"), A("Yellow Eyes",{},"Grass"), A("Green Eyes",{},"Grass"), A("Blue Eyes",{},"Cold"),
+    A("Leaf Green Eyes",{},"Grass"), A("Light Green Eyes",{},"Grass"), A("Teal Eyes",{},"Cold"), A("Light Blue Eyes",{},"Cold"),
+    A("Violet Eyes",{},"Cold"), A("Orange Eyes",{},"Hot"), A("Pink Eyes",{},"Hot"), A("Red Eyes",{},"Hot") ]},
+  // ----- pattern & mane shape (linear) -----
+  {key:"manetype", label:"Mane Type", mode:"linear", group:"pattern", alleles:[
+    A("Straight Mane"), A("Shaggy Mane",{},"Grass"), A("Curly Mane",{"Cold Resistance":1},"Cold") ]},
+  {key:"patterntype", label:"Pattern Type", mode:"linear", group:"pattern", alleles:[
+    A("No Pattern"), A("Spots"), A("Wavy Stripes",{},"Cold"), A("Dots",{},"Grass"), A("Blotches",{},"Grass"),
+    A("Jagged Stripes",{},"Hot"), A("Marbled Stripes",{},"Cold"), A("Leopard Spots",{},"Hot") ]},
+  {key:"patternsize", label:"Pattern Size", mode:"linear", group:"pattern", alleles:[
+    A("Medium Pattern"), A("Small Pattern"), A("Large Pattern"), A("Very Small Pattern"), A("Very Big Pattern") ]},
+  {key:"patterndensity", label:"Pattern Density", mode:"linear", group:"pattern", alleles:[
+    A("Medium Density Pattern"), A("Sparse Pattern"), A("Dense Pattern"), A("Very Sparse Pattern"), A("Very Dense Pattern") ]},
+  {key:"masksize", label:"Mask Size", mode:"linear", group:"pattern", alleles:[
+    A("No Mask"), A("Medium Mask"), A("Small Mask"), A("Large Mask"), A("Very Small Mask"), A("Very Large Mask") ]}
+];
+const GENE_BY_KEY = {}; GENES.forEach(g=>{ GENE_BY_KEY[g.key]=g; g.domRank={}; g.alleles.forEach((a,i)=>g.domRank[a.k]=i); });
+const PATTERN_SUBGENES = ["patternsize","patterndensity","patterncolor"];  // hidden when "No Pattern" is expressed
+
+/* =========================================================================
+   ENGINE
+   ========================================================================= */
+/* A genotype = { geneKey: [alleleKeyA, alleleKeyB] }. Order within a slot is not meaningful. */
+
+function defaultGenotype(){ const g={}; GENES.forEach(x=>{ const a=x.alleles[0].k; g[x.key]=[a,a]; }); return g; }
+
+/* The expressed phenotype for one gene slot, given its two allele keys.
+   Returns {kind, ...}: linear -> {kind:"single", allele}; paws -> {kind:"pair", alleles:[a,b]};
+   incomplete -> {kind:"blend", alleles:[a,b]}. */
+function expressGene(gene, pair){
+  const [x,y] = pair;
+  if(gene.mode==="linear"){
+    const rx=gene.domRank[x], ry=gene.domRank[y];
+    return {kind:"single", allele:(rx<=ry?x:y)};   // lower rank index = more dominant
+  }
+  if(gene.mode==="paws" || gene.mode==="incomplete"){
+    const s=[x,y].slice().sort();
+    return {kind:gene.mode==="paws"?"pair":"blend", alleles:s};
+  }
+  return {kind:"single", allele:x};
+}
+
+/* Full expressed phenotype for a genotype, plus which slots are inactivated by epistasis. */
+function phenotype(geno){
+  const out={};
+  GENES.forEach(g=>{ out[g.key]=expressGene(g, geno[g.key]||[g.alleles[0].k,g.alleles[0].k]); });
+  const noPattern = out.patterntype && out.patterntype.allele==="No Pattern";
+  out._inactive = {};
+  if(noPattern) PATTERN_SUBGENES.forEach(k=>out._inactive[k]=true);
+  return out;
+}
+
+/* Ability totals from the EXPRESSED genes (paws count BOTH alleles — two hands). */
+function abilityTotals(geno){
+  const t={}; ABILITIES.forEach(a=>t[a]=0);
+  GENES.forEach(g=>{
+    const pair=geno[g.key]||[]; if(!pair.length) return;
+    if(g.mode==="paws"){
+      pair.forEach(ak=>{ const al=g.alleles.find(a=>a.k===ak); if(al) for(const k in al.eff) t[k]+=al.eff[k]; });
+    } else if(g.mode==="linear"){
+      const ex=expressGene(g,pair).allele, al=g.alleles.find(a=>a.k===ex);
+      if(al) for(const k in al.eff) t[k]+=al.eff[k];
+    }
+    // incomplete colours have no stats
+  });
+  return t;
+}
+
+/* Inheritance: each parent passes one of its two alleles at 50%.
+   Returns a map "sortedPairKey" -> probability for the offspring's genotype at one slot. */
+function offspringGenotypeDist(momPair, dadPair){
+  const dist={};
+  [momPair[0],momPair[1]].forEach(m=>{
+    [dadPair[0],dadPair[1]].forEach(d=>{
+      const key=[m,d].slice().sort().join("|");
+      dist[key]=(dist[key]||0)+0.25;
+    });
+  });
+  return dist;   // keys are "a|b"
+}
+
+/* Distribution over EXPRESSED phenotypes for one gene, from two parents. Returns
+   [{label, prob, detail}] sorted desc, plus the raw genotype dist. */
+function offspringPhenotypeDist(gene, momPair, dadPair){
+  const gd=offspringGenotypeDist(momPair, dadPair);
+  const pheno={};
+  for(const key in gd){
+    const pair=key.split("|");
+    const ex=expressGene(gene, pair);
+    let label;
+    if(ex.kind==="single") label=ex.allele;
+    else label=ex.alleles.join(" + ");
+    pheno[label]=(pheno[label]||0)+gd[key];
+  }
+  const arr=Object.keys(pheno).map(l=>({label:l, prob:pheno[l]})).sort((a,b)=>b.prob-a.prob);
+  return {pheno:arr, geno:gd};
+}
+
+/* Expected ability totals for offspring of two parents (linear = P(expressed)·eff; paws = mean of each
+   parent's two alleles summed). Also returns per-ability min/max across the possible offspring. */
+function offspringAbilityOutlook(mom, dad){
+  const exp={}, lo={}, hi={}; ABILITIES.forEach(a=>{exp[a]=0;lo[a]=0;hi[a]=0;});
+  GENES.forEach(g=>{
+    const mp=mom[g.key]||[], dp=dad[g.key]||[];
+    if(g.mode==="paws"){
+      const val=k=>{ const al=g.alleles.find(a=>a.k===k); return al?al.eff:{}; };
+      // each hand: one allele from each parent
+      const mMean={}, dMean={}, mMin={},mMax={},dMin={},dMax={};
+      ABILITIES.forEach(a=>{
+        const mv=[val(mp[0])[a]||0, val(mp[1])[a]||0], dv=[val(dp[0])[a]||0, val(dp[1])[a]||0];
+        exp[a]+=(mv[0]+mv[1])/2 + (dv[0]+dv[1])/2;
+        lo[a]+=Math.min(...mv)+Math.min(...dv); hi[a]+=Math.max(...mv)+Math.max(...dv);
+      });
+    } else if(g.mode==="linear"){
+      const {pheno}=offspringPhenotypeDist(g, mp.length?mp:[g.alleles[0].k,g.alleles[0].k], dp.length?dp:[g.alleles[0].k,g.alleles[0].k]);
+      ABILITIES.forEach(a=>{
+        let e=0, mn=Infinity, mx=-Infinity;
+        pheno.forEach(p=>{ const al=g.alleles.find(x=>x.k===p.label); const v=al&&al.eff[a]?al.eff[a]:0; e+=p.prob*v; mn=Math.min(mn,v); mx=Math.max(mx,v); });
+        exp[a]+=e; lo[a]+=(mn===Infinity?0:mn); hi[a]+=(mx===-Infinity?0:mx);
+      });
+    }
+  });
+  return {exp, lo, hi};
+}
+
+/* ---- colour blend swatch (interpolate two shade hexes) ---- */
+function mixHex(h1,h2){
+  const p=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+  const a=p(h1), b=p(h2), m=a.map((v,i)=>Math.round((v+b[i])/2));
+  return "#"+m.map(v=>v.toString(16).padStart(2,"0")).join("");
+}
+function shadeSwatch(sh){ return SHADE_HEX[sh]?`<span class="swatch" style="background:${SHADE_HEX[sh]}"></span>`:""; }
+function blendSwatch(a,b){
+  const ha=SHADE_HEX[a], hb=SHADE_HEX[b]; if(!ha||!hb) return "";
+  return `<span class="swatch" style="background:${a===b?ha:mixHex(ha,hb)}"></span>`;
+}
+
+/* =========================================================================
+   STORAGE
+   ========================================================================= */
+const KEY="niche-roster-v1";
+function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)); if(r&&r.cats) return r; }catch(e){} return {cats:[], seq:1}; }
+function save(r){ try{ localStorage.setItem(KEY, JSON.stringify(r)); }catch(e){} }
+let DB=load();
+function newCat(name){ return {id:DB.seq++, name:name||("Nicheling "+DB.seq), sex:"?", geno:defaultGenotype()}; }
+
+/* =========================================================================
+   UI
+   ========================================================================= */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const groupCls=g=>g==="body"?"grp-body":g==="color"?"grp-color":"grp-pattern";
+let TAB="nichelings", editId=null, breed={mom:null,dad:null};
+
+const TABS=[["nichelings","🐾 My nichelings"],["breeding","💞 Breeding"],["genes","📖 Gene reference"]];
+function renderTabs(){
+  $("#tabs").innerHTML=TABS.map(([k,l])=>`<button class="tab ${TAB===k?"on":""}" data-tab="${k}">${l}</button>`).join("");
+  $$("#tabs .tab").forEach(b=>b.onclick=()=>{ TAB=b.dataset.tab; showTab(); });
+}
+function showTab(){
+  renderTabs();
+  ["nichelings","breeding","genes"].forEach(k=>$("#view-"+k).classList.toggle("hide", k!==TAB));
+  if(TAB==="nichelings") renderNichelings();
+  if(TAB==="breeding") renderBreeding();
+  if(TAB==="genes") renderGenes();
+}
+
+/* ---------- ability chips ---------- */
+function abilityChips(totals){
+  const items=ABILITIES.filter(a=>totals[a]).map(a=>`<span class="a">${AB_SHORT[a]} <b>+${totals[a]}</b></span>`);
+  return items.length?`<div class="abil">${items.join("")}</div>`:`<div class="abil"><span class="a muted">no ability bonuses</span></div>`;
+}
+
+/* ---------- expressed phenotype summary for a nicheling ---------- */
+function phenoSummary(geno){
+  const ph=phenotype(geno);
+  const parts=GENES.map(g=>{
+    if(ph._inactive[g.key]) return "";
+    const ex=ph[g.key]; let txt, sw="";
+    if(ex.kind==="single"){ txt=ex.allele; if(g.key==="eyecolor"&&EYECOL_HEX[ex.allele]) sw=`<span class="swatch" style="background:${EYECOL_HEX[ex.allele]}"></span>`; }
+    else if(ex.kind==="pair"){ txt=ex.alleles[0]===ex.alleles[1]?("2× "+ex.alleles[0]):ex.alleles.join(" + "); }
+    else { txt=ex.alleles[0]===ex.alleles[1]?ex.alleles[0]:ex.alleles.join(" + "); sw=blendSwatch(ex.alleles[0],ex.alleles[1]); }
+    return `<span class="pill">${sw}<span class="muted">${g.label}:</span> ${esc(txt)}</span>`;
+  });
+  return parts.join("");
+}
+
+/* =========================================================================
+   TAB: My nichelings
+   ========================================================================= */
+function renderNichelings(){
+  const v=$("#view-nichelings");
+  let html=`<div class="card"><div class="row" style="justify-content:space-between">
+      <h2 style="margin:0"><span class="em">🐾</span> My nichelings <span class="muted" style="font-weight:400;font-size:13px">(${DB.cats.length})</span></h2>
+      <div class="row">
+        <button class="btn sm" id="addCat">+ Add nicheling</button>
+        <button class="btn sm gray" id="exp">⬇︎ Export</button>
+        <button class="btn sm gray" id="impBtn">⬆︎ Import</button>
+        <input type="file" id="impFile" accept="application/json" class="hide">
+      </div></div>`;
+  if(!DB.cats.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings yet. Add one and set its two alleles per gene, then head to <b>Breeding</b> to predict a pairing.</p>`;
+  html+=`</div>`;
+  html+=`<div class="nlist">`+DB.cats.map(c=>{
+    const t=abilityTotals(c.geno);
+    const top=ABILITIES.filter(a=>t[a]).sort((x,y)=>t[y]-t[x]).slice(0,4).map(a=>`${AB_SHORT[a]} +${t[a]}`).join(" · ");
+    return `<div class="nrow" data-id="${c.id}">
+      <div class="grow">
+        <div class="nm">${esc(c.name)} <span class="muted" style="font-weight:400">${c.sex==="F"?"♀":c.sex==="M"?"♂":""}</span></div>
+        <div class="ab">${top||"no ability bonuses"}</div>
+      </div>
+      <button class="btn sm gray edit" data-id="${c.id}">✏️ Edit</button>
+      <button class="btn sm gray del" data-id="${c.id}">🗑</button>
+    </div>`;
+  }).join("")+`</div>`;
+  html+=`<div id="editor"></div>`;
+  v.innerHTML=html;
+  $("#addCat").onclick=()=>{ const c=newCat(); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); };
+  $("#exp").onclick=exportRoster;
+  $("#impBtn").onclick=()=>$("#impFile").click();
+  $("#impFile").onchange=importRoster;
+  $$("#view-nichelings .edit").forEach(b=>b.onclick=()=>{ editId=(editId===+b.dataset.id?null:+b.dataset.id); renderNichelings(); });
+  $$("#view-nichelings .del").forEach(b=>b.onclick=()=>{ if(confirm("Delete this nicheling?")){ DB.cats=DB.cats.filter(c=>c.id!==+b.dataset.id); save(DB); if(editId===+b.dataset.id)editId=null; renderNichelings(); } });
+  if(editId!=null) renderEditor();
+}
+
+function renderEditor(){
+  const c=DB.cats.find(x=>x.id===editId); if(!c) return;
+  const groups=[["body","Body & abilities"],["color","Colours"],["pattern","Pattern & mane"]];
+  let html=`<div class="card"><div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">✏️ Editing: ${esc(c.name)}</h2>
+      <button class="btn sm" id="closeEd">Done</button></div>
+    <div class="row" style="margin:10px 0">
+      <label>Name <input type="text" id="edName" value="${esc(c.name)}" style="width:180px"></label>
+      <label>Sex <select id="edSex"><option value="?" ${c.sex==="?"?"selected":""}>—</option><option value="F" ${c.sex==="F"?"selected":""}>♀ Female</option><option value="M" ${c.sex==="M"?"selected":""}>♂ Male</option></select></label>
+    </div>`;
+  html+=abilityChips(abilityTotals(c.geno));
+  groups.forEach(([grp,title])=>{
+    html+=`<h3 style="font-size:13px;color:var(--muted);margin:14px 0 6px">${title}</h3><div class="genogrid">`;
+    GENES.filter(g=>g.group===grp).forEach(g=>{
+      const pair=c.geno[g.key]||[g.alleles[0].k,g.alleles[0].k];
+      const opts=a=>g.alleles.map(al=>`<option value="${esc(al.k)}" ${al.k===a?"selected":""}>${esc(al.name)}</option>`).join("");
+      html+=`<div class="slot ${groupCls(grp)}"><div class="nm">${g.label} <span style="font-weight:400">· ${g.mode==="linear"?"dominant/recessive":g.mode==="paws"?"both hands show":"blend"}</span></div>
+        <div class="sel"><select data-g="${g.key}" data-i="0">${opts(pair[0])}</select><select data-g="${g.key}" data-i="1">${opts(pair[1])}</select></div></div>`;
+    });
+    html+=`</div>`;
+  });
+  html+=`</div>`;
+  $("#editor").innerHTML=html;
+  $("#closeEd").onclick=()=>{ editId=null; renderNichelings(); };
+  $("#edName").oninput=e=>{ c.name=e.target.value; save(DB); };
+  $("#edSex").onchange=e=>{ c.sex=e.target.value; save(DB); };
+  $$("#editor select[data-g]").forEach(s=>s.onchange=()=>{
+    const g=s.dataset.g, i=+s.dataset.i; c.geno[g][i]=s.value; save(DB);
+    $("#editor .abil").outerHTML=abilityChips(abilityTotals(c.geno));
+  });
+}
+
+function exportRoster(){
+  const blob=new Blob([JSON.stringify(DB,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="niche-roster.json"; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+function importRoster(e){
+  const f=e.target.files[0]; if(!f) return; const rd=new FileReader();
+  rd.onload=()=>{ try{ const r=JSON.parse(rd.result); if(r&&Array.isArray(r.cats)){ DB=r; DB.seq=DB.seq||(Math.max(0,...DB.cats.map(c=>c.id))+1); save(DB); renderNichelings(); } else alert("Not a valid roster file."); }catch(x){ alert("Could not read that file."); } };
+  rd.readAsText(f); e.target.value="";
+}
+
+/* =========================================================================
+   TAB: Breeding
+   ========================================================================= */
+function renderBreeding(){
+  const v=$("#view-breeding");
+  if(DB.cats.length<1){ v.innerHTML=`<div class="card"><p class="muted">Add at least one nicheling under <b>My nichelings</b> first. You can breed a nicheling with itself or with any other.</p></div>`; return; }
+  const opt=(sel)=>DB.cats.map(c=>`<option value="${c.id}" ${c.id===sel?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}</option>`).join("");
+  if(breed.mom==null) breed.mom=DB.cats[0].id;
+  if(breed.dad==null) breed.dad=DB.cats[Math.min(1,DB.cats.length-1)].id;
+  let html=`<div class="card"><h2><span class="em">💞</span> Predict a pairing</h2>
+    <div class="row" style="margin-top:8px">
+      <label>Parent A <select id="selMom">${opt(breed.mom)}</select></label>
+      <label>Parent B <select id="selDad">${opt(breed.dad)}</select></label>
+    </div>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Each pup gets one allele per gene from each parent (50/50). Percentages below are the chance a pup <b>shows</b> that trait.</p>
+  </div>`;
+  html+=`<div id="breedOut"></div>`;
+  html+=`<div class="card"><h2>🎯 Find a pairing for a trait</h2>
+    <div class="row" style="margin-top:8px">
+      <label>Gene <select id="fGene">${GENES.map(g=>`<option value="${g.key}">${g.label}</option>`).join("")}</select></label>
+      <label>Target <select id="fAllele"></select></label>
+      <button class="btn sm" id="fRun">Rank my pairings</button>
+    </div>
+    <div id="finderOut" class="muted" style="margin-top:10px;font-size:13px">Pick a gene and target trait, then rank every pair in your roster by the chance their pup shows it.</div>
+  </div>`;
+  v.innerHTML=html;
+  $("#selMom").onchange=e=>{ breed.mom=+e.target.value; renderBreedOut(); };
+  $("#selDad").onchange=e=>{ breed.dad=+e.target.value; renderBreedOut(); };
+  const fillAlleles=()=>{ const g=GENE_BY_KEY[$("#fGene").value]; $("#fAllele").innerHTML=g.alleles.map(a=>`<option value="${esc(a.k)}">${esc(a.name)}</option>`).join(""); };
+  $("#fGene").onchange=fillAlleles; fillAlleles();
+  $("#fRun").onclick=runFinder;
+  renderBreedOut();
+}
+
+function renderBreedOut(){
+  const mom=DB.cats.find(c=>c.id===breed.mom), dad=DB.cats.find(c=>c.id===breed.dad);
+  if(!mom||!dad){ $("#breedOut").innerHTML=""; return; }
+  const outlook=offspringAbilityOutlook(mom.geno, dad.geno);
+  // ability outlook
+  let html=`<div class="card"><h2>Ability outlook for the pup</h2><div class="abil">`+
+    ABILITIES.filter(a=>outlook.hi[a]).map(a=>{
+      const e=outlook.exp[a], lo=outlook.lo[a], hi=outlook.hi[a];
+      const rng=lo===hi?`+${lo}`:`+${lo}–${hi}`;
+      return `<span class="a">${AB_SHORT[a]} <b>~+${e.toFixed(1)}</b> <span class="muted" style="font-weight:400">(${rng})</span></span>`;
+    }).join("")+`</div><p class="muted" style="font-size:12px;margin:8px 0 0">~average expected, with the possible range. Paws count both hands.</p></div>`;
+  // per-gene phenotype probabilities, grouped
+  const groups=[["body","Body & abilities"],["color","Colours"],["pattern","Pattern & mane"]];
+  groups.forEach(([grp,title])=>{
+    html+=`<div class="card"><h2>${title}</h2>`;
+    GENES.filter(g=>g.group===grp).forEach(g=>{
+      const {pheno}=offspringPhenotypeDist(g, mom.geno[g.key], dad.geno[g.key]);
+      const certain=pheno.length===1;
+      html+=`<div style="margin:8px 0 12px"><div style="font-weight:700;font-size:13px;margin-bottom:2px">${g.label}${certain?` <span class="muted" style="font-weight:400">· always ${esc(pheno[0].label)}</span>`:""}</div>`;
+      if(!certain){
+        pheno.forEach(p=>{
+          const pct=Math.round(p.prob*100);
+          let sw="";
+          if(g.mode==="incomplete"){ const pr=p.label.split(" + "); sw=blendSwatch(pr[0],pr[1]||pr[0]); }
+          else if(g.key==="eyecolor"&&EYECOL_HEX[p.label]) sw=`<span class="swatch" style="background:${EYECOL_HEX[p.label]}"></span>`;
+          html+=`<div class="prob"><span class="nm2">${sw}${esc(p.label)}</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">${pct}%</span></div>`;
+        });
+      }
+      html+=`</div>`;
+    });
+    html+=`</div>`;
+  });
+  $("#breedOut").innerHTML=html;
+}
+
+/* rank every unordered pair in the roster by P(pup shows the chosen allele's phenotype) */
+function runFinder(){
+  const gkey=$("#fGene").value, target=$("#fAllele").value, g=GENE_BY_KEY[gkey];
+  const rows=[];
+  for(let i=0;i<DB.cats.length;i++) for(let j=i;j<DB.cats.length;j++){
+    const a=DB.cats[i], b=DB.cats[j];
+    const {pheno}=offspringPhenotypeDist(g, a.geno[gkey], b.geno[gkey]);
+    // match: for single/blend/pair, the target allele shows in the phenotype label
+    let p=0;
+    pheno.forEach(ph=>{ if(g.mode==="linear"){ if(ph.label===target) p+=ph.prob; } else { if(ph.label.split(" + ").includes(target)) p+=ph.prob; } });
+    if(p>0) rows.push({a:a.name, b:b.name, self:i===j, p});
+  }
+  rows.sort((x,y)=>y.p-x.p);
+  const top=rows.slice(0,12);
+  const al=g.alleles.find(a=>a.k===target);
+  let html=`<div style="font-weight:700;margin-bottom:6px">Chance the pup shows <b>${esc(al?al.name:target)}</b> (${g.label}):</div>`;
+  if(!top.length) html+=`<p class="muted">No pairing in your roster can produce it — neither the trait nor its allele is present. Add a nicheling that carries it.</p>`;
+  else html+=top.map(r=>{
+    const pct=Math.round(r.p*100);
+    return `<div class="prob"><span class="nm2">${esc(r.a)} ${r.self?"(self)":"× "+esc(r.b)}</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">${pct}%</span></div>`;
+  }).join("");
+  $("#finderOut").innerHTML=html;
+}
+
+/* =========================================================================
+   TAB: Gene reference
+   ========================================================================= */
+function renderGenes(){
+  const v=$("#view-genes");
+  let html=`<div class="note">B&amp;E has <b>18 gene categories</b>. Most are <b>dominant/recessive</b> (top allele shows; the wiki lists them most-dominant first). <b>Paws</b> are co-dominant — both hands show and both give abilities. <b>Fur, Mane, Horn &amp; Pattern colours</b> use <b>incomplete dominance</b> — the two alleles blend. When <b>No Pattern</b> shows, the pattern size/density/colour genes are hidden (but still inherited).</div>`;
+  const groups=[["body","Body & ability genes"],["color","Colour genes"],["pattern","Pattern & mane genes"]];
+  groups.forEach(([grp,title])=>{
+    html+=`<div class="card"><h2>${title}</h2>`;
+    GENES.filter(g=>g.group===grp).forEach(g=>{
+      const modeTxt=g.mode==="linear"?"dominant → recessive":g.mode==="paws"?"co-dominant (both hands)":"incomplete (blend)";
+      html+=`<details class="gene"><summary>${g.label}<span class="mode">${modeTxt}</span></summary><div class="body scrollx"><table>
+        <tr><th>${g.mode==="linear"?"Dom.":""}</th><th>Gene</th><th>Effect</th></tr>`;
+      g.alleles.forEach((a,i)=>{
+        const eff=Object.keys(a.eff).length?Object.keys(a.eff).map(k=>`${k} +${a.eff[k]}`).join(", "):(g.mode==="incomplete"?"colour only":"—");
+        let sw=""; if(g.group==="color"&&g.mode==="incomplete") sw=shadeSwatch(a.k); if(g.key==="eyecolor"&&EYECOL_HEX[a.k]) sw=`<span class="swatch" style="background:${EYECOL_HEX[a.k]}"></span>`;
+        html+=`<tr><td>${g.mode==="linear"?(i+1):""}</td><td>${sw}${esc(a.name)}</td><td>${esc(eff)}</td></tr>`;
+      });
+      html+=`</table></div></details>`;
+    });
+    html+=`</div>`;
+  });
+  v.innerHTML=html;
+}
+
+/* ---- expose for tests (node/vm) ---- */
+if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILITIES,defaultGenotype,expressGene,phenotype,
+  abilityTotals,offspringGenotypeDist,offspringPhenotypeDist,offspringAbilityOutlook};
+
+/* ---- boot (only in a real browser) ---- */
+if(typeof document!=="undefined" && document.getElementById("tabs")) showTab();
+</script>
