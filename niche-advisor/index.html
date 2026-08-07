@@ -525,19 +525,22 @@ function renderBreeding(){
    total of all abilities). Expected values already fold in dominance odds and mutation levels. */
 function runOptimal(){
   const metric=$("#oMetric").value, rows=[];
+  if(!hasFM()){ $("#optOut").innerHTML=needSexMsg; return; }
   for(let i=0;i<DB.cats.length;i++) for(let j=i+1;j<DB.cats.length;j++){
-    const a=DB.cats[i], b=DB.cats[j], o=offspringAbilityOutlook(a.geno, b.geno);
+    const a=DB.cats[i], b=DB.cats[j]; if(!canPair(a,b)) continue;
+    const o=offspringAbilityOutlook(a.geno, b.geno);
     const score = metric==="__total" ? ABILITIES.reduce((s,ab)=>s+o.exp[ab],0) : (o.exp[metric]||0);
     const top = ABILITIES.filter(ab=>o.exp[ab]>0.05).sort((x,y)=>o.exp[y]-o.exp[x]).slice(0,4).map(ab=>`${AB_SHORT[ab]} ~+${o.exp[ab].toFixed(1)}`);
-    rows.push({a:a.name, b:b.name, score, top:top.join(" · ")});
+    const F=a.sex==="F"?a:b, M=a.sex==="F"?b:a;
+    rows.push({F:F.name, M:M.name, score, top:top.join(" · ")});
   }
   rows.sort((x,y)=>y.score-x.score);
   const top=rows.slice(0,12), label=metric==="__total"?"total stats":metric;
-  let html=`<div style="font-weight:700;margin-bottom:6px">Best pairings by expected ${esc(label)}:</div>`;
-  if(!top.length) html+=`<p class="muted">Add at least two nichelings to compare pairings.</p>`;
+  let html=`<div style="font-weight:700;margin-bottom:6px">Best ♀×♂ pairings by expected ${esc(label)}:</div>`;
+  if(!top.length) html+=`<p class="muted">No ♀×♂ pairs to compare — set nichelings' sex to ♀ and ♂.</p>`;
   else { const max=top[0].score||1;
     html+=top.map(r=>{ const pct=Math.round(100*r.score/max);
-      return `<div class="prob" style="margin-bottom:0"><span class="nm2">${esc(r.a)} × ${esc(r.b)}</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">~${r.score.toFixed(1)}</span></div>`+
+      return `<div class="prob" style="margin-bottom:0"><span class="nm2">${esc(r.F)} ♀ × ${esc(r.M)} ♂</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">~${r.score.toFixed(1)}</span></div>`+
         `<div class="muted" style="font-size:11.5px;margin:0 0 7px 150px">${esc(r.top)}</div>`; }).join(""); }
   $("#optOut").innerHTML=html;
 }
@@ -577,26 +580,31 @@ function renderBreedOut(){
   $("#breedOut").innerHTML=html;
 }
 
-/* rank every unordered pair in the roster by P(pup shows the chosen allele's phenotype) */
+/* Breeding needs one ♀ and one ♂, so pairings only consider opposite-sex nichelings. */
+const canPair=(a,b)=>(a.sex==="F"&&b.sex==="M")||(a.sex==="M"&&b.sex==="F");
+const hasFM=()=>DB.cats.some(c=>c.sex==="F")&&DB.cats.some(c=>c.sex==="M");
+const needSexMsg='<p class="muted">Pairings need one ♀ and one ♂ — set each nicheling\'s sex in its editor (the ♀/♂ dropdown).</p>';
+
+/* rank every ♀×♂ pair in the roster by P(pup shows the chosen allele's phenotype) */
 function runFinder(){
   const gkey=$("#fGene").value, target=$("#fAllele").value, g=GENE_BY_KEY[gkey];
+  if(!hasFM()){ $("#finderOut").innerHTML=needSexMsg; return; }
   const rows=[];
-  for(let i=0;i<DB.cats.length;i++) for(let j=i;j<DB.cats.length;j++){
-    const a=DB.cats[i], b=DB.cats[j];
+  for(let i=0;i<DB.cats.length;i++) for(let j=i+1;j<DB.cats.length;j++){
+    const a=DB.cats[i], b=DB.cats[j]; if(!canPair(a,b)) continue;
     const {pheno}=offspringPhenotypeDist(g, a.geno[gkey], b.geno[gkey]);
-    // match: for single/blend/pair, the target allele shows in the phenotype label
     let p=0;
     pheno.forEach(ph=>{ if(ph.label.split(" + ").map(baseK).includes(target)) p+=ph.prob; });
-    if(p>0) rows.push({a:a.name, b:b.name, self:i===j, p});
+    if(p>0){ const F=a.sex==="F"?a:b, M=a.sex==="F"?b:a; rows.push({F:F.name, M:M.name, p}); }
   }
   rows.sort((x,y)=>y.p-x.p);
   const top=rows.slice(0,12);
   const al=g.alleles.find(a=>a.k===target);
   let html=`<div style="font-weight:700;margin-bottom:6px">Chance the pup shows <b>${esc(al?al.name:target)}</b> (${g.label}):</div>`;
-  if(!top.length) html+=`<p class="muted">No pairing in your roster can produce it — neither the trait nor its allele is present. Add a nicheling that carries it.</p>`;
+  if(!top.length) html+=`<p class="muted">No ♀×♂ pairing in your roster can produce it — none of your opposite-sex pairs carries the allele.</p>`;
   else html+=top.map(r=>{
     const pct=Math.round(r.p*100);
-    return `<div class="prob"><span class="nm2">${esc(r.a)} ${r.self?"(self)":"× "+esc(r.b)}</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">${pct}%</span></div>`;
+    return `<div class="prob"><span class="nm2">${esc(r.F)} ♀ × ${esc(r.M)} ♂</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">${pct}%</span></div>`;
   }).join("");
   $("#finderOut").innerHTML=html;
 }
