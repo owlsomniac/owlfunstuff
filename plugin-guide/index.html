@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plugin Guide — owlfunstuff</title>
+<meta name="description" content="Full descriptions and step-by-step manuals for the Currency System, CS Extras, Minigame Suite, and Better Nav Bar ProBoards plugins.">
+<script>(function(){try{var t=localStorage.getItem('ofs-guide-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<style>
+:root{
+  --bg:#f4efe6;--bg2:#ece3d3;--panel:#fffdf8;--panel2:#f7f1e6;--ink:#3a3229;--muted:#8c7f6c;
+  --line:#e4d9c5;--brand:#c8622d;--brand-ink:#a1471c;--brand-soft:#f3d9c6;
+  --code-bg:#f0e7d6;--code-ink:#8a4a24;
+  --shadow:0 1px 2px rgba(60,45,25,.06),0 10px 28px rgba(60,45,25,.09);
+  --maxw:1080px;--radius:16px;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+/* dark: system default (no stamp) unless an explicit light choice is made */
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#201c17;--bg2:#17130f;--panel:#2b251d;--panel2:#241f18;--ink:#efe6d6;--muted:#a2957f;
+  --line:#43392c;--brand:#e0824c;--brand-ink:#efa579;--brand-soft:#4a3122;
+  --code-bg:#332a20;--code-ink:#f0b184;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
+}}
+/* explicit toggle wins in both directions */
+:root[data-theme="dark"]{
+  --bg:#201c17;--bg2:#17130f;--panel:#2b251d;--panel2:#241f18;--ink:#efe6d6;--muted:#a2957f;
+  --line:#43392c;--brand:#e0824c;--brand-ink:#efa579;--brand-soft:#4a3122;
+  --code-bg:#332a20;--code-ink:#f0b184;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;min-height:100vh;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  color:var(--ink);line-height:1.6;background:radial-gradient(1100px 560px at 18% -12%,var(--bg2),transparent 60%),var(--bg);}
+a{color:var(--brand-ink)}
+.wrap{width:100%;max-width:var(--maxw);margin:0 auto;padding:0 22px}
+/* top bar */
+.top{position:sticky;top:0;z-index:20;backdrop-filter:blur(8px);
+  background:color-mix(in srgb,var(--bg) 82%,transparent);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:14px;height:60px}
+.brand{display:flex;align-items:center;gap:9px;text-decoration:none;color:inherit;font-weight:700;letter-spacing:-.2px}
+.brand .bm{font-size:22px}
+.top .sp{flex:1 1 auto}
+.top a.up{text-decoration:none;color:var(--muted);font-size:14px}
+.top a.up:hover{color:var(--brand-ink)}
+.tgl{display:inline-flex;align-items:center;gap:7px;cursor:pointer;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);border-radius:999px;padding:7px 13px;font:inherit;font-size:14px}
+.tgl:hover{border-color:var(--brand)}
+.tgl .ti{font-size:15px;line-height:1}
+/* headings */
+h1{font-size:clamp(26px,4vw,36px);letter-spacing:-.6px;margin:0;text-wrap:balance}
+h2{font-size:22px;letter-spacing:-.2px;margin:34px 0 10px;padding-top:6px;text-wrap:balance}
+h3.sec{font-size:15px;letter-spacing:.04em;text-transform:none;margin:30px 0 8px;color:var(--brand-ink);
+  padding-top:16px;border-top:1px solid var(--line);text-wrap:balance}
+h4{font-size:15.5px;margin:18px 0 4px;color:var(--ink)}
+p{margin:9px 0}
+ul,ol{margin:9px 0;padding-left:22px}li{margin:4px 0}
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);color:var(--code-ink);
+  padding:1px 6px;border-radius:6px;word-break:break-word}
+[id]{scroll-margin-top:78px}
+/* home */
+.hero{padding:44px 0 8px}
+.hero .tag{color:var(--muted);font-size:16px;margin:10px 0 0;max-width:60ch}
+.order{display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center;margin:22px 0 6px;font-size:13.5px;color:var(--muted)}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 11px;color:var(--ink)}
+.chip.b{color:var(--brand-ink);border-color:var(--brand-soft)}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:26px 0 46px}
+@media (max-width:720px){.cards{grid-template-columns:1fr}}
+a.card{display:flex;gap:15px;align-items:flex-start;text-decoration:none;color:inherit;background:var(--panel);
+  border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);transition:border-color .15s,transform .15s}
+a.card:hover{border-color:var(--brand);transform:translateY(-2px)}
+a.card .em{font-size:32px;flex:0 0 auto;line-height:1}
+a.card .grow{flex:1 1 auto;min-width:0}
+a.card h2{margin:0;font-size:18px;color:var(--brand-ink);padding:0}
+a.card p{margin:4px 0 0;font-size:14px;color:var(--muted)}
+a.card .arrow{color:var(--brand);font-size:20px;flex:0 0 auto;align-self:center}
+/* plugin page */
+.phead{padding:34px 0 4px}
+.phead .em{font-size:40px}
+.phead .tag{color:var(--muted);font-size:16px;margin:8px 0 0}
+.layout{display:grid;grid-template-columns:232px minmax(0,1fr);gap:34px;padding:14px 0 60px;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:1fr;gap:6px}}
+.toc{position:sticky;top:76px;align-self:start;max-height:calc(100vh - 96px);overflow:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 14px}
+@media (max-width:900px){.toc{position:static;max-height:none;margin:8px 0 14px}}
+.toc .th{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
+.toc a{display:block;text-decoration:none;color:var(--muted);font-size:13.5px;padding:4px 8px;border-radius:8px;border-left:2px solid transparent}
+.toc a.top{color:var(--ink);font-weight:600}
+.toc a.sub{padding-left:16px}
+.toc a:hover{color:var(--brand-ink);background:var(--panel2)}
+.toc a.active{color:var(--brand-ink);border-left-color:var(--brand);background:var(--panel2)}
+.prose{min-width:0;max-width:72ch}
+.prose h2:first-child{margin-top:8px}
+.back{display:inline-block;margin:0 0 2px;font-size:14px;text-decoration:none;color:var(--muted)}
+.back:hover{color:var(--brand-ink)}
+.note{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--brand);
+  border-radius:10px;padding:12px 15px;margin:16px 0;font-size:14.5px;color:var(--ink)}
+footer{border-top:1px solid var(--line);margin-top:20px}
+footer .wrap{padding:20px 22px;color:var(--muted);font-size:12.5px;display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between}
+footer a{color:var(--muted)}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}a.card{transition:none}}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap"><a class="brand" href="./index.html"><span class="bm" aria-hidden="true">📖</span>Plugin Guide</a><span class="sp"></span><a class="up" href="../index.html">owlfunstuff ↗</a><button id="themeToggle" class="tgl" type="button" aria-label="Toggle dark mode"><span class="ti" aria-hidden="true">🌙</span><span class="tl">Dark</span></button></div></header>
+<main>
+<section class="wrap hero"><h1>Plugin Guide</h1><p class="tag">Everything four ProBoards plugins can do, and how to set up every feature &mdash; written in plain English for forum admins. Pick a plugin to open its full guide and manual.</p><div class="order"><span>Load order:</span><span class="chip b">Currency System</span><span>→</span><span class="chip">Extras</span><span>→</span><span class="chip">Minigame Suite</span><span style="width:100%;height:0"></span><span>Better Nav Bar is standalone — it matches the others automatically when present.</span></div></section><section class="wrap"><div class="cards"><a class="card" href="./currency-system.html"><span class="em" aria-hidden="true">🪙</span><span class="grow"><h2>Currency System</h2><p>A complete, settings-driven forum economy.</p></span><span class="arrow" aria-hidden="true">→</span></a><a class="card" href="./cs-extras.html"><span class="em" aria-hidden="true">🎨</span><span class="grow"><h2>Currency System Extras</h2><p>Theming and extra UI for the Currency System.</p></span><span class="arrow" aria-hidden="true">→</span></a><a class="card" href="./minigame-suite.html"><span class="em" aria-hidden="true">🎲</span><span class="grow"><h2>CS Minigame Suite</h2><p>Place-anywhere mini-games that pay out currency.</p></span><span class="arrow" aria-hidden="true">→</span></a><a class="card" href="./better-nav-bar.html"><span class="em" aria-hidden="true">🧭</span><span class="grow"><h2>Better Nav Bar</h2><p>A multi-level replacement navigation bar.</p></span><span class="arrow" aria-hidden="true">→</span></a></div></section>
+</main>
+<footer><div class="wrap"><span>Plugin Guide — Currency System &amp; companions for ProBoards.</span><span><a href="../index.html">owlfunstuff</a> · <a href="https://github.com/owlsomniac/owlfunstuff" target="_blank" rel="noopener">source</a></span></div></footer>
+<script>
+(function(){
+  var root=document.documentElement,KEY='ofs-guide-theme';
+  function cur(){var t=root.getAttribute('data-theme');if(t)return t;return matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';}
+  function upd(){var t=cur(),b=document.getElementById('themeToggle');if(!b)return;
+    b.setAttribute('aria-label',t==='dark'?'Switch to light mode':'Switch to dark mode');
+    b.querySelector('.ti').textContent=t==='dark'?'\u2600\uFE0F':'\uD83C\uDF19';
+    b.querySelector('.tl').textContent=t==='dark'?'Light':'Dark';}
+  function set(t){root.setAttribute('data-theme',t);try{localStorage.setItem(KEY,t);}catch(e){}upd();}
+  document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('#themeToggle');if(b){e.preventDefault();set(cur()==='dark'?'light':'dark');}});
+  upd();
+  // TOC scrollspy
+  var links=[].slice.call(document.querySelectorAll('.toc a[data-t]'));
+  if(links.length&&'IntersectionObserver' in window){
+    var map={};links.forEach(function(a){map[a.getAttribute('data-t')]=a;});
+    var vis={};
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(en){vis[en.target.id]=en.isIntersecting?en.intersectionRatio:0;});
+      var best=null,br=0;Object.keys(vis).forEach(function(id){if(vis[id]>br){br=vis[id];best=id;}});
+      if(best){links.forEach(function(a){a.classList.remove('active');});if(map[best])map[best].classList.add('active');}
+    },{rootMargin:'-70px 0px -70% 0px',threshold:[0,.25,.5,1]});
+    Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el)io.observe(el);});
+  }
+})();
+</script>
+</body>
+</html>
