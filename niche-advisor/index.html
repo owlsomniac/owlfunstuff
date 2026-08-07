@@ -61,6 +61,9 @@
   .mutn{width:46px;padding:5px 4px;text-align:center;flex:0 0 auto}
   .grp-body{background:var(--g-body)} .grp-color{background:var(--g-color)} .grp-pattern{background:var(--g-pattern)}
   .nlist{display:flex;flex-direction:column;gap:8px}
+  .retired-box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow);margin:0 0 16px}
+  .retired-box>summary{cursor:pointer;font-weight:700;font-size:15px}
+  .retired-box .nrow{opacity:.72}
   .nrow{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--panel)}
   .nrow .grow{flex:1;min-width:0}
   .nrow .nm{font-weight:700}
@@ -421,7 +424,7 @@ const KEY="niche-roster-v1";
 function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)); if(r&&r.cats) return r; }catch(e){} return {cats:[], seq:1}; }
 function save(r){ try{ localStorage.setItem(KEY, JSON.stringify(r)); }catch(e){} }
 let DB=load();
-function newCat(name){ return {id:DB.seq++, name:name||("Nicheling "+DB.seq), sex:"?", geno:defaultGenotype()}; }
+function newCat(name){ return {id:DB.seq++, name:name||("Nicheling "+DB.seq), sex:"?", geno:defaultGenotype(), retired:false}; }
 
 /* =========================================================================
    UI
@@ -429,7 +432,11 @@ function newCat(name){ return {id:DB.seq++, name:name||("Nicheling "+DB.seq), se
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const groupCls=g=>g==="body"?"grp-body":g==="color"?"grp-color":"grp-pattern";
-let TAB="nichelings", editId=null, breed={mom:null,dad:null};
+let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeRetired:false};
+/* Retiring a nicheling archives it (retired:true) rather than deleting — it can be brought back.
+   Active = not retired; the breeding pool also folds in retired ones only when the user opts in. */
+const activeCats=()=>DB.cats.filter(c=>!c.retired);
+const breedingPool=()=>DB.cats.filter(c=>breed.includeRetired||!c.retired);
 
 const TABS=[["nichelings","🐾 My nichelings"],["breeding","💞 Breeding"],["retire","🧹 Retire"],["genes","📖 Gene reference"]];
 function renderTabs(){
@@ -469,8 +476,11 @@ function phenoSummary(geno){
    ========================================================================= */
 function renderNichelings(){
   const v=$("#view-nichelings");
+  const active=DB.cats.filter(c=>!c.retired), retired=DB.cats.filter(c=>c.retired);
+  const abLine=c=>{ const t=abilityTotals(c.geno);
+    return ABILITIES.filter(a=>t[a]).sort((x,y)=>t[y]-t[x]).slice(0,4).map(a=>`${AB_SHORT[a]} +${t[a]}`).join(" · ")||"no ability bonuses"; };
   let html=`<div class="card"><div class="row" style="justify-content:space-between">
-      <h2 style="margin:0"><span class="em">🐾</span> My nichelings <span class="muted" style="font-weight:400;font-size:13px">(${DB.cats.length})</span></h2>
+      <h2 style="margin:0"><span class="em">🐾</span> My nichelings <span class="muted" style="font-weight:400;font-size:13px">(${active.length})</span></h2>
       <div class="row">
         <button class="btn sm" id="addCat">+ Add nicheling</button>
         <button class="btn sm gray" id="fromCode">⌗ From code</button>
@@ -479,21 +489,31 @@ function renderNichelings(){
         <input type="file" id="impFile" accept="application/json" class="hide">
       </div></div>`;
   if(!DB.cats.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings yet. Add one and set its two alleles per gene, then head to <b>Breeding</b> to predict a pairing.</p>`;
+  else if(!active.length) html+=`<p class="muted" style="margin:12px 0 0">All your nichelings are retired — bring one back from the <b>Retired</b> list below, or add a new one.</p>`;
   html+=`</div>`;
   html+=`<div id="editor"></div>`;   // editor sits above the list, so a just-added nicheling's form is right at the top
-  html+=`<div class="nlist">`+DB.cats.slice().reverse().map(c=>{   // newest first, so a just-added nicheling is at the top
-    const t=abilityTotals(c.geno);
-    const top=ABILITIES.filter(a=>t[a]).sort((x,y)=>t[y]-t[x]).slice(0,4).map(a=>`${AB_SHORT[a]} +${t[a]}`).join(" · ");
+  html+=`<div class="nlist">`+active.slice().reverse().map(c=>{   // newest first, so a just-added nicheling is at the top
     return `<div class="nrow" data-id="${c.id}">
       <div class="grow">
         <div class="nm">${esc(c.name)} <span class="muted" style="font-weight:400">${c.sex==="F"?"♀":c.sex==="M"?"♂":""}</span></div>
-        <div class="ab">${top||"no ability bonuses"}</div>
+        <div class="ab">${abLine(c)}</div>
       </div>
       <button class="btn sm gray edit" data-id="${c.id}">✏️ Edit</button>
       <button class="btn sm gray clone" data-id="${c.id}" title="Duplicate">⧉</button>
-      <button class="btn sm gray del" data-id="${c.id}">🗑</button>
+      <button class="btn sm gray retire1" data-id="${c.id}" title="Retire (archive)">🗂</button>
+      <button class="btn sm gray del" data-id="${c.id}" title="Delete permanently">🗑</button>
     </div>`;
   }).join("")+`</div>`;
+  if(retired.length){
+    html+=`<details class="retired-box"><summary>🗂 Retired <span class="muted" style="font-weight:400;font-size:13px">(${retired.length})</span></summary>
+      <p class="muted" style="font-size:12px;margin:8px 0 10px">Archived — kept out of breeding by default. Bring one back to use it again, or delete it for good.</p>
+      <div class="nlist">`+retired.slice().reverse().map(c=>`<div class="nrow" data-id="${c.id}">
+        <div class="grow"><div class="nm">${esc(c.name)} <span class="muted" style="font-weight:400">${c.sex==="F"?"♀":c.sex==="M"?"♂":""}</span></div>
+          <div class="ab">${abLine(c)}</div></div>
+        <button class="btn sm gray unretire" data-id="${c.id}">↩︎ Bring back</button>
+        <button class="btn sm gray del" data-id="${c.id}" title="Delete permanently">🗑</button>
+      </div>`).join("")+`</div></details>`;
+  }
   v.innerHTML=html;
   $("#addCat").onclick=()=>{ const c=newCat(); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); };
   $("#fromCode").onclick=()=>{
@@ -507,7 +527,11 @@ function renderNichelings(){
   $$("#view-nichelings .edit").forEach(b=>b.onclick=()=>{ editId=(editId===+b.dataset.id?null:+b.dataset.id); renderNichelings(); });
   $$("#view-nichelings .clone").forEach(b=>b.onclick=()=>{ const src=DB.cats.find(c=>c.id===+b.dataset.id); if(!src) return;
     const c=newCat(src.name+" (copy)"); c.sex=src.sex; c.geno=JSON.parse(JSON.stringify(src.geno)); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); });
-  $$("#view-nichelings .del").forEach(b=>b.onclick=()=>{ if(confirm("Delete this nicheling?")){ DB.cats=DB.cats.filter(c=>c.id!==+b.dataset.id); save(DB); if(editId===+b.dataset.id)editId=null; renderNichelings(); } });
+  $$("#view-nichelings .retire1").forEach(b=>b.onclick=()=>{ const c=DB.cats.find(x=>x.id===+b.dataset.id);
+    if(c){ c.retired=true; if(editId===c.id) editId=null; save(DB); renderNichelings(); } });
+  $$("#view-nichelings .unretire").forEach(b=>b.onclick=()=>{ const c=DB.cats.find(x=>x.id===+b.dataset.id);
+    if(c){ c.retired=false; save(DB); renderNichelings(); } });
+  $$("#view-nichelings .del").forEach(b=>b.onclick=()=>{ if(confirm("Delete this nicheling permanently? (To keep it, use Retire 🗂 instead.)")){ DB.cats=DB.cats.filter(c=>c.id!==+b.dataset.id); save(DB); if(editId===+b.dataset.id)editId=null; renderNichelings(); } });
   if(editId!=null) renderEditor();
 }
 
@@ -577,11 +601,20 @@ function importRoster(e){
    ========================================================================= */
 function renderBreeding(){
   const v=$("#view-breeding");
-  if(DB.cats.length<1){ v.innerHTML=`<div class="card"><p class="muted">Add at least one nicheling under <b>My nichelings</b> first. You can breed a nicheling with itself or with any other.</p></div>`; return; }
-  const opt=(sel)=>DB.cats.map(c=>`<option value="${c.id}" ${c.id===sel?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}</option>`).join("");
-  if(breed.mom==null) breed.mom=DB.cats[0].id;
-  if(breed.dad==null) breed.dad=DB.cats[Math.min(1,DB.cats.length-1)].id;
-  let html=`<div class="card"><h2><span class="em">💞</span> Predict a pairing</h2>
+  if(!DB.cats.length){ v.innerHTML=`<div class="card"><p class="muted">Add at least one nicheling under <b>My nichelings</b> first. You can breed a nicheling with itself or with any other.</p></div>`; return; }
+  const retiredCount=DB.cats.filter(c=>c.retired).length;
+  const incBox=`<label class="row" style="gap:6px;font-weight:600;font-size:12.5px"><input type="checkbox" id="incRetired" ${breed.includeRetired?"checked":""}> Include retired${retiredCount?` (${retiredCount})`:""}</label>`;
+  const pool=breedingPool();
+  if(!pool.length){
+    v.innerHTML=`<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0"><span class="em">💞</span> Breeding</h2>${incBox}</div>
+      <p class="muted" style="margin:10px 0 0">All your nichelings are retired. Tick <b>Include retired</b> to breed with them, or bring some back under <b>My nichelings</b>.</p></div>`;
+    $("#incRetired").onchange=e=>{ breed.includeRetired=e.target.checked; renderBreeding(); };
+    return;
+  }
+  const opt=(sel)=>pool.map(c=>`<option value="${c.id}" ${c.id===sel?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}</option>`).join("");
+  if(!pool.some(c=>c.id===breed.mom)) breed.mom=pool[0].id;
+  if(!pool.some(c=>c.id===breed.dad)) breed.dad=pool[Math.min(1,pool.length-1)].id;
+  let html=`<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0"><span class="em">💞</span> Predict a pairing</h2>${incBox}</div>
     <div class="row" style="margin-top:8px">
       <label>Parent A <select id="selMom">${opt(breed.mom)}</select></label>
       <label>Parent B <select id="selDad">${opt(breed.dad)}</select></label>
@@ -607,7 +640,7 @@ function renderBreeding(){
   </div>`;
   html+=`<div class="card"><h2>💘 Find best mate for…</h2>
     <div class="row" style="margin-top:8px">
-      <label>Nicheling <select id="bmCat">${DB.cats.map(c=>`<option value="${c.id}" ${c.id===breed.mom?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}</option>`).join("")}</select></label>
+      <label>Nicheling <select id="bmCat">${pool.map(c=>`<option value="${c.id}" ${c.id===breed.mom?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}</option>`).join("")}</select></label>
       <label>Maximize <select id="bmMetric"><option value="__total">Total stats (all abilities)</option>${ABILITIES.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join("")}</select></label>
       <button class="btn sm" id="bmRun">Find best mate</button>
     </div>
@@ -622,6 +655,7 @@ function renderBreeding(){
     alert('Added "'+c.name+'" to My nichelings — one random possible outcome of this pairing.'); };
   const fillAlleles=()=>{ const g=GENE_BY_KEY[$("#fGene").value]; $("#fAllele").innerHTML=g.alleles.map(a=>`<option value="${esc(a.k)}">${esc(a.name)}</option>`).join(""); };
   $("#fGene").onchange=fillAlleles; fillAlleles();
+  $("#incRetired").onchange=e=>{ breed.includeRetired=e.target.checked; renderBreeding(); };
   $("#fRun").onclick=runFinder;
   $("#oRun").onclick=runOptimal;
   $("#bmRun").onclick=runBestMate;
@@ -631,10 +665,10 @@ function renderBreeding(){
 /* Rank every distinct pair in the roster by the pup's EXPECTED stats (a chosen ability, or the
    total of all abilities). Expected values already fold in dominance odds and mutation levels. */
 function runOptimal(){
-  const metric=$("#oMetric").value, rows=[];
-  if(!hasFM()){ $("#optOut").innerHTML=needSexMsg; return; }
-  for(let i=0;i<DB.cats.length;i++) for(let j=i+1;j<DB.cats.length;j++){
-    const a=DB.cats[i], b=DB.cats[j]; if(!canPair(a,b)) continue;
+  const metric=$("#oMetric").value, rows=[], pool=breedingPool();
+  if(!hasFM(pool)){ $("#optOut").innerHTML=needSexMsg; return; }
+  for(let i=0;i<pool.length;i++) for(let j=i+1;j<pool.length;j++){
+    const a=pool[i], b=pool[j]; if(!canPair(a,b)) continue;
     const o=offspringAbilityOutlook(a.geno, b.geno);
     const score = metric==="__total" ? ABILITIES.reduce((s,ab)=>s+o.exp[ab],0) : (o.exp[metric]||0);
     const top = ABILITIES.filter(ab=>o.exp[ab]>0.05).sort((x,y)=>o.exp[y]-o.exp[x]).slice(0,4).map(ab=>`${AB_SHORT[ab]} ~+${o.exp[ab].toFixed(1)}`);
@@ -654,12 +688,12 @@ function runOptimal(){
 
 /* Fix one nicheling and rank every opposite-sex mate by the pup's EXPECTED stats (one ability or Total). */
 function runBestMate(){
-  const me=DB.cats.find(c=>c.id===+$("#bmCat").value), metric=$("#bmMetric").value;
+  const pool=breedingPool(), me=pool.find(c=>c.id===+$("#bmCat").value), metric=$("#bmMetric").value;
   if(!me){ $("#bmOut").innerHTML=""; return; }
   const sexEm=s=>s==="F"?"♀":"♂";
   if(me.sex==="?"){ $("#bmOut").innerHTML=`<p class="muted">Set <b>${esc(me.name)}</b>'s sex (♀/♂) first — mates are the opposite sex.</p>`; return; }
   const wantSex=me.sex==="F"?"M":"F";
-  const mates=DB.cats.filter(c=>c.id!==me.id && c.sex===wantSex);
+  const mates=pool.filter(c=>c.id!==me.id && c.sex===wantSex);
   if(!mates.length){ $("#bmOut").innerHTML=`<p class="muted">No ${sexEm(wantSex)} nichelings to pair with <b>${esc(me.name)}</b> — set another nicheling's sex to ${sexEm(wantSex)}.</p>`; return; }
   const rows=mates.map(mate=>{
     const o=offspringAbilityOutlook(me.geno, mate.geno);
@@ -713,16 +747,16 @@ function renderBreedOut(){
 
 /* Breeding needs one ♀ and one ♂, so pairings only consider opposite-sex nichelings. */
 const canPair=(a,b)=>(a.sex==="F"&&b.sex==="M")||(a.sex==="M"&&b.sex==="F");
-const hasFM=()=>DB.cats.some(c=>c.sex==="F")&&DB.cats.some(c=>c.sex==="M");
+const hasFM=list=>list.some(c=>c.sex==="F")&&list.some(c=>c.sex==="M");
 const needSexMsg='<p class="muted">Pairings need one ♀ and one ♂ — set each nicheling\'s sex in its editor (the ♀/♂ dropdown).</p>';
 
 /* rank every ♀×♂ pair in the roster by P(pup shows the chosen allele's phenotype) */
 function runFinder(){
-  const gkey=$("#fGene").value, target=$("#fAllele").value, g=GENE_BY_KEY[gkey];
-  if(!hasFM()){ $("#finderOut").innerHTML=needSexMsg; return; }
+  const gkey=$("#fGene").value, target=$("#fAllele").value, g=GENE_BY_KEY[gkey], pool=breedingPool();
+  if(!hasFM(pool)){ $("#finderOut").innerHTML=needSexMsg; return; }
   const rows=[];
-  for(let i=0;i<DB.cats.length;i++) for(let j=i+1;j<DB.cats.length;j++){
-    const a=DB.cats[i], b=DB.cats[j]; if(!canPair(a,b)) continue;
+  for(let i=0;i<pool.length;i++) for(let j=i+1;j<pool.length;j++){
+    const a=pool[i], b=pool[j]; if(!canPair(a,b)) continue;
     const {pheno}=offspringPhenotypeDist(g, a.geno[gkey], b.geno[gkey]);
     let p=0;
     pheno.forEach(ph=>{ if(ph.label.split(" + ").map(baseK).includes(target)) p+=ph.prob; });
@@ -777,9 +811,10 @@ function retireRow(r){
 /* Rank nichelings you can retire, safest first — always a suggestion, never a flat "nothing". */
 function runRetire(){
   const abilityOnly=$("#rMode").value==="ability";
-  const ranked=retirementRanking(DB.cats,{abilityOnly}).sort((a,b)=>a.lossValue-b.lossValue);
-  const unsexed=DB.cats.filter(c=>c.sex==="?").length;
-  const sexed=DB.cats.filter(c=>c.sex!=="?").length;
+  const active=activeCats();
+  const ranked=retirementRanking(active,{abilityOnly}).sort((a,b)=>a.lossValue-b.lossValue);
+  const unsexed=active.filter(c=>c.sex==="?").length;
+  const sexed=active.filter(c=>c.sex!=="?").length;
   let html="";
   if(sexed<2){
     html=`<p class="muted">Set at least two nichelings to ♀/♂ first — there's nothing to compare yet.</p>`;
@@ -799,13 +834,13 @@ function runRetire(){
         html+=cost.map(retireRow).join("");
       }
     }
-    html+=`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already carries everything it does (at an equal-or-higher mutation level). <b>Retire</b> deletes the nicheling; the list re-ranks after each one.</p>`;
+    html+=`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already carries everything it does (at an equal-or-higher mutation level). <b>Retire</b> archives it to your <b>Retired</b> list (bring it back anytime); the list re-ranks after each one.</p>`;
   }
   if(unsexed) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">${unsexed} nicheling${unsexed>1?"s":""} with no sex set ${unsexed>1?"were":"was"} skipped.</p>`;
   $("#retireOut").innerHTML=html;
   $$("#retireOut .rtire").forEach(b=>b.onclick=()=>{ const id=+b.dataset.id, c=DB.cats.find(x=>x.id===id);
-    if(c && confirm('Retire (delete) "'+c.name+'"? This removes it from your roster.')){
-      DB.cats=DB.cats.filter(x=>x.id!==id); if(editId===id) editId=null; save(DB); runRetire(); } });
+    if(c && confirm('Retire "'+c.name+'"? It moves to your Retired list — bring it back anytime from My nichelings.')){
+      c.retired=true; if(editId===id) editId=null; save(DB); runRetire(); } });
 }
 
 /* =========================================================================
