@@ -96,6 +96,7 @@
   <div id="view-nichelings"></div>
   <div id="view-breeding" class="hide"></div>
   <div id="view-retire" class="hide"></div>
+  <div id="view-release" class="hide"></div>
   <div id="view-genes" class="hide"></div>
 
   <p class="foot">Fan-made · not affiliated with Niche / Team Niche · data from the community wiki · <a href="https://github.com/owlsomniac/owlfunstuff" target="_blank" rel="noopener">source</a></p>
@@ -395,7 +396,7 @@ function retirementRanking(cats, opts){
       });
       let keeper=null;
       if(best.val===0){ const dom=best.others.find(o=>carryDominates(o.carry,best.A.carry,keys)); keeper=dom?dom.c:null; }
-      res.push({id:best.A.c.id, name:best.A.c.name, sex, loses:best.uniq, lossValue:best.val,
+      res.push({id:best.A.c.id, name:best.A.c.name, sex, status:best.A.c.status, loses:best.uniq, lossValue:best.val,
                 kept:best.others.length, keepId:keeper?keeper.id:null, keepName:keeper?keeper.name:null});
       kept=kept.filter(x=>x!==best.A);
     }
@@ -488,17 +489,18 @@ const breedingPool=()=>DB.cats.filter(c=> c.status==="active"
   || (breed.includeSideline && c.status==="sideline")
   || (breed.includeRetired  && c.status==="retired"));
 
-const TABS=[["nichelings","🐾 My nichelings"],["breeding","💞 Breeding"],["retire","🧹 Retire"],["genes","📖 Gene reference"]];
+const TABS=[["nichelings","🐾 My nichelings"],["breeding","💞 Breeding"],["retire","🧹 Retire"],["release","🕊️ Release"],["genes","📖 Gene reference"]];
 function renderTabs(){
   $("#tabs").innerHTML=TABS.map(([k,l])=>`<button class="tab ${TAB===k?"on":""}" data-tab="${k}">${l}</button>`).join("");
   $$("#tabs .tab").forEach(b=>b.onclick=()=>{ TAB=b.dataset.tab; showTab(); });
 }
 function showTab(){
   renderTabs();
-  ["nichelings","breeding","retire","genes"].forEach(k=>$("#view-"+k).classList.toggle("hide", k!==TAB));
+  ["nichelings","breeding","retire","release","genes"].forEach(k=>$("#view-"+k).classList.toggle("hide", k!==TAB));
   if(TAB==="nichelings") renderNichelings();
   if(TAB==="breeding") renderBreeding();
   if(TAB==="retire") renderRetire();
+  if(TAB==="release") renderRelease();
   if(TAB==="genes") renderGenes();
 }
 
@@ -910,48 +912,73 @@ function describeLoss(loses){
     return (al?al.name:u.base)+(u.level?` ✦+${u.level}`:""); });
   return esc(names.slice(0,4).join(", "))+(names.length>4?` <span class="muted">+${names.length-4} more</span>`:"");
 }
-function retireRow(r){
+/* one ranked row, shared by Retire (archive) and Release (delete). o={actClass,actLabel,showStatus} */
+function cullRow(r, o){
+  const st = o.showStatus && r.status && r.status!=="active" ? ` <span class="muted" style="font-size:11px">(${r.status})</span>` : "";
   const detail = r.lossValue===0
     ? `<span class="muted">loses nothing${r.keepName?` — <b>${esc(r.keepName)}</b> ${sx(r.sex)} covers it`:""}</span>`
     : `<span class="muted">you'd lose: ${describeLoss(r.loses)}</span>`;
   return `<div class="prob" style="margin-bottom:2px">
-      <span class="nm2">${esc(r.name)} ${sx(r.sex)}</span>
+      <span class="nm2">${esc(r.name)} ${sx(r.sex)}${st}</span>
       <span style="flex:1;min-width:150px">${detail}</span>
-      <button class="btn sm gray rtire" data-id="${r.id}">Retire</button></div>`;
+      <button class="btn sm gray ${o.actClass}" data-id="${r.id}">${o.actLabel}</button></div>`;
 }
-/* Rank nichelings you can retire, safest first — always a suggestion, never a flat "nothing". */
-function runRetire(){
-  const abilityOnly=$("#rMode").value==="ability";
-  const active=activeCats();
-  const ranked=retirementRanking(active,{abilityOnly}).sort((a,b)=>a.lossValue-b.lossValue);
-  const unsexed=active.filter(c=>c.sex==="?").length;
-  const sexed=active.filter(c=>c.sex!=="?").length;
+/* shared safest-first ranked list body for the Retire / Release tabs. o adds the tab-specific copy. */
+function cullSections(cats, abilityOnly, o){
+  const ranked=retirementRanking(cats,{abilityOnly}).sort((a,b)=>a.lossValue-b.lossValue);
+  const unsexed=cats.filter(c=>c.sex==="?").length, sexed=cats.filter(c=>c.sex!=="?").length;
   let html="";
-  if(sexed<2){
-    html=`<p class="muted">Set at least two nichelings to ♀/♂ first — there's nothing to compare yet.</p>`;
-  } else {
-    const free=ranked.filter(r=>r.lossValue===0);
-    const cost=ranked.filter(r=>r.lossValue>0 && r.kept>=1);   // drop the last survivor of each sex
-    if(!free.length && !cost.length){
-      html=`<p class="muted">Only one nicheling per sex — you can't retire either without losing your breeding stock.</p>`;
-    } else {
-      html=`<p class="muted" style="font-size:12.5px;margin:0 0 10px">Ranked in the order to retire them — start at the top. Each shows what that costs <b>assuming you've already retired the ones above it</b>. Comparing ${abilityOnly?"ability &amp; resistance genes":"all genes"}.</p>`;
-      if(free.length){
-        html+=`<div style="font-weight:700;margin:2px 0 4px">✅ Free to retire — loses nothing (${free.length}):</div>`;
-        html+=free.map(retireRow).join("");
-      }
-      if(cost.length){
-        html+=`<div style="font-weight:700;margin:${free.length?"14px":"2px"} 0 4px">📉 Need more space? Least valuable first:</div>`;
-        html+=cost.map(retireRow).join("");
-      }
+  if(sexed<2){ html=`<p class="muted">Set at least two nichelings to ♀/♂ first — there's nothing to compare yet.</p>`; }
+  else {
+    const free=ranked.filter(r=>r.lossValue===0), cost=ranked.filter(r=>r.lossValue>0 && r.kept>=1);
+    if(!free.length && !cost.length){ html=`<p class="muted">${o.oneNote}</p>`; }
+    else {
+      html=`<p class="muted" style="font-size:12.5px;margin:0 0 10px">Ranked safest-first — each shows what it costs <b>assuming the ones above it are already gone</b>. Comparing ${abilityOnly?"ability &amp; resistance genes":"all genes"}.</p>`;
+      if(free.length) html+=`<div style="font-weight:700;margin:2px 0 4px">✅ Safe — loses nothing (${free.length}):</div>`+free.map(r=>cullRow(r,o)).join("");
+      if(cost.length) html+=`<div style="font-weight:700;margin:${free.length?"14px":"2px"} 0 4px">📉 Least valuable first:</div>`+cost.map(r=>cullRow(r,o)).join("");
     }
-    html+=`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already carries everything it does (at an equal-or-higher mutation level). <b>Retire</b> archives it to your <b>Retired</b> list (bring it back anytime); the list re-ranks after each one.</p>`;
+    html+=o.footNote;
   }
   if(unsexed) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">${unsexed} nicheling${unsexed>1?"s":""} with no sex set ${unsexed>1?"were":"was"} skipped.</p>`;
-  $("#retireOut").innerHTML=html;
+  return html;
+}
+/* Rank ACTIVE nichelings you can retire (archive), safest first. */
+function runRetire(){
+  const abilityOnly=$("#rMode").value==="ability";
+  $("#retireOut").innerHTML=cullSections(activeCats(), abilityOnly, {actClass:"rtire", actLabel:"Retire", showStatus:false,
+    oneNote:"Only one nicheling per sex — you can't retire either without losing your breeding stock.",
+    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already carries everything it does (at an equal-or-higher mutation level). <b>Retire</b> archives it to your <b>Retired</b> list (bring it back anytime); the list re-ranks after each one.</p>`});
   $$("#retireOut .rtire").forEach(b=>b.onclick=()=>{ const id=+b.dataset.id, c=DB.cats.find(x=>x.id===id);
     if(c && confirm('Retire "'+c.name+'"? It moves to your Retired list — bring it back anytime from My nichelings.')){
       c.status="retired"; if(editId===id) editId=null; save(DB); runRetire(); } });
+}
+
+/* =========================================================================
+   TAB: Release  (permanent delete, ranked safest-first like Retire)
+   ========================================================================= */
+function renderRelease(){
+  const v=$("#view-release");
+  v.innerHTML=`<div class="card"><h2><span class="em">🕊️</span> Who to release</h2>
+    <p class="muted" style="font-size:12.5px;margin:2px 0 0">Ranks every nicheling in your <b>whole roster</b> (tribe, sidelines &amp; retired) by how safely it can be <b>released — permanently deleted</b>. The top ones lose nothing (another same-sex nicheling already carries their genes); each shows its group.</p>
+    <div class="row" style="margin-top:10px">
+      <label>Compare on <select id="rlMode"><option value="ability">Ability &amp; resistance genes</option><option value="all">All genes (incl. colours)</option></select></label>
+      <button class="btn sm" id="rlRun">Rank who to release</button>
+    </div>
+    <div id="releaseOut" style="margin-top:12px;font-size:13px"></div>
+  </div>`;
+  $("#rlMode").onchange=runRelease;
+  $("#rlRun").onclick=runRelease;
+  runRelease();
+}
+/* Rank the WHOLE roster by how safely each can be permanently deleted. */
+function runRelease(){
+  const abilityOnly=$("#rlMode").value==="ability";
+  $("#releaseOut").innerHTML=cullSections(DB.cats, abilityOnly, {actClass:"rlease", actLabel:"Release", showStatus:true,
+    oneNote:"Only one nicheling per sex — releasing it would lose that gene line entirely.",
+    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already carries everything it does. <b>Release permanently deletes</b> the nicheling — it does <b>not</b> go to Retired. The list re-ranks after each one.</p>`});
+  $$("#releaseOut .rlease").forEach(b=>b.onclick=()=>{ const id=+b.dataset.id, c=DB.cats.find(x=>x.id===id);
+    if(c && confirm('Release (permanently delete) "'+c.name+'"? This cannot be undone — use Retire if you might want it back.')){
+      DB.cats=DB.cats.filter(x=>x.id!==id); if(editId===id) editId=null; save(DB); runRelease(); } });
 }
 
 /* =========================================================================
