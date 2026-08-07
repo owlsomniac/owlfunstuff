@@ -58,8 +58,7 @@
   .slot .sel{display:flex;gap:6px}
   .slot .al{display:flex;align-items:center;gap:4px;flex:1;min-width:0}
   .slot .al select{flex:1;min-width:0}
-  .mut{display:inline-flex;align-items:center;gap:2px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none}
-  .mut input{margin:0;cursor:pointer}
+  .mutn{width:46px;padding:5px 4px;text-align:center;flex:0 0 auto}
   .grp-body{background:var(--g-body)} .grp-color{background:var(--g-color)} .grp-pattern{background:var(--g-pattern)}
   .nlist{display:flex;flex-direction:column;gap:8px}
   .nrow{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--panel)}
@@ -189,10 +188,11 @@ const PATTERN_SUBGENES = ["patternsize","patterndensity","patterncolor"];  // hi
    A mutated allele is stored as its key with a trailing "*", e.g. "Nimble Fingers*". It grants a
    stronger bonus (MUT_BONUS added to each ability it already gives) and is inherited like any allele.
    baseK strips the mark for dominance/effect lookups; isMut tests it. */
-const MUT="*", MUT_BONUS=1;   // ASSUMED +1 per ability — confirm the real B&E mutation bonus
-const baseK=a=>(a&&a.slice(-1)===MUT)?a.slice(0,-1):a;
-const isMut=a=>!!a&&a.slice(-1)===MUT;
-const withMut=(k,m)=>m?(baseK(k)+MUT):baseK(k);
+const MUT="*";   // a mutated allele is stored as "Key*N", N = mutation level (stackable, adds +N to its bonus)
+const baseK=a=>{ const s=String(a==null?"":a), i=s.indexOf(MUT); return i<0?s:s.slice(0,i); };
+const mutLevel=a=>{ const s=String(a==null?"":a), i=s.indexOf(MUT); if(i<0) return 0; const n=parseInt(s.slice(i+1),10); return isNaN(n)?1:Math.max(0,n); };  // "*" with no number = legacy level 1
+const isMut=a=>mutLevel(a)>0;
+const withMut=(k,n)=>{ n=Math.max(0,Math.floor(+n||0)); return n>0 ? baseK(k)+MUT+n : baseK(k); };
 
 function defaultGenotype(){ const g={}; GENES.forEach(x=>{ const a=x.alleles[0].k; g[x.key]=[a,a]; }); return g; }
 
@@ -202,17 +202,17 @@ function genoToCode(geno){
   let s="", mut="", any=false;
   GENES.forEach(g=>{ const p=geno[g.key]||[g.alleles[0].k,g.alleles[0].k];
     s += (g.domRank[baseK(p[0])]||0).toString(36) + (g.domRank[baseK(p[1])]||0).toString(36);
-    const bits=(isMut(p[0])?1:0)+(isMut(p[1])?2:0); if(bits) any=true; mut+=bits.toString(36); });
-  return "NB1-"+s+(any?"!"+mut:"");   // mutation bits appended after "!" only when present
+    const l0=Math.min(35,mutLevel(p[0])), l1=Math.min(35,mutLevel(p[1])); if(l0||l1) any=true;
+    mut += l0.toString(36) + l1.toString(36); });   // per-allele mutation level, base36
+  return "NB1-"+s+(any?"!"+mut:"");                  // "!" section only when something is mutated
 }
 function codeToGeno(code){
-  const m=String(code||"").trim().match(/^NB1-([0-9a-z]+)(?:!([0-3]+))?$/i); if(!m) return null;
-  const s=m[1].toLowerCase(), mut=m[2]||"", geno=defaultGenotype();
+  const m=String(code||"").trim().match(/^NB1-([0-9a-z]+)(?:!([0-9a-z]+))?$/i); if(!m) return null;
+  const s=m[1].toLowerCase(), mut=(m[2]||"").toLowerCase(), geno=defaultGenotype();
   GENES.forEach((g,i)=>{
-    const bits=parseInt(mut[i]||"0",36)||0;
     [0,1].forEach(j=>{ let key=geno[g.key][j]; const ch=s[2*i+j];
       if(ch!=null){ const idx=parseInt(ch,36); if(idx>=0&&idx<g.alleles.length) key=g.alleles[idx].k; }
-      geno[g.key][j]=withMut(key, !!(bits&(j===0?1:2))); });
+      geno[g.key][j]=withMut(key, parseInt(mut[2*i+j]||"0",36)||0); });
   });
   return geno;
 }
@@ -230,8 +230,8 @@ function expressGene(gene, pair){
   const [x,y] = pair;
   if(gene.mode==="incomplete"){ return {kind:"blend", alleles:[x,y].slice().sort()}; }  // colours blend
   const rx=gene.domRank[baseK(x)], ry=gene.domRank[baseK(y)];   // linear: more dominant (lower rank) shows
-  if(rx!==ry) return {kind:"single", allele:(rx<ry?x:y)};       // winner keeps its mutation mark
-  return {kind:"single", allele:(isMut(x)?x:y)};                 // same allele twice → the mutated copy shows
+  if(rx!==ry) return {kind:"single", allele:(rx<ry?x:y)};       // winner keeps its mutation level
+  return {kind:"single", allele:(mutLevel(x)>=mutLevel(y)?x:y)}; // same allele twice → the more-mutated copy shows
 }
 
 /* Full expressed phenotype for a genotype, plus which slots are inactivated by epistasis. */
@@ -249,8 +249,8 @@ function abilityTotals(geno){
   const t={}; ABILITIES.forEach(a=>t[a]=0);
   GENES.forEach(g=>{
     const pair=geno[g.key]||[]; if(!pair.length || g.mode==="incomplete") return;
-    const ex=expressGene(g,pair).allele, al=g.alleles.find(a=>a.k===baseK(ex)), boost=isMut(ex)?MUT_BONUS:0;
-    if(al) for(const k in al.eff) t[k]+=al.eff[k]+boost;   // mutated expressed allele gives a stronger bonus
+    const ex=expressGene(g,pair).allele, al=g.alleles.find(a=>a.k===baseK(ex)), boost=mutLevel(ex);
+    if(al) for(const k in al.eff) t[k]+=al.eff[k]+boost;   // mutation level adds +N to the allele's bonus
   });
   return t;
 }
@@ -296,7 +296,7 @@ function offspringAbilityOutlook(mom, dad){
     ABILITIES.forEach(a=>{
       let e=0, mn=Infinity, mx=-Infinity;
       pheno.forEach(p=>{ const al=g.alleles.find(x=>x.k===baseK(p.label)); const bv=al&&al.eff[a]?al.eff[a]:0;
-        const v=bv+(bv&&isMut(p.label)?MUT_BONUS:0); e+=p.prob*v; mn=Math.min(mn,v); mx=Math.max(mx,v); });
+        const v=bv+(bv?mutLevel(p.label):0); e+=p.prob*v; mn=Math.min(mn,v); mx=Math.max(mx,v); });
       exp[a]+=e; lo[a]+=(mn===Infinity?0:mn); hi[a]+=(mx===-Infinity?0:mx);
     });
   });
@@ -311,7 +311,7 @@ function mixHex(h1,h2){
 }
 function shadeSwatch(sh){ return SHADE_HEX[sh]?`<span class="swatch" style="background:${SHADE_HEX[sh]}"></span>`:""; }
 /* Format a phenotype label (allele key(s), possibly mutation-marked / "a + b") for display. */
-function labelText(lab){ return String(lab).split(" + ").map(x=>baseK(x)+(isMut(x)?" ✦":"")).join(" + "); }
+function labelText(lab){ return String(lab).split(" + ").map(x=>{ const l=mutLevel(x); return baseK(x)+(l?(" ✦+"+l):""); }).join(" + "); }
 function blendSwatch(a,b){
   const ha=SHADE_HEX[a], hb=SHADE_HEX[b]; if(!ha||!hb) return "";
   return `<span class="swatch" style="background:${a===b?ha:mixHex(ha,hb)}"></span>`;
@@ -359,7 +359,7 @@ function phenoSummary(geno){
   const parts=GENES.map(g=>{
     if(ph._inactive[g.key]) return "";
     const ex=ph[g.key]; let txt, sw="";
-    if(ex.kind==="single"){ const bk=baseK(ex.allele); txt=bk+(isMut(ex.allele)?" ✦":""); if(g.key==="eyecolor"&&EYECOL_HEX[bk]) sw=`<span class="swatch" style="background:${EYECOL_HEX[bk]}"></span>`; }
+    if(ex.kind==="single"){ const bk=baseK(ex.allele), lv=mutLevel(ex.allele); txt=bk+(lv?" ✦+"+lv:""); if(g.key==="eyecolor"&&EYECOL_HEX[bk]) sw=`<span class="swatch" style="background:${EYECOL_HEX[bk]}"></span>`; }
     else { const a0=baseK(ex.alleles[0]),a1=baseK(ex.alleles[1]); txt=a0===a1?a0:(a0+" + "+a1); sw=blendSwatch(a0,a1); }
     return `<span class="pill">${sw}<span class="muted">${g.label}:</span> ${esc(txt)}</span>`;
   });
@@ -429,14 +429,14 @@ function renderEditor(){
       <button class="btn sm gray" id="copyCode">Copy</button>
       <button class="btn sm gray" id="applyCode">Apply</button>
     </div>
-    <p class="muted" style="font-size:11.5px;margin:0 0 4px">Copy to save/share this nicheling as one string; paste a code and Apply to load a whole genome. Tick <b>✦</b> beside an allele to mark it <b>mutated</b> (stronger bonus, and inherited).</p>`;
+    <p class="muted" style="font-size:11.5px;margin:0 0 4px">Copy to save/share this nicheling as one string; paste a code and Apply to load a whole genome. The <b>✦</b> number beside an allele is its <b>mutation level</b> — it adds that much to the allele's bonus (0 = none, stacks), and is inherited.</p>`;
   groups.forEach(([grp,title])=>{
     html+=`<h3 style="font-size:13px;color:var(--muted);margin:14px 0 6px">${title}</h3><div class="genogrid">`;
     GENES.filter(g=>g.group===grp).forEach(g=>{
       const pair=c.geno[g.key]||[g.alleles[0].k,g.alleles[0].k];
       const opts=a=>g.alleles.map(al=>`<option value="${esc(al.k)}" ${al.k===baseK(a)?"selected":""}>${esc(al.name)}</option>`).join("");
       const alrow=i=>`<div class="al"><select data-g="${g.key}" data-i="${i}">${opts(pair[i])}</select>`+
-        (g.mode==="incomplete"?"":`<label class="mut" title="Mutated — stronger bonus"><input type="checkbox" data-mut="${g.key}" data-mi="${i}" ${isMut(pair[i])?"checked":""}>✦</label>`)+`</div>`;
+        (g.mode==="incomplete"?"":`<input type="number" class="mutn" min="0" step="1" value="${mutLevel(pair[i])}" data-mut="${g.key}" data-mi="${i}" title="Mutation level — adds +N to this allele's bonus (0 = none)">`)+`</div>`;
       html+=`<div class="slot ${groupCls(grp)}"><div class="nm">${g.label} <span style="font-weight:400">· ${g.mode==="incomplete"?"blend":"dominant/recessive"}</span></div>
         <div class="sel">${alrow(0)}${alrow(1)}</div></div>`;
     });
@@ -452,8 +452,8 @@ function renderEditor(){
   $$("#editor select[data-g]").forEach(s=>s.onchange=()=>{
     const g=s.dataset.g, i=+s.dataset.i; c.geno[g][i]=withMut(s.value, isMut(c.geno[g][i])); save(DB); refreshTotals();
   });
-  $$("#editor input[data-mut]").forEach(cb=>cb.onchange=()=>{
-    const g=cb.dataset.mut, i=+cb.dataset.mi; c.geno[g][i]=withMut(c.geno[g][i], cb.checked); save(DB); refreshTotals();
+  $$("#editor input[data-mut]").forEach(inp=>inp.oninput=()=>{
+    const g=inp.dataset.mut, i=+inp.dataset.mi; c.geno[g][i]=withMut(c.geno[g][i], inp.value); save(DB); refreshTotals();
   });
   $("#copyCode").onclick=()=>{ const t=$("#edCode"); t.select();
     try{ navigator.clipboard.writeText(t.value); }catch(e){ try{ document.execCommand("copy"); }catch(x){} }
@@ -491,7 +491,7 @@ function renderBreeding(){
     </div>
     <p class="muted" style="font-size:12px;margin:8px 0 0">Each pup gets one allele per gene from each parent (50/50). Percentages below are the chance a pup <b>shows</b> that trait. <b>Save a possible pup</b> rolls one random outcome into your roster.</p>
   </div>`;
-  html+=`<div id="breedOut"></div>`;
+  // finders sit right under the pairing controls
   html+=`<div class="card"><h2>🎯 Find a pairing for a trait</h2>
     <div class="row" style="margin-top:8px">
       <label>Gene <select id="fGene">${GENES.map(g=>`<option value="${g.key}">${g.label}</option>`).join("")}</select></label>
@@ -500,6 +500,14 @@ function renderBreeding(){
     </div>
     <div id="finderOut" class="muted" style="margin-top:10px;font-size:13px">Pick a gene and target trait, then rank every pair in your roster by the chance their pup shows it.</div>
   </div>`;
+  html+=`<div class="card"><h2>🏆 Find optimal pairings</h2>
+    <div class="row" style="margin-top:8px">
+      <label>Maximize <select id="oMetric"><option value="__total">Total stats (all abilities)</option>${ABILITIES.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join("")}</select></label>
+      <button class="btn sm" id="oRun">Rank pairings</button>
+    </div>
+    <div id="optOut" class="muted" style="margin-top:10px;font-size:13px">Ranks every pair in your roster by the pup's <b>expected</b> stats. Pick one ability, or <b>Total</b> for the strongest overall pup.</div>
+  </div>`;
+  html+=`<div id="breedOut"></div>`;
   v.innerHTML=html;
   $("#selMom").onchange=e=>{ breed.mom=+e.target.value; renderBreedOut(); };
   $("#selDad").onchange=e=>{ breed.dad=+e.target.value; renderBreedOut(); };
@@ -509,7 +517,29 @@ function renderBreeding(){
   const fillAlleles=()=>{ const g=GENE_BY_KEY[$("#fGene").value]; $("#fAllele").innerHTML=g.alleles.map(a=>`<option value="${esc(a.k)}">${esc(a.name)}</option>`).join(""); };
   $("#fGene").onchange=fillAlleles; fillAlleles();
   $("#fRun").onclick=runFinder;
+  $("#oRun").onclick=runOptimal;
   renderBreedOut();
+}
+
+/* Rank every distinct pair in the roster by the pup's EXPECTED stats (a chosen ability, or the
+   total of all abilities). Expected values already fold in dominance odds and mutation levels. */
+function runOptimal(){
+  const metric=$("#oMetric").value, rows=[];
+  for(let i=0;i<DB.cats.length;i++) for(let j=i+1;j<DB.cats.length;j++){
+    const a=DB.cats[i], b=DB.cats[j], o=offspringAbilityOutlook(a.geno, b.geno);
+    const score = metric==="__total" ? ABILITIES.reduce((s,ab)=>s+o.exp[ab],0) : (o.exp[metric]||0);
+    const top = ABILITIES.filter(ab=>o.exp[ab]>0.05).sort((x,y)=>o.exp[y]-o.exp[x]).slice(0,4).map(ab=>`${AB_SHORT[ab]} ~+${o.exp[ab].toFixed(1)}`);
+    rows.push({a:a.name, b:b.name, score, top:top.join(" · ")});
+  }
+  rows.sort((x,y)=>y.score-x.score);
+  const top=rows.slice(0,12), label=metric==="__total"?"total stats":metric;
+  let html=`<div style="font-weight:700;margin-bottom:6px">Best pairings by expected ${esc(label)}:</div>`;
+  if(!top.length) html+=`<p class="muted">Add at least two nichelings to compare pairings.</p>`;
+  else { const max=top[0].score||1;
+    html+=top.map(r=>{ const pct=Math.round(100*r.score/max);
+      return `<div class="prob" style="margin-bottom:0"><span class="nm2">${esc(r.a)} × ${esc(r.b)}</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">~${r.score.toFixed(1)}</span></div>`+
+        `<div class="muted" style="font-size:11.5px;margin:0 0 7px 150px">${esc(r.top)}</div>`; }).join(""); }
+  $("#optOut").innerHTML=html;
 }
 
 function renderBreedOut(){
@@ -599,7 +629,7 @@ function renderGenes(){
 /* ---- expose for tests (node/vm) ---- */
 if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILITIES,defaultGenotype,expressGene,phenotype,
   abilityTotals,offspringGenotypeDist,offspringPhenotypeDist,offspringAbilityOutlook,genoToCode,codeToGeno,sampleOffspring,
-  baseK,isMut,withMut,MUT_BONUS};
+  baseK,isMut,mutLevel,withMut};
 
 /* ---- boot (only in a real browser) ---- */
 if(typeof document!=="undefined" && document.getElementById("tabs")) showTab();
