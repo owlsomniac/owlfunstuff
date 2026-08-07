@@ -434,13 +434,14 @@ function newCat(name,status){ return {id:DB.seq++, name:name||("Nicheling "+DB.s
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const groupCls=g=>g==="body"?"grp-body":g==="color"?"grp-color":"grp-pattern";
-let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeRetired:false};
+let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeSideline:true,includeRetired:false};
 /* A nicheling's status: "active" (in your tribe), "sideline" (not in the tribe yet but kept on the
-   bench — fully available for breeding everywhere), or "retired" (archived — can be brought back).
-   Both active and sideline are always in the breeding pool; retired only when the user opts in. */
+   bench — available for breeding), or "retired" (archived — can be brought back). Active is always in
+   the breeding pool; sideline is in by default (toggle on) and retired is out by default (toggle off). */
 const activeCats=()=>DB.cats.filter(c=>c.status==="active");
-const breedingPool=()=>DB.cats.filter(c=> c.status==="active" || c.status==="sideline"
-  || (breed.includeRetired && c.status==="retired"));
+const breedingPool=()=>DB.cats.filter(c=> c.status==="active"
+  || (breed.includeSideline && c.status==="sideline")
+  || (breed.includeRetired  && c.status==="retired"));
 
 const TABS=[["nichelings","🐾 My nichelings"],["breeding","💞 Breeding"],["retire","🧹 Retire"],["genes","📖 Gene reference"]];
 function renderTabs(){
@@ -626,19 +627,26 @@ function renderBreeding(){
   const v=$("#view-breeding");
   if(!DB.cats.length){ v.innerHTML=`<div class="card"><p class="muted">Add at least one nicheling under <b>My nichelings</b> first. You can breed a nicheling with itself or with any other.</p></div>`; return; }
   const retiredCount=DB.cats.filter(c=>c.status==="retired").length;
+  const sidelineCount=DB.cats.filter(c=>c.status==="sideline").length;
   const tag=c=>c.status==="sideline"?" · sideline":c.status==="retired"?" · retired":"";
-  const incBox = retiredCount?`<label class="row" style="gap:6px;font-weight:600;font-size:12.5px"><input type="checkbox" id="incRetired" ${breed.includeRetired?"checked":""}> Include retired (${retiredCount})</label>`:"";
-  const wireInc=()=>{ if($("#incRetired")) $("#incRetired").onchange=e=>{ breed.includeRetired=e.target.checked; renderBreeding(); }; };
+  // shared "Include: sideline / retired" control — shown on every breeding card, all bound to the same state
+  const bar=()=>{ const parts=[];
+    if(sidelineCount) parts.push(`<label class="row" style="gap:5px;font-weight:600;font-size:12px"><input type="checkbox" class="incSideline" ${breed.includeSideline?"checked":""}> sideline (${sidelineCount})</label>`);
+    if(retiredCount)  parts.push(`<label class="row" style="gap:5px;font-weight:600;font-size:12px"><input type="checkbox" class="incRetired" ${breed.includeRetired?"checked":""}> retired (${retiredCount})</label>`);
+    return parts.length?`<div class="row" style="gap:10px;align-items:center"><span class="muted" style="font-size:11.5px">Include:</span>${parts.join("")}</div>`:""; };
+  const hdr=t=>`<div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">${t}</h2>${bar()}</div>`;
+  const wireInc=()=>{ $$("#view-breeding .incSideline").forEach(cb=>cb.onchange=e=>{ breed.includeSideline=e.target.checked; renderBreeding(); });
+    $$("#view-breeding .incRetired").forEach(cb=>cb.onchange=e=>{ breed.includeRetired=e.target.checked; renderBreeding(); }); };
   const pool=breedingPool();
   if(!pool.length){
-    v.innerHTML=`<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0"><span class="em">💞</span> Breeding</h2>${incBox}</div>
-      <p class="muted" style="margin:10px 0 0">No nichelings to breed with. ${retiredCount?"Tick <b>Include retired</b> above, or ":""}add one (tribe or sideline) under <b>My nichelings</b>.</p></div>`;
+    v.innerHTML=`<div class="card">${hdr('<span class="em">💞</span> Breeding')}
+      <p class="muted" style="margin:10px 0 0">No nichelings to breed with. Tick a box above, or add one (tribe or sideline) under <b>My nichelings</b>.</p></div>`;
     wireInc(); return;
   }
   const opt=(sel)=>pool.map(c=>`<option value="${c.id}" ${c.id===sel?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}${tag(c)}</option>`).join("");
   if(!pool.some(c=>c.id===breed.mom)) breed.mom=pool[0].id;
   if(!pool.some(c=>c.id===breed.dad)) breed.dad=pool[Math.min(1,pool.length-1)].id;
-  let html=`<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0"><span class="em">💞</span> Predict a pairing</h2>${incBox}</div>
+  let html=`<div class="card">${hdr('<span class="em">💞</span> Predict a pairing')}
     <div class="row" style="margin-top:8px">
       <label>Parent A <select id="selMom">${opt(breed.mom)}</select></label>
       <label>Parent B <select id="selDad">${opt(breed.dad)}</select></label>
@@ -647,7 +655,7 @@ function renderBreeding(){
     <p class="muted" style="font-size:12px;margin:8px 0 0">Each pup gets one allele per gene from each parent (50/50). Percentages below are the chance a pup <b>shows</b> that trait. <b>Save a possible pup</b> rolls one random outcome into your roster.</p>
   </div>`;
   // finders sit right under the pairing controls
-  html+=`<div class="card"><h2>🎯 Find a pairing for a trait</h2>
+  html+=`<div class="card">${hdr('🎯 Find a pairing for a trait')}
     <div class="row" style="margin-top:8px">
       <label>Gene <select id="fGene">${GENES.map(g=>`<option value="${g.key}">${g.label}</option>`).join("")}</select></label>
       <label>Target <select id="fAllele"></select></label>
@@ -655,14 +663,14 @@ function renderBreeding(){
     </div>
     <div id="finderOut" class="muted" style="margin-top:10px;font-size:13px">Pick a gene and target trait, then rank every pair in your roster by the chance their pup shows it.</div>
   </div>`;
-  html+=`<div class="card"><h2>🏆 Find optimal pairings</h2>
+  html+=`<div class="card">${hdr('🏆 Find optimal pairings')}
     <div class="row" style="margin-top:8px">
       <label>Maximize <select id="oMetric"><option value="__total">Total stats (all abilities)</option>${ABILITIES.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join("")}</select></label>
       <button class="btn sm" id="oRun">Rank pairings</button>
     </div>
     <div id="optOut" class="muted" style="margin-top:10px;font-size:13px">Ranks every pair in your roster by the pup's <b>expected</b> stats. Pick one ability, or <b>Total</b> for the strongest overall pup.</div>
   </div>`;
-  html+=`<div class="card"><h2>💘 Find best mate for…</h2>
+  html+=`<div class="card">${hdr('💘 Find best mate for…')}
     <div class="row" style="margin-top:8px">
       <label>Nicheling <select id="bmCat">${pool.map(c=>`<option value="${c.id}" ${c.id===breed.mom?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}${tag(c)}</option>`).join("")}</select></label>
       <label>Maximize <select id="bmMetric"><option value="__total">Total stats (all abilities)</option>${ABILITIES.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join("")}</select></label>
