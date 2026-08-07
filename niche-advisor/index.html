@@ -141,7 +141,7 @@ const GENES = [
     A("Purr Snout",{Perception:2},"Grass"), A("Digging Trunk",{Collecting:2},"Hot"), A("Bird Beak",{Collecting:2},"Grass") ]},
   {key:"body", label:"Body", mode:"linear", group:"body", alleles:[
     A("Medium Body",{Strength:1}), A("Spiky Body",{Strength:2},"Hot") ]},
-  {key:"paws", label:"Paws / Hands", mode:"paws", group:"body", alleles:[
+  {key:"paws", label:"Paws / Hands", mode:"linear", group:"body", alleles:[
     A("Nimble Fingers",{Collecting:2}), A("Claw",{Strength:1},"Grass"), A("Digging Paw",{Collecting:3},"Grass"),
     A("Strong Paw",{Strength:1},"Cold"), A("Hoof",{Strength:2},"Grass"), A("Deformed Paw",{Collecting:1}),
     A("Fluffy Paw",{"Cold Resistance":1},"Cold"), A("Carnivore Claw",{Fishing:2},"Hot") ]},
@@ -212,15 +212,9 @@ function sampleOffspring(mom, dad){
    incomplete -> {kind:"blend", alleles:[a,b]}. */
 function expressGene(gene, pair){
   const [x,y] = pair;
-  if(gene.mode==="linear"){
-    const rx=gene.domRank[x], ry=gene.domRank[y];
-    return {kind:"single", allele:(rx<=ry?x:y)};   // lower rank index = more dominant
-  }
-  if(gene.mode==="paws" || gene.mode==="incomplete"){
-    const s=[x,y].slice().sort();
-    return {kind:gene.mode==="paws"?"pair":"blend", alleles:s};
-  }
-  return {kind:"single", allele:x};
+  if(gene.mode==="incomplete"){ return {kind:"blend", alleles:[x,y].slice().sort()}; }  // colours blend
+  const rx=gene.domRank[x], ry=gene.domRank[y];   // linear: the more dominant allele (lower rank index) shows
+  return {kind:"single", allele:(rx<=ry?x:y)};
 }
 
 /* Full expressed phenotype for a genotype, plus which slots are inactivated by epistasis. */
@@ -233,18 +227,13 @@ function phenotype(geno){
   return out;
 }
 
-/* Ability totals from the EXPRESSED genes (paws count BOTH alleles — two hands). */
+/* Ability totals from the EXPRESSED (dominant) allele of each gene. Colours have no stats. */
 function abilityTotals(geno){
   const t={}; ABILITIES.forEach(a=>t[a]=0);
   GENES.forEach(g=>{
-    const pair=geno[g.key]||[]; if(!pair.length) return;
-    if(g.mode==="paws"){
-      pair.forEach(ak=>{ const al=g.alleles.find(a=>a.k===ak); if(al) for(const k in al.eff) t[k]+=al.eff[k]; });
-    } else if(g.mode==="linear"){
-      const ex=expressGene(g,pair).allele, al=g.alleles.find(a=>a.k===ex);
-      if(al) for(const k in al.eff) t[k]+=al.eff[k];
-    }
-    // incomplete colours have no stats
+    const pair=geno[g.key]||[]; if(!pair.length || g.mode==="incomplete") return;
+    const ex=expressGene(g,pair).allele, al=g.alleles.find(a=>a.k===ex);
+    if(al) for(const k in al.eff) t[k]+=al.eff[k];
   });
   return t;
 }
@@ -279,29 +268,19 @@ function offspringPhenotypeDist(gene, momPair, dadPair){
   return {pheno:arr, geno:gd};
 }
 
-/* Expected ability totals for offspring of two parents (linear = P(expressed)·eff; paws = mean of each
-   parent's two alleles summed). Also returns per-ability min/max across the possible offspring. */
+/* Expected ability totals for offspring of two parents (P(expressed dominant allele)·eff per gene),
+   with per-ability min/max across the possible offspring. Colours carry no stats. */
 function offspringAbilityOutlook(mom, dad){
   const exp={}, lo={}, hi={}; ABILITIES.forEach(a=>{exp[a]=0;lo[a]=0;hi[a]=0;});
   GENES.forEach(g=>{
+    if(g.mode==="incomplete") return;
     const mp=mom[g.key]||[], dp=dad[g.key]||[];
-    if(g.mode==="paws"){
-      const val=k=>{ const al=g.alleles.find(a=>a.k===k); return al?al.eff:{}; };
-      // each hand: one allele from each parent
-      const mMean={}, dMean={}, mMin={},mMax={},dMin={},dMax={};
-      ABILITIES.forEach(a=>{
-        const mv=[val(mp[0])[a]||0, val(mp[1])[a]||0], dv=[val(dp[0])[a]||0, val(dp[1])[a]||0];
-        exp[a]+=(mv[0]+mv[1])/2 + (dv[0]+dv[1])/2;
-        lo[a]+=Math.min(...mv)+Math.min(...dv); hi[a]+=Math.max(...mv)+Math.max(...dv);
-      });
-    } else if(g.mode==="linear"){
-      const {pheno}=offspringPhenotypeDist(g, mp.length?mp:[g.alleles[0].k,g.alleles[0].k], dp.length?dp:[g.alleles[0].k,g.alleles[0].k]);
-      ABILITIES.forEach(a=>{
-        let e=0, mn=Infinity, mx=-Infinity;
-        pheno.forEach(p=>{ const al=g.alleles.find(x=>x.k===p.label); const v=al&&al.eff[a]?al.eff[a]:0; e+=p.prob*v; mn=Math.min(mn,v); mx=Math.max(mx,v); });
-        exp[a]+=e; lo[a]+=(mn===Infinity?0:mn); hi[a]+=(mx===-Infinity?0:mx);
-      });
-    }
+    const {pheno}=offspringPhenotypeDist(g, mp.length?mp:[g.alleles[0].k,g.alleles[0].k], dp.length?dp:[g.alleles[0].k,g.alleles[0].k]);
+    ABILITIES.forEach(a=>{
+      let e=0, mn=Infinity, mx=-Infinity;
+      pheno.forEach(p=>{ const al=g.alleles.find(x=>x.k===p.label); const v=al&&al.eff[a]?al.eff[a]:0; e+=p.prob*v; mn=Math.min(mn,v); mx=Math.max(mx,v); });
+      exp[a]+=e; lo[a]+=(mn===Infinity?0:mn); hi[a]+=(mx===-Infinity?0:mx);
+    });
   });
   return {exp, lo, hi};
 }
@@ -361,7 +340,6 @@ function phenoSummary(geno){
     if(ph._inactive[g.key]) return "";
     const ex=ph[g.key]; let txt, sw="";
     if(ex.kind==="single"){ txt=ex.allele; if(g.key==="eyecolor"&&EYECOL_HEX[ex.allele]) sw=`<span class="swatch" style="background:${EYECOL_HEX[ex.allele]}"></span>`; }
-    else if(ex.kind==="pair"){ txt=ex.alleles[0]===ex.alleles[1]?("2× "+ex.alleles[0]):ex.alleles.join(" + "); }
     else { txt=ex.alleles[0]===ex.alleles[1]?ex.alleles[0]:ex.alleles.join(" + "); sw=blendSwatch(ex.alleles[0],ex.alleles[1]); }
     return `<span class="pill">${sw}<span class="muted">${g.label}:</span> ${esc(txt)}</span>`;
   });
@@ -437,7 +415,7 @@ function renderEditor(){
     GENES.filter(g=>g.group===grp).forEach(g=>{
       const pair=c.geno[g.key]||[g.alleles[0].k,g.alleles[0].k];
       const opts=a=>g.alleles.map(al=>`<option value="${esc(al.k)}" ${al.k===a?"selected":""}>${esc(al.name)}</option>`).join("");
-      html+=`<div class="slot ${groupCls(grp)}"><div class="nm">${g.label} <span style="font-weight:400">· ${g.mode==="linear"?"dominant/recessive":g.mode==="paws"?"both hands show":"blend"}</span></div>
+      html+=`<div class="slot ${groupCls(grp)}"><div class="nm">${g.label} <span style="font-weight:400">· ${g.mode==="incomplete"?"blend":"dominant/recessive"}</span></div>
         <div class="sel"><select data-g="${g.key}" data-i="0">${opts(pair[0])}</select><select data-g="${g.key}" data-i="1">${opts(pair[1])}</select></div></div>`;
     });
     html+=`</div>`;
@@ -573,12 +551,12 @@ function runFinder(){
    ========================================================================= */
 function renderGenes(){
   const v=$("#view-genes");
-  let html=`<div class="note">B&amp;E has <b>18 gene categories</b>. Most are <b>dominant/recessive</b> (top allele shows; the wiki lists them most-dominant first). <b>Paws</b> are co-dominant — both hands show and both give abilities. <b>Fur, Mane, Horn &amp; Pattern colours</b> use <b>incomplete dominance</b> — the two alleles blend. When <b>No Pattern</b> shows, the pattern size/density/colour genes are hidden (but still inherited).</div>`;
+  let html=`<div class="note">B&amp;E has <b>18 gene categories</b>. Most are <b>dominant/recessive</b> — the top (dominant) allele shows and gives its ability; the recessive one is carried but hidden (the wiki lists them most-dominant first). <b>Fur, Mane, Horn &amp; Pattern colours</b> use <b>incomplete dominance</b> — the two alleles blend. When <b>No Pattern</b> shows, the pattern size/density/colour genes are hidden (but still inherited).</div>`;
   const groups=[["body","Body & ability genes"],["color","Colour genes"],["pattern","Pattern & mane genes"]];
   groups.forEach(([grp,title])=>{
     html+=`<div class="card"><h2>${title}</h2>`;
     GENES.filter(g=>g.group===grp).forEach(g=>{
-      const modeTxt=g.mode==="linear"?"dominant → recessive":g.mode==="paws"?"co-dominant (both hands)":"incomplete (blend)";
+      const modeTxt=g.mode==="incomplete"?"incomplete (blend)":"dominant → recessive";
       html+=`<details class="gene"><summary>${g.label}<span class="mode">${modeTxt}</span></summary><div class="body scrollx"><table>
         <tr><th>${g.mode==="linear"?"Dom.":""}</th><th>Gene</th><th>Effect</th></tr>`;
       g.alleles.forEach((a,i)=>{
