@@ -56,7 +56,10 @@
   .slot{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--panel)}
   .slot .nm{font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px}
   .slot .sel{display:flex;gap:6px}
-  .slot select{flex:1;min-width:0}
+  .slot .al{display:flex;align-items:center;gap:4px;flex:1;min-width:0}
+  .slot .al select{flex:1;min-width:0}
+  .mut{display:inline-flex;align-items:center;gap:2px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none}
+  .mut input{margin:0;cursor:pointer}
   .grp-body{background:var(--g-body)} .grp-color{background:var(--g-color)} .grp-pattern{background:var(--g-pattern)}
   .nlist{display:flex;flex-direction:column;gap:8px}
   .nrow{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--panel)}
@@ -182,21 +185,34 @@ const PATTERN_SUBGENES = ["patternsize","patterndensity","patterncolor"];  // hi
    ========================================================================= */
 /* A genotype = { geneKey: [alleleKeyA, alleleKeyB] }. Order within a slot is not meaningful. */
 
+/* ---- mutation ----
+   A mutated allele is stored as its key with a trailing "*", e.g. "Nimble Fingers*". It grants a
+   stronger bonus (MUT_BONUS added to each ability it already gives) and is inherited like any allele.
+   baseK strips the mark for dominance/effect lookups; isMut tests it. */
+const MUT="*", MUT_BONUS=1;   // ASSUMED +1 per ability — confirm the real B&E mutation bonus
+const baseK=a=>(a&&a.slice(-1)===MUT)?a.slice(0,-1):a;
+const isMut=a=>!!a&&a.slice(-1)===MUT;
+const withMut=(k,m)=>m?(baseK(k)+MUT):baseK(k);
+
 function defaultGenotype(){ const g={}; GENES.forEach(x=>{ const a=x.alleles[0].k; g[x.key]=[a,a]; }); return g; }
 
 /* Compact shareable gene code: "NB1-" + two base36 allele-indices per gene, in GENE order.
    36 chars total (max 13 alleles → one base36 digit each). Tolerant on decode. */
 function genoToCode(geno){
-  let s="";
+  let s="", mut="", any=false;
   GENES.forEach(g=>{ const p=geno[g.key]||[g.alleles[0].k,g.alleles[0].k];
-    s += (g.domRank[p[0]]||0).toString(36) + (g.domRank[p[1]]||0).toString(36); });
-  return "NB1-"+s;
+    s += (g.domRank[baseK(p[0])]||0).toString(36) + (g.domRank[baseK(p[1])]||0).toString(36);
+    const bits=(isMut(p[0])?1:0)+(isMut(p[1])?2:0); if(bits) any=true; mut+=bits.toString(36); });
+  return "NB1-"+s+(any?"!"+mut:"");   // mutation bits appended after "!" only when present
 }
 function codeToGeno(code){
-  const m=String(code||"").trim().match(/^NB1-([0-9a-z]+)$/i); if(!m) return null;
-  const s=m[1].toLowerCase(), geno=defaultGenotype();
+  const m=String(code||"").trim().match(/^NB1-([0-9a-z]+)(?:!([0-3]+))?$/i); if(!m) return null;
+  const s=m[1].toLowerCase(), mut=m[2]||"", geno=defaultGenotype();
   GENES.forEach((g,i)=>{
-    [0,1].forEach(j=>{ const ch=s[2*i+j]; if(ch!=null){ const idx=parseInt(ch,36); if(idx>=0&&idx<g.alleles.length) geno[g.key][j]=g.alleles[idx].k; } });
+    const bits=parseInt(mut[i]||"0",36)||0;
+    [0,1].forEach(j=>{ let key=geno[g.key][j]; const ch=s[2*i+j];
+      if(ch!=null){ const idx=parseInt(ch,36); if(idx>=0&&idx<g.alleles.length) key=g.alleles[idx].k; }
+      geno[g.key][j]=withMut(key, !!(bits&(j===0?1:2))); });
   });
   return geno;
 }
@@ -213,8 +229,9 @@ function sampleOffspring(mom, dad){
 function expressGene(gene, pair){
   const [x,y] = pair;
   if(gene.mode==="incomplete"){ return {kind:"blend", alleles:[x,y].slice().sort()}; }  // colours blend
-  const rx=gene.domRank[x], ry=gene.domRank[y];   // linear: the more dominant allele (lower rank index) shows
-  return {kind:"single", allele:(rx<=ry?x:y)};
+  const rx=gene.domRank[baseK(x)], ry=gene.domRank[baseK(y)];   // linear: more dominant (lower rank) shows
+  if(rx!==ry) return {kind:"single", allele:(rx<ry?x:y)};       // winner keeps its mutation mark
+  return {kind:"single", allele:(isMut(x)?x:y)};                 // same allele twice → the mutated copy shows
 }
 
 /* Full expressed phenotype for a genotype, plus which slots are inactivated by epistasis. */
@@ -232,8 +249,8 @@ function abilityTotals(geno){
   const t={}; ABILITIES.forEach(a=>t[a]=0);
   GENES.forEach(g=>{
     const pair=geno[g.key]||[]; if(!pair.length || g.mode==="incomplete") return;
-    const ex=expressGene(g,pair).allele, al=g.alleles.find(a=>a.k===ex);
-    if(al) for(const k in al.eff) t[k]+=al.eff[k];
+    const ex=expressGene(g,pair).allele, al=g.alleles.find(a=>a.k===baseK(ex)), boost=isMut(ex)?MUT_BONUS:0;
+    if(al) for(const k in al.eff) t[k]+=al.eff[k]+boost;   // mutated expressed allele gives a stronger bonus
   });
   return t;
 }
@@ -278,7 +295,8 @@ function offspringAbilityOutlook(mom, dad){
     const {pheno}=offspringPhenotypeDist(g, mp.length?mp:[g.alleles[0].k,g.alleles[0].k], dp.length?dp:[g.alleles[0].k,g.alleles[0].k]);
     ABILITIES.forEach(a=>{
       let e=0, mn=Infinity, mx=-Infinity;
-      pheno.forEach(p=>{ const al=g.alleles.find(x=>x.k===p.label); const v=al&&al.eff[a]?al.eff[a]:0; e+=p.prob*v; mn=Math.min(mn,v); mx=Math.max(mx,v); });
+      pheno.forEach(p=>{ const al=g.alleles.find(x=>x.k===baseK(p.label)); const bv=al&&al.eff[a]?al.eff[a]:0;
+        const v=bv+(bv&&isMut(p.label)?MUT_BONUS:0); e+=p.prob*v; mn=Math.min(mn,v); mx=Math.max(mx,v); });
       exp[a]+=e; lo[a]+=(mn===Infinity?0:mn); hi[a]+=(mx===-Infinity?0:mx);
     });
   });
@@ -292,6 +310,8 @@ function mixHex(h1,h2){
   return "#"+m.map(v=>v.toString(16).padStart(2,"0")).join("");
 }
 function shadeSwatch(sh){ return SHADE_HEX[sh]?`<span class="swatch" style="background:${SHADE_HEX[sh]}"></span>`:""; }
+/* Format a phenotype label (allele key(s), possibly mutation-marked / "a + b") for display. */
+function labelText(lab){ return String(lab).split(" + ").map(x=>baseK(x)+(isMut(x)?" ✦":"")).join(" + "); }
 function blendSwatch(a,b){
   const ha=SHADE_HEX[a], hb=SHADE_HEX[b]; if(!ha||!hb) return "";
   return `<span class="swatch" style="background:${a===b?ha:mixHex(ha,hb)}"></span>`;
@@ -339,8 +359,8 @@ function phenoSummary(geno){
   const parts=GENES.map(g=>{
     if(ph._inactive[g.key]) return "";
     const ex=ph[g.key]; let txt, sw="";
-    if(ex.kind==="single"){ txt=ex.allele; if(g.key==="eyecolor"&&EYECOL_HEX[ex.allele]) sw=`<span class="swatch" style="background:${EYECOL_HEX[ex.allele]}"></span>`; }
-    else { txt=ex.alleles[0]===ex.alleles[1]?ex.alleles[0]:ex.alleles.join(" + "); sw=blendSwatch(ex.alleles[0],ex.alleles[1]); }
+    if(ex.kind==="single"){ const bk=baseK(ex.allele); txt=bk+(isMut(ex.allele)?" ✦":""); if(g.key==="eyecolor"&&EYECOL_HEX[bk]) sw=`<span class="swatch" style="background:${EYECOL_HEX[bk]}"></span>`; }
+    else { const a0=baseK(ex.alleles[0]),a1=baseK(ex.alleles[1]); txt=a0===a1?a0:(a0+" + "+a1); sw=blendSwatch(a0,a1); }
     return `<span class="pill">${sw}<span class="muted">${g.label}:</span> ${esc(txt)}</span>`;
   });
   return parts.join("");
@@ -409,14 +429,16 @@ function renderEditor(){
       <button class="btn sm gray" id="copyCode">Copy</button>
       <button class="btn sm gray" id="applyCode">Apply</button>
     </div>
-    <p class="muted" style="font-size:11.5px;margin:0 0 4px">Copy to save/share this nicheling as one string; paste a code and Apply to load a whole genome.</p>`;
+    <p class="muted" style="font-size:11.5px;margin:0 0 4px">Copy to save/share this nicheling as one string; paste a code and Apply to load a whole genome. Tick <b>✦</b> beside an allele to mark it <b>mutated</b> (stronger bonus, and inherited).</p>`;
   groups.forEach(([grp,title])=>{
     html+=`<h3 style="font-size:13px;color:var(--muted);margin:14px 0 6px">${title}</h3><div class="genogrid">`;
     GENES.filter(g=>g.group===grp).forEach(g=>{
       const pair=c.geno[g.key]||[g.alleles[0].k,g.alleles[0].k];
-      const opts=a=>g.alleles.map(al=>`<option value="${esc(al.k)}" ${al.k===a?"selected":""}>${esc(al.name)}</option>`).join("");
+      const opts=a=>g.alleles.map(al=>`<option value="${esc(al.k)}" ${al.k===baseK(a)?"selected":""}>${esc(al.name)}</option>`).join("");
+      const alrow=i=>`<div class="al"><select data-g="${g.key}" data-i="${i}">${opts(pair[i])}</select>`+
+        (g.mode==="incomplete"?"":`<label class="mut" title="Mutated — stronger bonus"><input type="checkbox" data-mut="${g.key}" data-mi="${i}" ${isMut(pair[i])?"checked":""}>✦</label>`)+`</div>`;
       html+=`<div class="slot ${groupCls(grp)}"><div class="nm">${g.label} <span style="font-weight:400">· ${g.mode==="incomplete"?"blend":"dominant/recessive"}</span></div>
-        <div class="sel"><select data-g="${g.key}" data-i="0">${opts(pair[0])}</select><select data-g="${g.key}" data-i="1">${opts(pair[1])}</select></div></div>`;
+        <div class="sel">${alrow(0)}${alrow(1)}</div></div>`;
     });
     html+=`</div>`;
   });
@@ -425,10 +447,13 @@ function renderEditor(){
   $("#closeEd").onclick=()=>{ editId=null; renderNichelings(); };
   $("#edName").oninput=e=>{ c.name=e.target.value; save(DB); };
   $("#edSex").onchange=e=>{ c.sex=e.target.value; save(DB); };
+  const refreshTotals=()=>{ const ab=$("#editor .abil"); if(ab) ab.outerHTML=abilityChips(abilityTotals(c.geno));
+    const ec=$("#edCode"); if(ec) ec.value=genoToCode(c.geno); };
   $$("#editor select[data-g]").forEach(s=>s.onchange=()=>{
-    const g=s.dataset.g, i=+s.dataset.i; c.geno[g][i]=s.value; save(DB);
-    $("#editor .abil").outerHTML=abilityChips(abilityTotals(c.geno));
-    const ec=$("#edCode"); if(ec) ec.value=genoToCode(c.geno);
+    const g=s.dataset.g, i=+s.dataset.i; c.geno[g][i]=withMut(s.value, isMut(c.geno[g][i])); save(DB); refreshTotals();
+  });
+  $$("#editor input[data-mut]").forEach(cb=>cb.onchange=()=>{
+    const g=cb.dataset.mut, i=+cb.dataset.mi; c.geno[g][i]=withMut(c.geno[g][i], cb.checked); save(DB); refreshTotals();
   });
   $("#copyCode").onclick=()=>{ const t=$("#edCode"); t.select();
     try{ navigator.clipboard.writeText(t.value); }catch(e){ try{ document.execCommand("copy"); }catch(x){} }
@@ -505,14 +530,14 @@ function renderBreedOut(){
     GENES.filter(g=>g.group===grp).forEach(g=>{
       const {pheno}=offspringPhenotypeDist(g, mom.geno[g.key], dad.geno[g.key]);
       const certain=pheno.length===1;
-      html+=`<div style="margin:8px 0 12px"><div style="font-weight:700;font-size:13px;margin-bottom:2px">${g.label}${certain?` <span class="muted" style="font-weight:400">· always ${esc(pheno[0].label)}</span>`:""}</div>`;
+      html+=`<div style="margin:8px 0 12px"><div style="font-weight:700;font-size:13px;margin-bottom:2px">${g.label}${certain?` <span class="muted" style="font-weight:400">· always ${esc(labelText(pheno[0].label))}</span>`:""}</div>`;
       if(!certain){
         pheno.forEach(p=>{
           const pct=Math.round(p.prob*100);
           let sw="";
-          if(g.mode==="incomplete"){ const pr=p.label.split(" + "); sw=blendSwatch(pr[0],pr[1]||pr[0]); }
-          else if(g.key==="eyecolor"&&EYECOL_HEX[p.label]) sw=`<span class="swatch" style="background:${EYECOL_HEX[p.label]}"></span>`;
-          html+=`<div class="prob"><span class="nm2">${sw}${esc(p.label)}</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">${pct}%</span></div>`;
+          if(g.mode==="incomplete"){ const pr=p.label.split(" + "); sw=blendSwatch(baseK(pr[0]),baseK(pr[1]||pr[0])); }
+          else if(g.key==="eyecolor"&&EYECOL_HEX[baseK(p.label)]) sw=`<span class="swatch" style="background:${EYECOL_HEX[baseK(p.label)]}"></span>`;
+          html+=`<div class="prob"><span class="nm2">${sw}${esc(labelText(p.label))}</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">${pct}%</span></div>`;
         });
       }
       html+=`</div>`;
@@ -531,7 +556,7 @@ function runFinder(){
     const {pheno}=offspringPhenotypeDist(g, a.geno[gkey], b.geno[gkey]);
     // match: for single/blend/pair, the target allele shows in the phenotype label
     let p=0;
-    pheno.forEach(ph=>{ if(g.mode==="linear"){ if(ph.label===target) p+=ph.prob; } else { if(ph.label.split(" + ").includes(target)) p+=ph.prob; } });
+    pheno.forEach(ph=>{ if(ph.label.split(" + ").map(baseK).includes(target)) p+=ph.prob; });
     if(p>0) rows.push({a:a.name, b:b.name, self:i===j, p});
   }
   rows.sort((x,y)=>y.p-x.p);
@@ -573,7 +598,8 @@ function renderGenes(){
 
 /* ---- expose for tests (node/vm) ---- */
 if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILITIES,defaultGenotype,expressGene,phenotype,
-  abilityTotals,offspringGenotypeDist,offspringPhenotypeDist,offspringAbilityOutlook,genoToCode,codeToGeno,sampleOffspring};
+  abilityTotals,offspringGenotypeDist,offspringPhenotypeDist,offspringAbilityOutlook,genoToCode,codeToGeno,sampleOffspring,
+  baseK,isMut,withMut,MUT_BONUS};
 
 /* ---- boot (only in a real browser) ---- */
 if(typeof document!=="undefined" && document.getElementById("tabs")) showTab();
