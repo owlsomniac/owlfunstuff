@@ -506,6 +506,7 @@ function renderNichelings(){
       </div>
       <button class="btn sm gray edit" data-id="${c.id}">✏️ Edit</button>
       <button class="btn sm gray clone" data-id="${c.id}" title="Duplicate">⧉</button>
+      <button class="btn sm gray toSide" data-id="${c.id}" title="Move to sidelines (out of tribe)">🪑</button>
       <button class="btn sm gray retire1" data-id="${c.id}" title="Retire (archive)">🗂</button>
       <button class="btn sm gray del" data-id="${c.id}" title="Delete permanently">🗑</button>
     </div>`;
@@ -551,6 +552,8 @@ function renderNichelings(){
     if(c){ c.status="active"; save(DB); renderNichelings(); } });
   $$("#view-nichelings .tribe").forEach(b=>b.onclick=()=>{ const c=DB.cats.find(x=>x.id===+b.dataset.id);
     if(c){ c.status="active"; save(DB); renderNichelings(); } });
+  $$("#view-nichelings .toSide").forEach(b=>b.onclick=()=>{ const c=DB.cats.find(x=>x.id===+b.dataset.id);
+    if(c){ c.status="sideline"; save(DB); renderNichelings(); } });
   $$("#view-nichelings .del").forEach(b=>b.onclick=()=>{ if(confirm("Delete this nicheling permanently? (To keep it, use Retire 🗂 instead.)")){ DB.cats=DB.cats.filter(c=>c.id!==+b.dataset.id); save(DB); if(editId===+b.dataset.id)editId=null; renderNichelings(); } });
   if(editId!=null) renderEditor();
 }
