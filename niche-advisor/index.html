@@ -373,12 +373,16 @@ function findRetirements(cats, opts){
    Cosmetic genes (colours/patterns/eye/mask/plain mane) use an identity point per allele so a unique
    colour still counts in "all genes" mode. `catContribs` → { "gene|ability" | "gene|allele" : [pts] }. */
 const isAbilityGene = g => g.alleles.some(al=>Object.keys(al.eff).length);
-function catContribs(geno, keys){
+const NULL_ALLELES = {"No Horns":1, "Blind Eyes":1, "No Tail":1};   // "absence" alleles — never worth keeping, even in all-genes mode
+function catContribs(geno, keys, all){   // `all` = all-genes mode (cosmetics count)
   const m={};
   keys.forEach(k=>{ const g=GENE_BY_KEY[k]; if(!g) return; const pair=geno[k]||[];
     if(isAbilityGene(g)){
-      pair.forEach(x=>{ const al=g.alleles.find(z=>z.k===baseK(x)); if(!al) return; const lv=mutLevel(x);
-        for(const ab in al.eff){ const base=al.eff[ab]; if(base>0){ const key=k+"|"+ab; (m[key]||(m[key]=[])).push({base, total:base+lv, allele:baseK(x)}); } } });
+      pair.forEach(x=>{ const b=baseK(x), al=g.alleles.find(z=>z.k===b); if(!al) return; const lv=mutLevel(x);
+        const abils=Object.keys(al.eff);
+        if(abils.length){ for(const ab of abils){ const base=al.eff[ab]; if(base>0){ const key=k+"|"+ab; (m[key]||(m[key]=[])).push({base, total:base+lv, allele:b}); } } }
+        else if(all && !NULL_ALLELES[b]){ const key=k+"|"+b; (m[key]||(m[key]=[])).push({base:1, total:1+lv, allele:b}); }   // cosmetic variant of a mixed gene (e.g. Straight/Shaggy Mane)
+      });
     } else {
       pair.forEach(x=>{ const key=k+"|"+baseK(x); (m[key]||(m[key]=[])).push({base:1, total:1+mutLevel(x), allele:baseK(x)}); });
     }
@@ -396,31 +400,60 @@ function uniquePoints(A,others){ const out=[];                            // A's
 function pointLabel(key, p){ const i=key.indexOf("|"), gk=key.slice(0,i), rest=key.slice(i+1), g=GENE_BY_KEY[gk];
   if(g && isAbilityGene(g)) return `${p.allele} (${AB_SHORT[rest]||rest} +${p.total})`;   // rest = ability
   return `${p.allele}${p.total>1?` ✦+${p.total-1}`:""}${g?` (${g.label})`:""}`; }          // rest = colour/allele
+/* the set of cats (from `others`, tried in the given order → pass them best-first) whose points TOGETHER
+   dominate every point of A. Greedy set-cover; returns the chosen entries, or null if they can't fully
+   cover A. `others` = [{c, contribs}]. Empty A → [] (nothing to cover). */
+function coveringSet(Acontribs, others){
+  const pts=[]; for(const k in Acontribs) Acontribs[k].forEach(p=>pts.push({key:k, p}));
+  if(!pts.length) return [];
+  let remaining=pts.slice(); const chosen=[];
+  while(remaining.length){
+    let bestO=null, bestCov=null;
+    for(const o of others){ if(chosen.indexOf(o)>=0) continue;
+      const cov=remaining.filter(rp=>domPt(rp.p, o.contribs[rp.key]||[]));
+      if(!bestCov || cov.length>bestCov.length){ bestO=o; bestCov=cov; }
+    }
+    if(!bestO || !bestCov.length) return null;                     // some point nobody covers
+    chosen.push(bestO); remaining=remaining.filter(rp=>bestCov.indexOf(rp)<0);
+  }
+  return chosen;
+}
 
 /* Ranked retirement suggestions — so this is never a flat "nothing to retire" when you need space.
-   Greedy, per sex: repeatedly pick the nicheling whose removal loses the least VALUE given the others
-   still kept, record it, remove it, repeat. Consume the list top-down: each entry's `loses` is what
-   retiring it costs ASSUMING the ones ranked above it are already gone. `kept` = same-sex nichelings
-   that would remain (so kept===0 marks the last survivor of a sex — never suggest retiring it). */
+   Phase 1: greedy per sex — repeatedly pick the nicheling whose removal loses the least VALUE given the
+   others still kept, record its removal order (later = more valuable), remove it, repeat. Consume the
+   list top-down: each `loses` is what culling it costs ASSUMING the ones above are already gone; `kept`
+   = same-sex nichelings that would remain (kept===0 = the lone survivor, never suggested).
+   Phase 2: for every "loses nothing" one, name WHO covers it — the fewest other same-sex nichelings whose
+   traits together replace it, drawn from the whole group most-valuable-first so kept nichelings are named. */
 function retirementRanking(cats, opts){
   opts=opts||{}; const keys = opts.abilityOnly ? ABILITY_GENE_KEYS : GENES.map(g=>g.key);
   const res=[];
   ["F","M"].forEach(sex=>{
-    let kept = cats.filter(c=>c.sex===sex).map(c=>({c, contribs:catContribs(c.geno, keys)}));
+    const group = cats.filter(c=>c.sex===sex).map(c=>({c, contribs:catContribs(c.geno, keys, !opts.abilityOnly)}));
+    // phase 1: removal order + per-entry loss
+    let kept=group.slice(); const rows=[];
     while(kept.length){
       let best=null;
       kept.forEach(A=>{ const others=kept.filter(x=>x!==A).map(o=>o.contribs);
-        const uniq=uniquePoints(A.contribs, others);
-        const val=uniq.reduce((s,p)=>s+p.total,0);
-        if(!best || val<best.val) best={A, uniq, val, others:kept.filter(x=>x!==A)};
+        const uniq=uniquePoints(A.contribs, others), val=uniq.reduce((s,p)=>s+p.total,0);
+        if(!best || val<best.val) best={A, uniq, val, keptCount:kept.length-1};
       });
-      let keeper=null;
-      if(best.val===0){ const dom=best.others.find(o=>coveredBy(best.A.contribs,o.contribs)); keeper=dom?dom.c:null; }
-      res.push({id:best.A.c.id, name:best.A.c.name, sex, status:best.A.c.status,
-                loses:best.uniq.map(p=>pointLabel(p.key,p)), lossValue:best.val,
-                kept:best.others.length, keepId:keeper?keeper.id:null, keepName:keeper?keeper.name:null});
-      kept=kept.filter(x=>x!==best.A);
+      rows.push(best); kept=kept.filter(x=>x!==best.A);
     }
+    const rankOf=new Map(); rows.forEach((r,i)=>rankOf.set(r.A, i));   // higher = removed later = more valuable
+    // phase 2: emit, naming coverers for the free ones (prefer high-value / kept holders)
+    rows.forEach(r=>{
+      let keepNames=[];
+      if(r.val===0){
+        const others=group.filter(o=>o!==r.A).sort((a,b)=>rankOf.get(b)-rankOf.get(a));   // most-valuable first
+        const cov=coveringSet(r.A.contribs, others);
+        keepNames = cov ? cov.map(o=>o.c.name) : [];
+      }
+      res.push({id:r.A.c.id, name:r.A.c.name, sex, status:r.A.c.status,
+                loses:r.uniq.map(p=>pointLabel(p.key,p)), lossValue:r.val, kept:r.keptCount,
+                keepNames, keepName:keepNames[0]||null});
+    });
   });
   return res;
 }
@@ -950,11 +983,18 @@ const sx=s=>s==="F"?"♀":"♂";
 function describeLoss(loses){
   return esc(loses.slice(0,4).join(", "))+(loses.length>4?` <span class="muted">+${loses.length-4} more</span>`:"");
 }
+/* who covers a "loses nothing" nicheling — one name, or the small set that together replace its traits */
+function keeperText(r){
+  const n=r.keepNames||[]; if(!n.length) return " — carries no valued traits";
+  const show=n.slice(0,3).map(esc), extra=n.length>3?` +${n.length-3} more`:"";
+  return n.length===1 ? ` — <b>${show[0]}</b> ${sx(r.sex)} covers it`
+                      : ` — <b>${show.join("</b> + <b>")}</b>${extra} together cover it`;
+}
 /* one ranked row, shared by Retire (archive) and Release (delete). o={actClass,actLabel,showStatus} */
 function cullRow(r, o){
   const st = o.showStatus && r.status && r.status!=="active" ? ` <span class="muted" style="font-size:11px">(${r.status})</span>` : "";
   const detail = r.lossValue===0
-    ? `<span class="muted">loses nothing${r.keepName?` — <b>${esc(r.keepName)}</b> ${sx(r.sex)} covers it`:""}</span>`
+    ? `<span class="muted">loses nothing${keeperText(r)}</span>`
     : `<span class="muted">you'd lose: ${describeLoss(r.loses)}</span>`;
   return `<div class="prob" style="margin-bottom:2px">
       <span class="nm2">${esc(r.name)} ${sx(r.sex)}${st}</span>
@@ -968,7 +1008,7 @@ function cullSections(cats, abilityOnly, o){
   let html="";
   if(sexed<2){ html=`<p class="muted">Set at least two nichelings to ♀/♂ first — there's nothing to compare yet.</p>`; }
   else {
-    const free=ranked.filter(r=>r.lossValue===0), cost=ranked.filter(r=>r.lossValue>0 && r.kept>=1);
+    const free=ranked.filter(r=>r.lossValue===0 && r.kept>=1), cost=ranked.filter(r=>r.lossValue>0 && r.kept>=1);   // kept>=1: never suggest the lone survivor of a sex
     if(!free.length && !cost.length){ html=`<p class="muted">${o.oneNote}</p>`; }
     else {
       html=`<p class="muted" style="font-size:12.5px;margin:0 0 10px">Ranked safest-first — each shows what it costs <b>assuming the ones above it are already gone</b>. Comparing ${abilityOnly?"ability &amp; resistance genes":"all genes"}.</p>`;
@@ -1047,7 +1087,7 @@ function renderGenes(){
 /* ---- expose for tests (node/vm) ---- */
 if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILITIES,defaultGenotype,expressGene,phenotype,
   abilityTotals,offspringGenotypeDist,offspringPhenotypeDist,offspringAbilityOutlook,genoToCode,codeToGeno,sampleOffspring,
-  baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catContribs,coveredBy,
+  baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catContribs,coveredBy,coveringSet,
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS};
 
 /* ---- boot (only in a real browser) ---- */
