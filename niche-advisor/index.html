@@ -480,6 +480,7 @@ function renderNichelings(){
       </div></div>`;
   if(!DB.cats.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings yet. Add one and set its two alleles per gene, then head to <b>Breeding</b> to predict a pairing.</p>`;
   html+=`</div>`;
+  html+=`<div id="editor"></div>`;   // editor sits above the list, so a just-added nicheling's form is right at the top
   html+=`<div class="nlist">`+DB.cats.slice().reverse().map(c=>{   // newest first, so a just-added nicheling is at the top
     const t=abilityTotals(c.geno);
     const top=ABILITIES.filter(a=>t[a]).sort((x,y)=>t[y]-t[x]).slice(0,4).map(a=>`${AB_SHORT[a]} +${t[a]}`).join(" · ");
@@ -493,7 +494,6 @@ function renderNichelings(){
       <button class="btn sm gray del" data-id="${c.id}">🗑</button>
     </div>`;
   }).join("")+`</div>`;
-  html+=`<div id="editor"></div>`;
   v.innerHTML=html;
   $("#addCat").onclick=()=>{ const c=newCat(); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); };
   $("#fromCode").onclick=()=>{
