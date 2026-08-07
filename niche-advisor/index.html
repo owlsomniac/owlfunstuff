@@ -807,7 +807,7 @@ function runMutPlan(){
       }).join("");
       html+=`<div style="font-weight:700;margin-top:6px">Result: a nicheling at <b>✦+${plan.finalScore}</b>.</div>`;
     }
-    html+=`<p class="muted" style="font-size:11.5px;margin:8px 0 0">Each cross is ♀×♂. After one, keep a pup that inherited the ✦ allele(s) — it may take a few tries, and you'll want a pup of the sex the next step needs — then use it as the next parent. This <b>gathers</b> the mutations you already have into one line; it doesn't raise a level beyond your current best.</p>`;
+    html+=`<p class="muted" style="font-size:11.5px;margin:8px 0 0">Each cross is ♀×♂, and a parent passes only <b>one</b> of its two alleles (so a nicheling holding the same allele at ✦+3 and ✦+1 passes just one of them). After a cross, keep a pup that inherited the ✦ allele — it may take a few tries, and you'll want one of the sex the next step needs — then breed that. Mutations stick to their allele and don't stack, so this <b>gathers</b> your best existing ✦ into one line.</p>`;
   }
   $("#mpOut").innerHTML=html;
 }
