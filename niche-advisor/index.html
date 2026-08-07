@@ -364,30 +364,38 @@ function findRetirements(cats, opts){
 }
 
 /* ---- value model for culling ----
-   What a nicheling is worth KEEPING for is the bonus it can pass per ability, per gene — not which
-   allele it happens to carry. So a zero-bonus allele (Blind Eyes, No Horns, No Tail) is worth nothing,
-   and a lower-bonus allele (Deformed Paw Col+1) is fully covered by any higher-bonus one for the same
-   ability (Nimble Col+2, Digging Col+3). Mutation level adds to the bonus. Cosmetic genes (colours /
-   patterns / eye / mask / plain mane, no bonus) keep an identity notion so a unique colour still counts
-   in "all genes" mode. `catAssets` → { "gene|ability" or "gene|allele" : best value }. */
+   Each allele contributes, for its ability, a point (base, total) = (bonus, bonus+mutation). A trait is
+   only "covered" when another nicheling provides a point that beats it on BOTH — so a mutation on a
+   weaker allele can NOT cover a stronger-base allele (Nimble base 2 ✦+3 = total 5 does NOT cover Digging
+   base 3 ✦+1 = total 4: it wins on total but loses on base — different traits, keep both). Zero-bonus
+   alleles (No Horns, Blind Eyes, No Tail) make no point (worth nothing). A plain lower-bonus allele IS
+   covered by a higher-bonus one for the same ability (Deformed base 1 < Nimble base 2, and ≤ on total).
+   Cosmetic genes (colours/patterns/eye/mask/plain mane) use an identity point per allele so a unique
+   colour still counts in "all genes" mode. `catContribs` → { "gene|ability" | "gene|allele" : [pts] }. */
 const isAbilityGene = g => g.alleles.some(al=>Object.keys(al.eff).length);
-function catAssets(geno, keys){
-  const a={};
+function catContribs(geno, keys){
+  const m={};
   keys.forEach(k=>{ const g=GENE_BY_KEY[k]; if(!g) return; const pair=geno[k]||[];
     if(isAbilityGene(g)){
       pair.forEach(x=>{ const al=g.alleles.find(z=>z.k===baseK(x)); if(!al) return; const lv=mutLevel(x);
-        for(const ab in al.eff){ const v=al.eff[ab]+lv; if(v>0){ const key=k+"|"+ab; if(v>(a[key]||0)) a[key]=v; } } });
+        for(const ab in al.eff){ const base=al.eff[ab]; if(base>0){ const key=k+"|"+ab; (m[key]||(m[key]=[])).push({base, total:base+lv, allele:baseK(x)}); } } });
     } else {
-      pair.forEach(x=>{ const key=k+"|"+baseK(x), v=1+mutLevel(x); if(v>(a[key]||0)) a[key]=v; });   // identity: a distinct colour = value 1
+      pair.forEach(x=>{ const key=k+"|"+baseK(x); (m[key]||(m[key]=[])).push({base:1, total:1+mutLevel(x), allele:baseK(x)}); });
     }
   });
-  return a;
+  // reduce each gene|ability to its Pareto frontier (drop a cat's own points dominated by another of its own)
+  for(const key in m){ const pts=m[key];
+    m[key]=pts.filter((p,i)=>!pts.some((q,j)=>j!==i && q.base>=p.base && q.total>=p.total && (q.base>p.base||q.total>p.total||j<i)));
+  }
+  return m;
 }
-const coveredBy=(A,B)=>Object.keys(A).every(k=>(B[k]||0)>=A[k]);            // B provides every trait of A at >= value
-const uniqueAssetKeys=(A,others)=>Object.keys(A).filter(k=>!others.some(o=>(o[k]||0)>=A[k]));
-function assetLabel(key, value){ const i=key.indexOf("|"), gk=key.slice(0,i), rest=key.slice(i+1), g=GENE_BY_KEY[gk];
-  if(g && isAbilityGene(g)) return `${AB_SHORT[rest]||rest} +${value}${g?` (${g.label})`:""}`;   // rest = ability
-  return `${rest}${value>1?` ✦+${value-1}`:""}${g?` (${g.label})`:""}`; }                          // rest = colour/allele
+const domPt=(p,B)=>B.some(q=>q.base>=p.base && q.total>=p.total);          // some point of B beats p on BOTH axes
+const coveredBy=(A,B)=>Object.keys(A).every(k=>A[k].every(p=>domPt(p,B[k]||[])));   // B covers every point of A
+function uniquePoints(A,others){ const out=[];                            // A's points no other cat dominates
+  for(const k in A) A[k].forEach(p=>{ if(!others.some(o=>domPt(p,o[k]||[]))) out.push({key:k, ...p}); }); return out; }
+function pointLabel(key, p){ const i=key.indexOf("|"), gk=key.slice(0,i), rest=key.slice(i+1), g=GENE_BY_KEY[gk];
+  if(g && isAbilityGene(g)) return `${p.allele} (${AB_SHORT[rest]||rest} +${p.total})`;   // rest = ability
+  return `${p.allele}${p.total>1?` ✦+${p.total-1}`:""}${g?` (${g.label})`:""}`; }          // rest = colour/allele
 
 /* Ranked retirement suggestions — so this is never a flat "nothing to retire" when you need space.
    Greedy, per sex: repeatedly pick the nicheling whose removal loses the least VALUE given the others
@@ -398,18 +406,18 @@ function retirementRanking(cats, opts){
   opts=opts||{}; const keys = opts.abilityOnly ? ABILITY_GENE_KEYS : GENES.map(g=>g.key);
   const res=[];
   ["F","M"].forEach(sex=>{
-    let kept = cats.filter(c=>c.sex===sex).map(c=>({c, assets:catAssets(c.geno, keys)}));
+    let kept = cats.filter(c=>c.sex===sex).map(c=>({c, contribs:catContribs(c.geno, keys)}));
     while(kept.length){
       let best=null;
-      kept.forEach(A=>{ const others=kept.filter(x=>x!==A);
-        const uniq=uniqueAssetKeys(A.assets, others.map(o=>o.assets));
-        const val=uniq.reduce((s,k)=>s+A.assets[k],0);
-        if(!best || val<best.val) best={A, uniq, val, others};
+      kept.forEach(A=>{ const others=kept.filter(x=>x!==A).map(o=>o.contribs);
+        const uniq=uniquePoints(A.contribs, others);
+        const val=uniq.reduce((s,p)=>s+p.total,0);
+        if(!best || val<best.val) best={A, uniq, val, others:kept.filter(x=>x!==A)};
       });
       let keeper=null;
-      if(best.val===0){ const dom=best.others.find(o=>coveredBy(best.A.assets,o.assets)); keeper=dom?dom.c:null; }
+      if(best.val===0){ const dom=best.others.find(o=>coveredBy(best.A.contribs,o.contribs)); keeper=dom?dom.c:null; }
       res.push({id:best.A.c.id, name:best.A.c.name, sex, status:best.A.c.status,
-                loses:best.uniq.map(k=>assetLabel(k, best.A.assets[k])), lossValue:best.val,
+                loses:best.uniq.map(p=>pointLabel(p.key,p)), lossValue:best.val,
                 kept:best.others.length, keepId:keeper?keeper.id:null, keepName:keeper?keeper.name:null});
       kept=kept.filter(x=>x!==best.A);
     }
@@ -977,7 +985,7 @@ function runRetire(){
   const abilityOnly=$("#rMode").value==="ability";
   $("#retireOut").innerHTML=cullSections(activeCats(), abilityOnly, {actClass:"rtire", actLabel:"Retire", showStatus:false,
     oneNote:"Only one nicheling per sex — you can't retire either without losing your breeding stock.",
-    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already gives <b>every trait it does at an equal-or-better bonus</b> — zero-bonus alleles (No Horns, Blind Eyes, No Tail) and lower-bonus ones don't count. <b>Retire</b> archives it to your <b>Retired</b> list (bring it back anytime); the list re-ranks after each one.</p>`});
+    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already gives <b>every trait it does at an equal-or-better base AND total</b> — a mutation on a weaker allele doesn't cover a stronger-base one, and zero-bonus alleles (No Horns, Blind Eyes, No Tail) never count. <b>Retire</b> archives it to your <b>Retired</b> list (bring it back anytime); the list re-ranks after each one.</p>`});
   $$("#retireOut .rtire").forEach(b=>b.onclick=()=>{ const id=+b.dataset.id, c=DB.cats.find(x=>x.id===id);
     if(c && confirm('Retire "'+c.name+'"? It moves to your Retired list — bring it back anytime from My nichelings.')){
       c.status="retired"; if(editId===id) editId=null; save(DB); runRetire(); } });
@@ -1005,7 +1013,7 @@ function runRelease(){
   const abilityOnly=$("#rlMode").value==="ability";
   $("#releaseOut").innerHTML=cullSections(DB.cats, abilityOnly, {actClass:"rlease", actLabel:"Release", showStatus:true,
     oneNote:"Only one nicheling per sex — releasing it would lose that gene line entirely.",
-    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already gives <b>every trait it does at an equal-or-better bonus</b> — zero-bonus alleles (No Horns, Blind Eyes, No Tail) and lower-bonus ones don't count. <b>Release permanently deletes</b> the nicheling — it does <b>not</b> go to Retired. The list re-ranks after each one.</p>`});
+    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already gives <b>every trait it does at an equal-or-better base AND total</b> — a mutation on a weaker allele doesn't cover a stronger-base one, and zero-bonus alleles (No Horns, Blind Eyes, No Tail) never count. <b>Release permanently deletes</b> the nicheling — it does <b>not</b> go to Retired. The list re-ranks after each one.</p>`});
   $$("#releaseOut .rlease").forEach(b=>b.onclick=()=>{ const id=+b.dataset.id, c=DB.cats.find(x=>x.id===id);
     if(c && confirm('Release (permanently delete) "'+c.name+'"? This cannot be undone — use Retire if you might want it back.')){
       DB.cats=DB.cats.filter(x=>x.id!==id); if(editId===id) editId=null; save(DB); runRelease(); } });
@@ -1039,7 +1047,7 @@ function renderGenes(){
 /* ---- expose for tests (node/vm) ---- */
 if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILITIES,defaultGenotype,expressGene,phenotype,
   abilityTotals,offspringGenotypeDist,offspringPhenotypeDist,offspringAbilityOutlook,genoToCode,codeToGeno,sampleOffspring,
-  baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catAssets,
+  baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catContribs,coveredBy,
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS};
 
 /* ---- boot (only in a real browser) ---- */
