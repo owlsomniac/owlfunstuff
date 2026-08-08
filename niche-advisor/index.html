@@ -3248,40 +3248,72 @@ function coveringSet(Acontribs, others){
   return chosen;
 }
 
-/* Ranked retirement suggestions — so this is never a flat "nothing to retire" when you need space.
-   Phase 1: greedy per sex — repeatedly pick the nicheling whose removal loses the least VALUE given the
-   others still kept, record its removal order (later = more valuable), remove it, repeat. Consume the
-   list top-down: each `loses` is what culling it costs ASSUMING the ones above are already gone; `kept`
-   = same-sex nichelings that would remain (kept===0 = the lone survivor, never suggested).
-   Phase 2: for every "loses nothing" one, name WHO covers it — the fewest other same-sex nichelings whose
-   traits together replace it, drawn from the whole group most-valuable-first so kept nichelings are named. */
+/* ---- allele-IDENTITY value model for retire/release (replaces fungible-ability/collective coverage) ----
+   A nicheling is only "safe to remove" when a SINGLE other same-sex nicheling already carries every one of
+   its (non-undesirable) alleles at an equal-or-higher MUTATION LEVEL and COPY COUNT — i.e. a genuine
+   duplicate. Coverage is by ALLELE, not by ability: a rare allele (e.g. Bird Beak) is NOT "covered" just
+   because some other nicheling has the same ability from a different allele, and a nicheling that
+   CONCENTRATES many good/mutated alleles in one body (several homozygous ✦ alleles, a maxed line) stays
+   valuable even when each allele also exists spread across the roster — re-combining them into one body is
+   the whole breeding project. Undesirable "absence" alleles (No Horns, Blind Eyes, No Tail, Deformed Paw)
+   are worth nothing: they never count as value and never need covering. */
+const UNDESIRABLE = {"No Horns":1,"Blind Eyes":1,"No Tail":1,"Deformed Paw":1};
+/* holdings(geno) -> { "geneKey|baseAllele": [levels, desc — one entry per copy] }, dropping undesirable
+   alleles. Ability-only mode keeps only alleles that grant an ability; all-genes mode also keeps every
+   cosmetic allele by identity (so a unique colour still counts). */
+function holdings(geno, keys, all){
+  const h={};
+  keys.forEach(k=>{ const g=GENE_BY_KEY[k]; if(!g) return; const isAbil=isAbilityGene(g);
+    (geno[k]||[]).forEach(x=>{ const b=baseK(x); if(UNDESIRABLE[b]) return;
+      if(isAbil){ const al=g.alleles.find(z=>z.k===b), hasEff=al&&Object.keys(al.eff).length;
+        if(!hasEff && !all) return; }                 // a no-bonus allele of an ability gene counts only in all-genes mode
+      (h[k+"|"+b]||(h[k+"|"+b]=[])).push(mutLevel(x));
+    });
+  });
+  for(const key in h) h[key].sort((a,b)=>b-a);
+  return h;
+}
+/* does a held level-list cover a required one? (≥ copies, and each copy ≥ the matching required level) */
+function holdKeyCovers(have, need){ if(!have || have.length<need.length) return false;
+  for(let i=0;i<need.length;i++){ if(have[i]<need[i]) return false; } return true; }
+/* does B's whole holdings cover A's? (a single nicheling carrying everything A does, ≥ level & copies) */
+function holdCovers(B, A){ return Object.keys(A).every(k=>holdKeyCovers(B[k], A[k])); }
+/* intrinsic worth = Σ (1+level) over every non-undesirable allele copy — rewards concentration + mutation */
+function holdValue(A){ let v=0; for(const k in A) A[k].forEach(l=>v+=1+l); return v; }
+function holdLabel(key, levels){ const i=key.indexOf("|"), gk=key.slice(0,i), b=key.slice(i+1), g=GENE_BY_KEY[gk];
+  const lv=levels[0]||0, cnt=levels.length, al=g&&g.alleles.find(z=>z.k===b), ab=al&&Object.keys(al.eff)[0];
+  return `${b}${lv?` ✦+${lv}`:""}${cnt>1?` ×${cnt}`:""}${ab?` (${AB_SHORT[ab]||ab})`:""}`; }
+
+/* Ranked retirement/release suggestions (never a flat "nothing to retire").
+   "Safe — loses nothing" = a single same-sex nicheling is a true DUPLICATE (covers every allele at ≥ level
+   & copies), OR the nicheling carries nothing of value (only undesirable/absence alleles). Everyone else is
+   ranked LEAST-VALUABLE first by concentration value, with sole-copy alleles (★) weighted to the bottom so a
+   unique rare allele or a maxed line is never treated as disposable. */
 function retirementRanking(cats, opts){
   opts=opts||{}; const keys = opts.abilityOnly ? ABILITY_GENE_KEYS : GENES.map(g=>g.key);
   const res=[];
   ["F","M"].forEach(sex=>{
-    const group = cats.filter(c=>c.sex===sex).map(c=>({c, contribs:catContribs(c.geno, keys, !opts.abilityOnly)}));
-    // phase 1: removal order + per-entry loss
-    let kept=group.slice(); const rows=[];
-    while(kept.length){
-      let best=null;
-      kept.forEach(A=>{ const others=kept.filter(x=>x!==A).map(o=>o.contribs);
-        const uniq=uniquePoints(A.contribs, others), val=uniq.reduce((s,p)=>s+p.total,0);
-        if(!best || val<best.val) best={A, uniq, val, keptCount:kept.length-1};
-      });
-      rows.push(best); kept=kept.filter(x=>x!==best.A);
-    }
-    const rankOf=new Map(); rows.forEach((r,i)=>rankOf.set(r.A, i));   // higher = removed later = more valuable
-    // phase 2: emit, naming coverers for the free ones (prefer high-value / kept holders)
-    rows.forEach(r=>{
-      let keepNames=[];
-      if(r.val===0){
-        const others=group.filter(o=>o!==r.A).sort((a,b)=>rankOf.get(b)-rankOf.get(a));   // most-valuable first
-        const cov=coveringSet(r.A.contribs, others);
-        keepNames = cov ? cov.map(o=>o.c.name) : [];
+    const group = cats.filter(c=>c.sex===sex).map(c=>({c, h:holdings(c.geno,keys,!opts.abilityOnly)}));
+    group.forEach((A,i)=>{
+      const others=group.filter(x=>x!==A);
+      const keepers=others.filter(B=>holdCovers(B.h, A.h));           // single nichelings that fully cover A
+      let redundant=false, keepNames=[];
+      if(keepers.length){
+        if(keepers.some(B=>!holdCovers(A.h, B.h))) redundant=true;    // a strictly-better duplicate exists
+        else if(keepers.some(B=>group.indexOf(B)<i)) redundant=true;  // all mutual duplicates → keep the earliest copy
+        if(redundant) keepNames=keepers.map(k=>k.c.name);
       }
-      res.push({id:r.A.c.id, name:r.A.c.name, sex, status:r.A.c.status,
-                loses:r.uniq.map(p=>pointLabel(p.key,p)), lossValue:r.val, kept:r.keptCount,
-                keepNames, keepName:keepNames[0]||null});
+      const val=holdValue(A.h);
+      let uniqueCount=0;
+      const loses=Object.keys(A.h).map(k=>{ const lvls=A.h[k];
+          const uniq=!others.some(o=>holdKeyCovers(o.h[k], lvls)); if(uniq) uniqueCount++;
+          return {key:k, lvls, uniq}; })
+        .sort((a,b)=> (b.uniq-a.uniq) || (b.lvls[0]-a.lvls[0]))
+        .map(x=>holdLabel(x.key,x.lvls)+(x.uniq?" ★":""));
+      const safe = redundant || val===0;
+      res.push({ id:A.c.id, name:A.c.name, sex, status:A.c.status,
+                 lossValue: safe ? 0 : (val + 1000*uniqueCount),   // sole-copy holders sort to the bottom (most valuable)
+                 kept: group.length-1, keepNames, keepName:keepNames[0]||null, loses, uniqueCount });
     });
   });
   return res;
@@ -3796,7 +3828,7 @@ function runFinder(){
 function renderRetire(){
   const v=$("#view-retire");
   v.innerHTML=`<div class="card"><h2><span class="em">🧹</span> Who to retire</h2>
-    <p class="muted" style="font-size:12.5px;margin:2px 0 0">Out of space? This ranks your nichelings from safest-to-retire to most valuable, comparing each against others of the <b>same sex</b>. The top ones lose nothing (another nicheling already gives every trait they do at an equal-or-better bonus — undesirable/low-bonus alleles don't count); further down, it shows exactly what each retirement would cost.</p>
+    <p class="muted" style="font-size:12.5px;margin:2px 0 0">Out of space? This ranks your nichelings from safest-to-retire to most valuable, comparing each against others of the <b>same sex</b>. "Safe" = a single other nicheling is a true <b>duplicate</b> — it already carries <b>every one of its alleles at an equal-or-higher mutation level and copy count</b> (so no rare allele or maxed line is ever called disposable). Further down, it ranks the rest least-valuable first and shows what each would cost; a <b>★</b> marks an allele this is the <b>only copy</b> of.</p>
     <div class="row" style="margin-top:10px">
       <label>Compare on <select id="rMode"><option value="ability">Ability &amp; resistance genes</option><option value="all">All genes (incl. colours)</option></select></label>
       <button class="btn sm" id="rRun">Rank who to retire</button>
@@ -3855,7 +3887,7 @@ function runRetire(){
   const abilityOnly=$("#rMode").value==="ability";
   $("#retireOut").innerHTML=cullSections(activeCats(), abilityOnly, {actClass:"rtire", actLabel:"Retire", showStatus:false,
     oneNote:"Only one nicheling per sex — you can't retire either without losing your breeding stock.",
-    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already gives <b>every trait it does at an equal-or-better base AND total</b> — a mutation on a weaker allele doesn't cover a stronger-base one, and zero-bonus alleles (No Horns, Blind Eyes, No Tail) never count. <b>Retire</b> archives it to your <b>Retired</b> list (bring it back anytime); the list re-ranks after each one.</p>`});
+    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = a single other same-sex nicheling is a true <b>duplicate</b> — it carries <b>every one of its alleles at an equal-or-higher mutation level and copy count</b>. Coverage is by <b>allele</b>, not by ability: a rare allele isn't "covered" by a different allele that grants the same stat, and a nicheling that concentrates many good/mutated alleles in one body stays valuable even when each allele also exists elsewhere. Undesirable alleles (No Horns, Blind Eyes, No Tail, Deformed Paw) never count. <b>★</b> = the only copy of that allele you own. <b>Retire</b> archives it to your <b>Retired</b> list (bring it back anytime); the list re-ranks after each one.</p>`});
   $$("#retireOut .rtire").forEach(b=>b.onclick=()=>{ const id=+b.dataset.id, c=DB.cats.find(x=>x.id===id);
     if(c && confirm('Retire "'+c.name+'"? It moves to your Retired list — bring it back anytime from My nichelings.')){
       c.status="retired"; if(editId===id) editId=null; save(DB); runRetire(); } });
@@ -3867,7 +3899,7 @@ function runRetire(){
 function renderRelease(){
   const v=$("#view-release");
   v.innerHTML=`<div class="card"><h2><span class="em">🕊️</span> Who to release</h2>
-    <p class="muted" style="font-size:12.5px;margin:2px 0 0">Ranks every nicheling in your <b>whole roster</b> (tribe, sidelines &amp; retired) by how safely it can be <b>released — permanently deleted</b>. The top ones lose nothing (another same-sex nicheling already gives every trait they do at an equal-or-better bonus — undesirable/low-bonus alleles don't count); each shows its group.</p>
+    <p class="muted" style="font-size:12.5px;margin:2px 0 0">Ranks every nicheling in your <b>whole roster</b> (tribe, sidelines &amp; retired) by how safely it can be <b>released — permanently deleted</b>. "Safe" = a single other same-sex nicheling is a true <b>duplicate</b> (carries <b>every one of its alleles at an equal-or-higher mutation level and copy count</b>), so a rare allele or a maxed line is never called disposable. Each shows its group; a <b>★</b> marks an allele this is the <b>only copy</b> of.</p>
     <div class="row" style="margin-top:10px">
       <label>Compare on <select id="rlMode"><option value="ability">Ability &amp; resistance genes</option><option value="all">All genes (incl. colours)</option></select></label>
       <button class="btn sm" id="rlRun">Rank who to release</button>
@@ -3883,7 +3915,7 @@ function runRelease(){
   const abilityOnly=$("#rlMode").value==="ability";
   $("#releaseOut").innerHTML=cullSections(DB.cats, abilityOnly, {actClass:"rlease", actLabel:"Release", showStatus:true,
     oneNote:"Only one nicheling per sex — releasing it would lose that gene line entirely.",
-    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = another same-sex nicheling already gives <b>every trait it does at an equal-or-better base AND total</b> — a mutation on a weaker allele doesn't cover a stronger-base one, and zero-bonus alleles (No Horns, Blind Eyes, No Tail) never count. <b>Release permanently deletes</b> the nicheling — it does <b>not</b> go to Retired. The list re-ranks after each one.</p>`});
+    footNote:`<p class="muted" style="font-size:11.5px;margin:10px 0 0">"Loses nothing" = a single other same-sex nicheling is a true <b>duplicate</b> — it carries <b>every one of its alleles at an equal-or-higher mutation level and copy count</b>. Coverage is by <b>allele</b>, not by ability, and a nicheling that concentrates many good/mutated alleles stays valuable even when each allele also exists elsewhere. Undesirable alleles (No Horns, Blind Eyes, No Tail, Deformed Paw) never count. <b>★</b> = the only copy of that allele you own. <b>Release permanently deletes</b> the nicheling — it does <b>not</b> go to Retired. The list re-ranks after each one.</p>`});
   $$("#releaseOut .rlease").forEach(b=>b.onclick=()=>{ const id=+b.dataset.id, c=DB.cats.find(x=>x.id===id);
     if(c && confirm('Release (permanently delete) "'+c.name+'"? This cannot be undone — use Retire if you might want it back.')){
       DB.cats=DB.cats.filter(x=>x.id!==id); if(editId===id) editId=null; save(DB); runRelease(); } });
@@ -3918,6 +3950,7 @@ function renderGenes(){
 if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILITIES,defaultGenotype,expressGene,phenotype,
   abilityTotals,offspringGenotypeDist,offspringPhenotypeDist,offspringAbilityOutlook,genoToCode,codeToGeno,sampleOffspring,
   baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catContribs,coveredBy,coveringSet,
+  holdings,holdCovers,holdKeyCovers,holdValue,holdLabel,UNDESIRABLE,
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS};
 
 /* ---- boot (only in a real browser) ---- */
