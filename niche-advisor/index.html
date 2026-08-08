@@ -3396,7 +3396,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const groupCls=g=>g==="body"?"grp-body":g==="color"?"grp-color":"grp-pattern";
 let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeSideline:true,includeRetired:false};
-let finderTargets={};   // trait finder: { geneKey: targetAlleleKey } — one target per gene, persists across re-renders
+let breedTargets={};   // unified breeding finder: { geneKey: targetAlleleKey } — one target per gene, persists across re-renders
 /* A nicheling's status: "active" (in your tribe), "sideline" (not in the tribe yet but kept on the
    bench — available for breeding), or "retired" (archived — can be brought back). Active is always in
    the breeding pool; sideline is in by default (toggle on) and retired is out by default (toggle off). */
@@ -3593,169 +3593,211 @@ function renderBreeding(){
   const retiredCount=DB.cats.filter(c=>c.status==="retired").length;
   const sidelineCount=DB.cats.filter(c=>c.status==="sideline").length;
   const tag=c=>c.status==="sideline"?" · sideline":c.status==="retired"?" · retired":"";
-  // shared "Include: sideline / retired" control — shown on every breeding card, all bound to the same state
+  // shared "Include: sideline / retired" pool control
   const bar=()=>{ const parts=[];
     if(sidelineCount) parts.push(`<label class="row" style="gap:5px;font-weight:600;font-size:12px"><input type="checkbox" class="incSideline" ${breed.includeSideline?"checked":""}> sideline (${sidelineCount})</label>`);
     if(retiredCount)  parts.push(`<label class="row" style="gap:5px;font-weight:600;font-size:12px"><input type="checkbox" class="incRetired" ${breed.includeRetired?"checked":""}> retired (${retiredCount})</label>`);
     return parts.length?`<div class="row" style="gap:10px;align-items:center"><span class="muted" style="font-size:11.5px">Include:</span>${parts.join("")}</div>`:""; };
-  const hdr=t=>`<div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">${t}</h2>${bar()}</div>`;
   const wireInc=()=>{ $$("#view-breeding .incSideline").forEach(cb=>cb.onchange=e=>{ breed.includeSideline=e.target.checked; renderBreeding(); });
     $$("#view-breeding .incRetired").forEach(cb=>cb.onchange=e=>{ breed.includeRetired=e.target.checked; renderBreeding(); }); };
   const pool=breedingPool();
   if(!pool.length){
-    v.innerHTML=`<div class="card">${hdr('<span class="em">💞</span> Breeding')}
+    v.innerHTML=`<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0"><span class="em">💞</span> Breeding</h2>${bar()}</div>
       <p class="muted" style="margin:10px 0 0">No nichelings to breed with. Tick a box above, or add one (tribe or sideline) under <b>My nichelings</b>.</p></div>`;
     wireInc(); return;
   }
   const opt=(sel)=>pool.map(c=>`<option value="${c.id}" ${c.id===sel?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}${tag(c)}</option>`).join("");
   if(!pool.some(c=>c.id===breed.mom)) breed.mom=pool[0].id;
   if(!pool.some(c=>c.id===breed.dad)) breed.dad=pool[Math.min(1,pool.length-1)].id;
-  let html=`<div class="card">${hdr('<span class="em">💞</span> Predict a pairing')}
+
+  // ---- ONE unified finder: optimise + gene targets + restrict-to, all combined ----
+  let html=`<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0"><span class="em">💞</span> Find &amp; rank pairings</h2>${bar()}</div>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Choose what to <b>optimise</b>, add any <b>gene targets</b> the pup should hit, and optionally lock it to one nicheling's mates — these all combine. Every ♀×♂ pairing that can meet the targets is ranked by your goal. For a recessive allele (e.g. <b>Bird Beak</b>), use target mode <b>carries</b> — it only <i>shows</i> when a pup inherits two copies.</p>
+    <div class="row" style="margin-top:10px">
+      <label>Optimise <select id="bMetric">
+        <option value="__total">Total stats (all abilities)</option>
+        ${ABILITIES.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join("")}
+        <option value="__mut">Mutation ✦ (expected total)</option>
+        <option value="__target">Target likelihood</option>
+        <option value="__mutplan">Max-mutations line (multi-gen plan)</option>
+      </select></label>
+      <label>Restrict to <select id="bWho"><option value="__any">Any pairing</option>${pool.filter(c=>c.sex!=="?").map(c=>`<option value="${c.id}">${esc(c.name)} ${c.sex==="F"?"♀":"♂"}${tag(c)}</option>`).join("")}</select></label>
+      <button class="btn sm" id="bRun">Rank pairings</button>
+    </div>
+    <div class="row" style="margin-top:8px;align-items:flex-end">
+      <label>Target — pup <select id="bMatch"><option value="carry">carries</option><option value="show">shows</option></select></label>
+      <label>Gene <select id="bGene">${GENES.map(g=>`<option value="${g.key}">${g.label}</option>`).join("")}</select></label>
+      <label>Allele <select id="bAllele"></select></label>
+      <button class="btn sm gray" id="bAddTarget">＋ Add target</button>
+    </div>
+    <div id="bTargets" class="row" style="margin-top:8px;gap:6px"></div>
+    <div id="bOut" class="muted" style="margin-top:10px;font-size:13px"></div>
+  </div>`;
+
+  // ---- detailed single-pairing preview (click a ranked pairing to load it here) ----
+  html+=`<div class="card">
+    <h2 style="margin:0">🔬 Predict one pairing</h2>
     <div class="row" style="margin-top:8px">
       <label>Parent A <select id="selMom">${opt(breed.mom)}</select></label>
       <label>Parent B <select id="selDad">${opt(breed.dad)}</select></label>
       <button class="btn sm" id="addPup">➕ Save a possible pup</button>
     </div>
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Each pup gets one allele per gene from each parent (50/50). Percentages below are the chance a pup <b>shows</b> that trait. <b>Save a possible pup</b> rolls one random outcome into your roster.</p>
-  </div>`;
-  // finders sit right under the pairing controls
-  html+=`<div class="card">${hdr('🎯 Find a pairing for traits')}
-    <div class="row" style="margin-top:8px">
-      <label>Gene <select id="fGene">${GENES.map(g=>`<option value="${g.key}">${g.label}</option>`).join("")}</select></label>
-      <label>Target <select id="fAllele"></select></label>
-      <button class="btn sm gray" id="fAdd">＋ Add trait</button>
-      <button class="btn sm" id="fRun">Rank my pairings</button>
-    </div>
-    <div id="fTargets" class="row" style="margin-top:8px;gap:6px"></div>
-    <div id="finderOut" class="muted" style="margin-top:10px;font-size:13px">Add one or more target traits, then rank every ♀×♂ pair by the chance their pup shows them all at once.</div>
-  </div>`;
-  html+=`<div class="card">${hdr('🏆 Find optimal pairings')}
-    <div class="row" style="margin-top:8px">
-      <label>Maximize <select id="oMetric"><option value="__total">Total stats (all abilities)</option>${ABILITIES.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join("")}</select></label>
-      <button class="btn sm" id="oRun">Rank pairings</button>
-    </div>
-    <div id="optOut" class="muted" style="margin-top:10px;font-size:13px">Ranks every pair in your roster by the pup's <b>expected</b> stats. Pick one ability, or <b>Total</b> for the strongest overall pup.</div>
-  </div>`;
-  html+=`<div class="card">${hdr('💘 Find best mate for…')}
-    <div class="row" style="margin-top:8px">
-      <label>Nicheling <select id="bmCat">${pool.map(c=>`<option value="${c.id}" ${c.id===breed.mom?"selected":""}>${esc(c.name)}${c.sex!=="?"?(c.sex==="F"?" ♀":" ♂"):""}${tag(c)}</option>`).join("")}</select></label>
-      <label>Maximize <select id="bmMetric"><option value="__total">Total stats (all abilities)</option>${ABILITIES.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join("")}</select></label>
-      <button class="btn sm" id="bmRun">Find best mate</button>
-    </div>
-    <div id="bmOut" class="muted" style="margin-top:10px;font-size:13px">Pick one of your nichelings and see which opposite-sex mate gives the strongest pup — for one ability, or overall.</div>
-  </div>`;
-  html+=`<div class="card">${hdr('🧬 Max-mutations plan')}
-    <div class="row" style="margin-top:8px">
-      <button class="btn sm" id="mpRun">Plan the crosses</button>
-    </div>
-    <div id="mpOut" class="muted" style="margin-top:10px;font-size:13px">A step-by-step ♀×♂ breeding order that gathers your highest mutated (✦) alleles, scattered across the roster, into a single nicheling.</div>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Each pup gets one allele per gene from each parent (50/50). Percentages below are the chance a pup <b>shows</b> that trait. <b>Save a possible pup</b> rolls one random outcome into your roster; click a ranked pairing above to load it here.</p>
   </div>`;
   html+=`<div id="breedOut"></div>`;
   v.innerHTML=html;
+
+  wireInc();
+  const fillAlleles=()=>{ const g=GENE_BY_KEY[$("#bGene").value]; $("#bAllele").innerHTML=g.alleles.map(a=>`<option value="${esc(a.k)}">${esc(a.name)}</option>`).join(""); };
+  $("#bGene").onchange=fillAlleles; fillAlleles();
+  $("#bAddTarget").onclick=()=>{ breedTargets[$("#bGene").value]=$("#bAllele").value; renderBreedTargets(); };
+  $("#bRun").onclick=runBreedSearch;
+  $("#bMetric").onchange=runBreedSearch;
+  $("#bWho").onchange=runBreedSearch;
+  $("#bMatch").onchange=runBreedSearch;
+  renderBreedTargets();
   $("#selMom").onchange=e=>{ breed.mom=+e.target.value; renderBreedOut(); };
   $("#selDad").onchange=e=>{ breed.dad=+e.target.value; renderBreedOut(); };
   $("#addPup").onclick=()=>{ const mom=DB.cats.find(c=>c.id===breed.mom), dad=DB.cats.find(c=>c.id===breed.dad); if(!mom||!dad) return;
     const c=newCat("Pup of "+mom.name+" × "+dad.name); c.geno=sampleOffspring(mom.geno, dad.geno); DB.cats.push(c); save(DB);
     alert('Added "'+c.name+'" to My nichelings — one random possible outcome of this pairing.'); };
-  const fillAlleles=()=>{ const g=GENE_BY_KEY[$("#fGene").value]; $("#fAllele").innerHTML=g.alleles.map(a=>`<option value="${esc(a.k)}">${esc(a.name)}</option>`).join(""); };
-  $("#fGene").onchange=fillAlleles; fillAlleles();
-  $("#fAdd").onclick=()=>{ finderTargets[$("#fGene").value]=$("#fAllele").value; renderFinderTargets(); };
-  renderFinderTargets();
-  wireInc();
-  $("#fRun").onclick=runFinder;
-  $("#oRun").onclick=runOptimal;
-  $("#bmRun").onclick=runBestMate;
-  $("#mpRun").onclick=runMutPlan;
   renderBreedOut();
+  runBreedSearch();   // show a ranking right away
 }
 
-/* Rank every distinct pair in the roster by the pup's EXPECTED stats (a chosen ability, or the
-   total of all abilities). Expected values already fold in dominance odds and mutation levels. */
-function runOptimal(){
-  const metric=$("#oMetric").value, rows=[], pool=breedingPool();
-  if(!hasFM(pool)){ $("#optOut").innerHTML=needSexMsg; return; }
-  for(let i=0;i<pool.length;i++) for(let j=i+1;j<pool.length;j++){
-    const a=pool[i], b=pool[j]; if(!canPair(a,b)) continue;
+/* Breeding needs one ♀ and one ♂, so pairings only consider opposite-sex nichelings. */
+const canPair=(a,b)=>(a.sex==="F"&&b.sex==="M")||(a.sex==="M"&&b.sex==="F");
+const hasFM=list=>list.some(c=>c.sex==="F")&&list.some(c=>c.sex==="M");
+const needSexMsg='<p class="muted">Pairings need one ♀ and one ♂ — set each nicheling\'s sex in its editor (the ♀/♂ dropdown).</p>';
+
+/* P(a pup inherits ≥1 copy of `alleleBase` for this gene) — the useful target for building a line,
+   esp. a recessive allele that only SHOWS when homozygous. */
+function offspringCarryProb(gene, momPair, dadPair, alleleBase){
+  const gd=offspringGenotypeDist(momPair&&momPair.length?momPair:[gene.alleles[0].k,gene.alleles[0].k], dadPair&&dadPair.length?dadPair:[gene.alleles[0].k,gene.alleles[0].k]);
+  let p=0; for(const key in gd){ if(key.split("|").some(x=>baseK(x)===alleleBase)) p+=gd[key]; } return p;
+}
+/* P(a pup EXPRESSES `alleleBase` for this gene) — dominance-aware (a recessive needs two copies). */
+function offspringShowProb(gene, momPair, dadPair, alleleBase){
+  const {pheno}=offspringPhenotypeDist(gene, momPair&&momPair.length?momPair:[gene.alleles[0].k,gene.alleles[0].k], dadPair&&dadPair.length?dadPair:[gene.alleles[0].k,gene.alleles[0].k]);
+  let p=0; pheno.forEach(ph=>{ if(ph.label.split(" + ").map(baseK).includes(alleleBase)) p+=ph.prob; }); return p;
+}
+/* Expected total mutation ✦ a pup carries (Σ over genes of the expected max ✦ of its two alleles). */
+function offspringMutExpected(momGeno, dadGeno){
+  let e=0; GENES.forEach(g=>{ const gd=offspringGenotypeDist(momGeno[g.key]||[g.alleles[0].k,g.alleles[0].k], dadGeno[g.key]||[g.alleles[0].k,g.alleles[0].k]);
+    for(const key in gd){ const p=key.split("|"); e+=gd[key]*Math.max(mutLevel(p[0]),mutLevel(p[1])); } }); return e;
+}
+
+/* render the chosen target chips (one per gene; removable). Survives breeding re-renders. */
+function renderBreedTargets(){
+  const el=$("#bTargets"); if(!el) return;
+  const keys=Object.keys(breedTargets);
+  el.innerHTML = keys.length
+    ? keys.map(k=>{ const g=GENE_BY_KEY[k], al=g.alleles.find(a=>a.k===breedTargets[k]);
+        return `<span class="pill"><b>${esc(g.label)}:</b> ${esc(al?al.name:breedTargets[k])} <a href="#" data-rm="${k}" style="text-decoration:none;color:var(--warn)">✕</a></span>`; }).join("")
+      +`<button class="btn sm gray" id="bClear" style="margin-left:4px">Clear all</button>`
+    : `<span class="muted" style="font-size:12px">No gene targets — the ranking uses your <b>Optimise</b> goal for every pairing. Add a gene + allele to require it (across several genes to hit them all at once).</span>`;
+  $$("#bTargets [data-rm]").forEach(a=>a.onclick=e=>{ e.preventDefault(); delete breedTargets[a.dataset.rm]; renderBreedTargets(); runBreedSearch(); });
+  if($("#bClear")) $("#bClear").onclick=()=>{ breedTargets={}; renderBreedTargets(); runBreedSearch(); };
+}
+
+/* THE unified engine: rank every ♀×♂ pairing (optionally restricted to one nicheling's mates) that can
+   meet ALL gene targets, ordered by the chosen goal. Targets filter; the metric ranks. */
+function runBreedSearch(){
+  const out=$("#bOut"); if(!out) return;
+  const pool=breedingPool();
+  const metric=$("#bMetric").value, whoId=$("#bWho").value, match=$("#bMatch").value;
+  if(metric==="__mutplan"){ out.innerHTML=mutationPlanHTML(pool); return; }
+  if(!hasFM(pool)){ out.innerHTML=needSexMsg; return; }
+  const targets=Object.keys(breedTargets).map(gk=>({gk, allele:breedTargets[gk]}));
+  let pairs=[];
+  if(whoId!=="__any"){
+    const me=pool.find(c=>c.id===+whoId);
+    if(!me || me.sex==="?"){ out.innerHTML=`<p class="muted">Pick a nicheling with a set sex (♀/♂) under <b>Restrict to</b>.</p>`; return; }
+    const want=me.sex==="F"?"M":"F", mates=pool.filter(c=>c.id!==me.id && c.sex===want);
+    if(!mates.length){ out.innerHTML=`<p class="muted">No ${want==="F"?"♀":"♂"} nicheling to pair with <b>${esc(me.name)}</b> — set another nicheling's sex, or include sidelines/retired.</p>`; return; }
+    mates.forEach(mate=>pairs.push([me,mate]));
+  } else {
+    for(let i=0;i<pool.length;i++) for(let j=i+1;j<pool.length;j++){ if(canPair(pool[i],pool[j])) pairs.push([pool[i],pool[j]]); }
+  }
+  const rows=pairs.map(([a,b])=>{
+    let joint=1;
+    targets.forEach(t=>{ const g=GENE_BY_KEY[t.gk];
+      const p = match==="show" ? offspringShowProb(g, a.geno[t.gk], b.geno[t.gk], t.allele)
+                               : offspringCarryProb(g, a.geno[t.gk], b.geno[t.gk], t.allele);
+      joint*=p; });
+    if(targets.length && !(joint>0)) return null;              // can't meet a target → drop the pairing
     const o=offspringAbilityOutlook(a.geno, b.geno);
-    const score = metric==="__total" ? ABILITIES.reduce((s,ab)=>s+o.exp[ab],0) : (o.exp[metric]||0);
-    const top = ABILITIES.filter(ab=>o.exp[ab]>0.05).sort((x,y)=>o.exp[y]-o.exp[x]).slice(0,4).map(ab=>`${AB_SHORT[ab]} ~+${o.exp[ab].toFixed(1)}`);
+    let score;
+    if(metric==="__total") score=ABILITIES.reduce((s,ab)=>s+o.exp[ab],0);
+    else if(metric==="__mut") score=offspringMutExpected(a.geno, b.geno);
+    else if(metric==="__target") score=joint;
+    else score=o.exp[metric]||0;
+    const topStats=ABILITIES.filter(ab=>o.exp[ab]>0.05).sort((x,y)=>o.exp[y]-o.exp[x]).slice(0,4).map(ab=>`${AB_SHORT[ab]} ~+${o.exp[ab].toFixed(1)}`).join(" · ");
     const F=a.sex==="F"?a:b, M=a.sex==="F"?b:a;
-    rows.push({F:F.name, M:M.name, score, top:top.join(" · ")});
+    return {F:F.name, M:M.name, Fid:F.id, Mid:M.id, score, joint, topStats};
+  }).filter(Boolean);
+  rows.sort((x,y)=> (y.score-x.score) || (y.joint-x.joint));
+  const top=rows.slice(0,15);
+  const tnames=targets.map(t=>{ const g=GENE_BY_KEY[t.gk], al=g.alleles.find(a=>a.k===t.allele); return al?al.name:t.allele; });
+  const metricLabel = metric==="__total"?"total stats" : metric==="__mut"?"expected mutation ✦" : metric==="__target"?"target likelihood" : metric;
+  let html=`<div style="font-weight:700;margin-bottom:6px">Ranked by <b>${esc(metricLabel)}</b>${targets.length?` · pup must <b>${match==="show"?"show":"carry"}</b> ${esc(tnames.join(" + "))}`:""}${whoId!=="__any"?` · mates of <b>${esc((pool.find(c=>c.id===+whoId)||{}).name||"")}</b>`:""}:</div>`;
+  if(!top.length){
+    html+=`<p class="muted">${targets.length
+      ? `No ♀×♂ pairing can <b>${match==="show"?"show":"carry"}</b> ${tnames.length>1?"all of those together":"that"}. ${match==="show"?"For a recessive allele switch target mode to <b>carries</b> — it only shows when a pup gets two copies.":"Try including sidelines/retired, or another target."}`
+      : `No ♀×♂ pairs to compare — set nichelings to ♀ and ♂.`}</p>`;
+  } else {
+    const isPct = metric==="__target";
+    const max = isPct?1:(top[0].score||1);
+    html+=top.map(r=>{
+      const val = isPct ? (r.score*100>=0.5?Math.round(r.score*100)+"%":"<1%") : ("~"+r.score.toFixed(1));
+      const w = Math.max(2, Math.round(100*(isPct?r.score:(max?r.score/max:0))));
+      const tinfo = (targets.length && !isPct) ? ` <span class="muted" style="font-size:11px">🎯 ${r.joint*100>=0.5?Math.round(r.joint*100)+"%":"<1%"}</span>` : "";
+      return `<div class="prob bpair" data-f="${r.Fid}" data-m="${r.Mid}" style="margin-bottom:0;cursor:pointer" title="Load this pairing in the preview below">`+
+        `<span class="nm2">${esc(r.F)} ♀ × ${esc(r.M)} ♂${tinfo}</span><span class="bar"><span style="width:${w}%"></span></span><span class="pv">${val}</span></div>`+
+        `<div class="muted" style="font-size:11.5px;margin:0 0 7px 150px">${esc(r.topStats)}</div>`;
+    }).join("");
   }
-  rows.sort((x,y)=>y.score-x.score);
-  const top=rows.slice(0,12), label=metric==="__total"?"total stats":metric;
-  let html=`<div style="font-weight:700;margin-bottom:6px">Best ♀×♂ pairings by expected ${esc(label)}:</div>`;
-  if(!top.length) html+=`<p class="muted">No ♀×♂ pairs to compare — set nichelings' sex to ♀ and ♂.</p>`;
-  else { const max=top[0].score||1;
-    html+=top.map(r=>{ const pct=Math.round(100*r.score/max);
-      return `<div class="prob" style="margin-bottom:0"><span class="nm2">${esc(r.F)} ♀ × ${esc(r.M)} ♂</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">~${r.score.toFixed(1)}</span></div>`+
-        `<div class="muted" style="font-size:11.5px;margin:0 0 7px 150px">${esc(r.top)}</div>`; }).join(""); }
-  $("#optOut").innerHTML=html;
+  out.innerHTML=html;
+  $$("#bOut .bpair").forEach(el=>el.onclick=()=>{ breed.mom=+el.dataset.f; breed.dad=+el.dataset.m;
+    const sm=$("#selMom"), sd=$("#selDad"); if(sm) sm.value=breed.mom; if(sd) sd.value=breed.dad;
+    renderBreedOut(); const bo=$("#breedOut"); try{ if(bo) bo.scrollIntoView({behavior:"smooth"}); }catch(e){} });
 }
 
-/* Fix one nicheling and rank every opposite-sex mate by the pup's EXPECTED stats (one ability or Total). */
-function runBestMate(){
-  const pool=breedingPool(), me=pool.find(c=>c.id===+$("#bmCat").value), metric=$("#bmMetric").value;
-  if(!me){ $("#bmOut").innerHTML=""; return; }
-  const sexEm=s=>s==="F"?"♀":"♂";
-  if(me.sex==="?"){ $("#bmOut").innerHTML=`<p class="muted">Set <b>${esc(me.name)}</b>'s sex (♀/♂) first — mates are the opposite sex.</p>`; return; }
-  const wantSex=me.sex==="F"?"M":"F";
-  const mates=pool.filter(c=>c.id!==me.id && c.sex===wantSex);
-  if(!mates.length){ $("#bmOut").innerHTML=`<p class="muted">No ${sexEm(wantSex)} nichelings to pair with <b>${esc(me.name)}</b> — set another nicheling's sex to ${sexEm(wantSex)}.</p>`; return; }
-  const rows=mates.map(mate=>{
-    const o=offspringAbilityOutlook(me.geno, mate.geno);
-    const score = metric==="__total" ? ABILITIES.reduce((s,ab)=>s+o.exp[ab],0) : (o.exp[metric]||0);
-    const top = ABILITIES.filter(ab=>o.exp[ab]>0.05).sort((x,y)=>o.exp[y]-o.exp[x]).slice(0,4).map(ab=>`${AB_SHORT[ab]} ~+${o.exp[ab].toFixed(1)}`);
-    return {mate, score, top:top.join(" · ")};
-  }).sort((a,b)=>b.score-a.score);
-  const label=metric==="__total"?"total stats":metric, top=rows.slice(0,12), max=top[0].score||1;
-  let html=`<div style="font-weight:700;margin-bottom:6px">Best mates for <b>${esc(me.name)}</b> ${sexEm(me.sex)} by expected ${esc(label)}:</div>`;
-  html+=top.map(r=>{ const pct=Math.round(100*r.score/max);
-    const pair = me.sex==="F" ? `${esc(me.name)} ♀ × ${esc(r.mate.name)} ♂` : `${esc(r.mate.name)} ♀ × ${esc(me.name)} ♂`;
-    return `<div class="prob" style="margin-bottom:0"><span class="nm2">${pair}</span><span class="bar"><span style="width:${pct}%"></span></span><span class="pv">~${r.score.toFixed(1)}</span></div>`+
-      `<div class="muted" style="font-size:11.5px;margin:0 0 7px 150px">${esc(r.top)}</div>`; }).join("");
-  $("#bmOut").innerHTML=html;
-}
-
-/* Greedy ordered crosses to consolidate the roster's best mutated (✦) alleles into one nicheling. */
-function runMutPlan(){
-  const plan=mutationPlan(breedingPool());
-  let html="";
-  if(plan.noMut){ html=`<p class="muted">No mutated alleles in your breeding pool yet — set a ✦ mutation level on an allele in a nicheling's editor first.</p>`; }
-  else if(plan.needSex){ html=needSexMsg; }
-  else {
-    html=`<div style="font-weight:700;margin-bottom:4px">Goal: one nicheling carrying <b>✦+${plan.ceilTotal}</b> total mutation — the best of every gene you own.</div>`;
-    html+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">Start from <b>${esc(plan.seed.name)}</b> ${sx(plan.seed.sex)} (already ✦+${plan.seed.score}), then:</div>`;
-    if(!plan.steps.length){
-      html+=`<p class="muted">${plan.seed.score>=plan.ceilTotal?"It already carries every top mutation you own — nothing left to gather. 🎉":"No cross adds a higher mutation."}</p>`;
-    } else {
-      html+=plan.steps.map((s,i)=>{
-        const adds=s.adds.map(a=>`${esc(a.base)} ✦+${a.level}`).join(", ");
-        const left = i===0 ? `${esc(plan.seed.name)} ${sx(plan.seed.sex)}` : "the kept pup";
-        const keep = s.keepPupSex ? ` <b>— keep a ${sx(s.keepPupSex)} pup</b>` : "";
-        return `<div style="margin:0 0 6px"><div style="font-weight:600;font-size:13px">Gen ${i+1}: ${left} × ${esc(s.partner)} ${sx(s.partnerSex)}</div>
-          <div class="muted" style="font-size:12px">gains ${adds} → line at ✦+${s.scoreAfter}${keep}</div></div>`;
-      }).join("");
-      html+=`<div style="font-weight:700;margin-top:6px">Result: a nicheling at <b>✦+${plan.finalScore}</b>.</div>`;
-      if(plan.incomplete) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Some ✦ couldn't be chained in (they sit on nichelings the same sex as your seed with no opposite-sex carrier to bridge through) — recruit or breed a bridging mate to reach them.</p>`;
-    }
-    html+=`<p class="muted" style="font-size:11.5px;margin:8px 0 0">Each cross is ♀×♂, and a parent passes only <b>one</b> of its two alleles (so a nicheling holding the same allele at ✦+3 and ✦+1 passes just one of them). After a cross, keep a pup that inherited the ✦ allele — it may take a few tries, and you'll want one of the sex the next step needs — then breed that. Mutations stick to their allele and don't stack, so this <b>gathers</b> your best existing ✦ into one line.</p>`;
+/* Multi-generation max-mutations plan (folded into the finder as an Optimise option) → returns HTML. */
+function mutationPlanHTML(pool){
+  const plan=mutationPlan(pool);
+  if(plan.noMut) return `<p class="muted">No mutated alleles in your breeding pool yet — set a ✦ mutation level on an allele in a nicheling's editor first.</p>`;
+  if(plan.needSex) return needSexMsg;
+  let html=`<div style="font-weight:700;margin-bottom:4px">Goal: one nicheling carrying <b>✦+${plan.ceilTotal}</b> total mutation — the best of every gene you own.</div>`;
+  html+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">Start from <b>${esc(plan.seed.name)}</b> ${sx(plan.seed.sex)} (already ✦+${plan.seed.score}), then:</div>`;
+  if(!plan.steps.length){
+    html+=`<p class="muted">${plan.seed.score>=plan.ceilTotal?"It already carries every top mutation you own — nothing left to gather. 🎉":"No cross adds a higher mutation."}</p>`;
+  } else {
+    html+=plan.steps.map((s,i)=>{
+      const adds=s.adds.map(a=>`${esc(a.base)} ✦+${a.level}`).join(", ");
+      const left = i===0 ? `${esc(plan.seed.name)} ${sx(plan.seed.sex)}` : "the kept pup";
+      const keep = s.keepPupSex ? ` <b>— keep a ${sx(s.keepPupSex)} pup</b>` : "";
+      return `<div style="margin:0 0 6px"><div style="font-weight:600;font-size:13px">Gen ${i+1}: ${left} × ${esc(s.partner)} ${sx(s.partnerSex)}</div>
+        <div class="muted" style="font-size:12px">gains ${adds} → line at ✦+${s.scoreAfter}${keep}</div></div>`;
+    }).join("");
+    html+=`<div style="font-weight:700;margin-top:6px">Result: a nicheling at <b>✦+${plan.finalScore}</b>.</div>`;
+    if(plan.incomplete) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Some ✦ couldn't be chained in (they sit on nichelings the same sex as your seed with no opposite-sex carrier to bridge through) — recruit or breed a bridging mate to reach them.</p>`;
   }
-  $("#mpOut").innerHTML=html;
+  html+=`<p class="muted" style="font-size:11.5px;margin:8px 0 0">Each cross is ♀×♂, and a parent passes only <b>one</b> of its two alleles. After a cross, keep a pup that inherited the ✦ allele (may take a few tries; you'll want the sex the next step needs), then breed that. Mutations stick to their allele and don't stack, so this <b>gathers</b> your best existing ✦ into one line.</p>`;
+  return html;
 }
 
 function renderBreedOut(){
   const mom=DB.cats.find(c=>c.id===breed.mom), dad=DB.cats.find(c=>c.id===breed.dad);
   if(!mom||!dad){ $("#breedOut").innerHTML=""; return; }
   const outlook=offspringAbilityOutlook(mom.geno, dad.geno);
-  // ability outlook
-  let html=`<div class="card"><h2>Ability outlook for the pup</h2><div class="abil">`+
+  let html=`<div class="card"><h2>Ability outlook for the pup <span class="muted" style="font-weight:400;font-size:13px">(${esc(mom.name)} × ${esc(dad.name)})</span></h2><div class="abil">`+
     ABILITIES.filter(a=>outlook.hi[a]).map(a=>{
       const e=outlook.exp[a], lo=outlook.lo[a], hi=outlook.hi[a];
       const rng=lo===hi?`+${lo}`:`+${lo}–${hi}`;
       return `<span class="a">${AB_SHORT[a]} <b>~+${e.toFixed(1)}</b> <span class="muted" style="font-weight:400">(${rng})</span></span>`;
     }).join("")+`</div><p class="muted" style="font-size:12px;margin:8px 0 0">~average expected, with the possible range. Paws count both hands.</p></div>`;
-  // per-gene phenotype probabilities, grouped
   const groups=[["body","Body & abilities"],["color","Colours"],["pattern","Pattern & mane"]];
   groups.forEach(([grp,title])=>{
     html+=`<div class="card"><h2>${title}</h2>`;
@@ -3777,49 +3819,6 @@ function renderBreedOut(){
     html+=`</div>`;
   });
   $("#breedOut").innerHTML=html;
-}
-
-/* Breeding needs one ♀ and one ♂, so pairings only consider opposite-sex nichelings. */
-const canPair=(a,b)=>(a.sex==="F"&&b.sex==="M")||(a.sex==="M"&&b.sex==="F");
-const hasFM=list=>list.some(c=>c.sex==="F")&&list.some(c=>c.sex==="M");
-const needSexMsg='<p class="muted">Pairings need one ♀ and one ♂ — set each nicheling\'s sex in its editor (the ♀/♂ dropdown).</p>';
-
-/* render the chosen target-trait chips (one per gene; removable). Survives breeding re-renders. */
-function renderFinderTargets(){
-  const el=$("#fTargets"); if(!el) return;
-  const keys=Object.keys(finderTargets);
-  el.innerHTML = keys.length
-    ? keys.map(k=>{ const g=GENE_BY_KEY[k], al=g.alleles.find(a=>a.k===finderTargets[k]);
-        return `<span class="pill"><b>${esc(g.label)}:</b> ${esc(al?al.name:finderTargets[k])} <a href="#" data-rm="${k}" style="text-decoration:none;color:var(--warn)">✕</a></span>`; }).join("")
-      +`<button class="btn sm gray" id="fClear" style="margin-left:4px">Clear all</button>`
-    : `<span class="muted" style="font-size:12px">No target traits yet — pick a gene &amp; allele and hit <b>＋ Add trait</b>. Add several (across genes) to find a pair that hits them all.</span>`;
-  $$("#fTargets [data-rm]").forEach(a=>a.onclick=e=>{ e.preventDefault(); delete finderTargets[a.dataset.rm]; renderFinderTargets(); });
-  if($("#fClear")) $("#fClear").onclick=()=>{ finderTargets={}; renderFinderTargets(); };
-}
-/* rank every ♀×♂ pair by the JOINT chance the pup shows ALL selected target traits (genes are independent). */
-function runFinder(){
-  const pool=breedingPool(), gkeys=Object.keys(finderTargets);
-  if(!gkeys.length){ $("#finderOut").innerHTML=`<p class="muted">Add at least one target trait with <b>＋ Add trait</b>.</p>`; return; }
-  if(!hasFM(pool)){ $("#finderOut").innerHTML=needSexMsg; return; }
-  const rows=[];
-  for(let i=0;i<pool.length;i++) for(let j=i+1;j<pool.length;j++){
-    const a=pool[i], b=pool[j]; if(!canPair(a,b)) continue;
-    let joint=1;
-    gkeys.forEach(gk=>{ const g=GENE_BY_KEY[gk], res=offspringPhenotypeDist(g, a.geno[gk], b.geno[gk]);
-      let p=0; res.pheno.forEach(ph=>{ if(ph.label.split(" + ").map(baseK).includes(finderTargets[gk])) p+=ph.prob; });
-      joint*=p; });
-    if(joint>0){ const F=a.sex==="F"?a:b, M=a.sex==="F"?b:a; rows.push({F:F.name, M:M.name, joint}); }
-  }
-  rows.sort((x,y)=>y.joint-x.joint);
-  const top=rows.slice(0,12);
-  const names=gkeys.map(gk=>{ const g=GENE_BY_KEY[gk], al=g.alleles.find(a=>a.k===finderTargets[gk]); return al?al.name:finderTargets[gk]; }).join(" + ");
-  let html=`<div style="font-weight:700;margin-bottom:6px">Chance the pup shows <b>${esc(names)}</b>${gkeys.length>1?` (all ${gkeys.length})`:""}:</div>`;
-  if(!top.length) html+=`<p class="muted">No ♀×♂ pairing in your roster can produce ${gkeys.length>1?"all of those together":"it"} — at least one target isn't carried by any opposite-sex pair.</p>`;
-  else html+=top.map(r=>{
-    const pct=r.joint*100, pv=pct>=0.5?Math.round(pct)+"%":"<1%", w=Math.max(2,Math.round(pct));
-    return `<div class="prob"><span class="nm2">${esc(r.F)} ♀ × ${esc(r.M)} ♂</span><span class="bar"><span style="width:${w}%"></span></span><span class="pv">${pv}</span></div>`;
-  }).join("");
-  $("#finderOut").innerHTML=html;
 }
 
 /* =========================================================================
@@ -3948,7 +3947,7 @@ function renderGenes(){
 
 /* ---- expose for tests (node/vm) ---- */
 if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILITIES,defaultGenotype,expressGene,phenotype,
-  abilityTotals,offspringGenotypeDist,offspringPhenotypeDist,offspringAbilityOutlook,genoToCode,codeToGeno,sampleOffspring,
+  abilityTotals,offspringGenotypeDist,offspringPhenotypeDist,offspringAbilityOutlook,offspringCarryProb,offspringShowProb,offspringMutExpected,genoToCode,codeToGeno,sampleOffspring,
   baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catContribs,coveredBy,coveringSet,
   holdings,holdCovers,holdKeyCovers,holdValue,holdLabel,UNDESIRABLE,
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS};
