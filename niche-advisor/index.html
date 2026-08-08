@@ -4255,24 +4255,55 @@ function targetPlanHTML(pool, byGene, geneKeys){
   return html;
 }
 
-/* When only stat Min/Max are set (no allele targets), the allele planner has nothing to gather — so name
-   the alleles that grant each targeted stat, flag which the pool already owns, and point to adding them as
-   targets. Bridges "Strength ≥ 9" to the genes that actually raise Strength. */
+/* Auto stat-target planner. When only Optimise stat Min/Max are set (no explicit allele targets), the
+   user shouldn't have to hand-pick which alleles raise the stat — this decides it. Stats come from the
+   SHOWN allele of each gene (see abilityTotals), so for every Min-targeted ability it takes the single
+   best allele the pool actually OWNS on each linear gene (base effect + the best ✦ level present), sorts
+   genes by contribution, and greedily gathers them until the sum reaches the target. Those become
+   inherit:'show' allele conditions fed straight into the same multi-gen gather planner the explicit
+   targets use — no manual selection required. Returns per-ability reach + the merged gather conditions. */
+function statTargetPlan(pool, minMap, maxMap){
+  minMap=minMap||breedMin; maxMap=maxMap||breedMax;
+  const targets=ABILITIES.filter(a=>minMap[a]!=null);     // gather-toward goals (ceilings handled separately)
+  const perAbility=targets.map(ab=>{
+    const T=minMap[ab];
+    const cands=[];                                        // best owned allele per linear gene granting `ab`
+    GENES.forEach(g=>{ if(g.mode!=="linear") return;
+      let best=null;
+      g.alleles.forEach(a=>{ const base=a.eff&&a.eff[ab]; if(!base) return;
+        let owned=-1;                                       // highest ✦ level of this base anywhere in the pool
+        pool.forEach(cat=>(cat.geno[g.key]||[]).forEach(x=>{ if(baseK(x)===a.k) owned=Math.max(owned,mutLevel(x)); }));
+        if(owned<0) return;                                 // pool owns no copy of this allele — can't gather it
+        const val=base+owned;
+        if(!best || val>best.val) best={gene:g.key, base:a.k, name:a.name, eff:base, owned, val};
+      });
+      if(best) cands.push(best);
+    });
+    cands.sort((x,y)=>y.val-x.val || (x.gene<y.gene?-1:1));
+    const maxReach=cands.reduce((s,c)=>s+c.val,0);          // most this pool could show for `ab` on one nicheling
+    const picked=[]; let sum=0;
+    for(const c of cands){ if(sum>=T) break; picked.push(c); sum+=c.val; }
+    return {ability:ab, target:T, picked, sum, maxReach, reached:sum>=T};
+  });
+  const conds=[], seen=new Set();                            // merge picks across abilities (dedup by gene+base)
+  perAbility.forEach(p=>p.picked.forEach(c=>{ const k=c.gene+"|"+c.base; if(seen.has(k)) return; seen.add(k);
+    conds.push({gene:c.gene, base:c.base, inherit:"show", mutMin:c.owned>0?c.owned:null, mutMax:null, zyg:"either"}); }));
+  return {perAbility, conds, maxes:ABILITIES.filter(a=>maxMap[a]!=null)};
+}
+
 function statTargetPlanHTML(pool){
-  const mins=ABILITIES.filter(a=>breedMin[a]!=null || breedMax[a]!=null);
-  if(!mins.length) return mutationPlanHTML(pool);
-  let html=`<div style="font-weight:700;margin:2px 0 4px">Toward your stat targets</div>`;
-  html+=mins.map(ab=>{
-    const opts=[]; GENES.forEach(g=>g.alleles.forEach(a=>{ const eff=a.eff&&a.eff[ab]; if(eff>0) opts.push({g,a,eff}); }));
-    opts.sort((x,y)=>y.eff-x.eff);
-    if(!opts.length) return `<div style="margin:2px 0"><b>${esc(ab)}</b>: no allele grants ${esc(ab)}.</div>`;
-    const top=opts.slice(0,5).map(o=>`${esc(o.a.name)} <span class="muted">(${esc(o.g.label)} ${AB_SHORT[ab]}+${o.eff})</span>`).join(", ");
-    const owned=new Set(); pool.forEach(c=>GENES.forEach(g=>(c.geno[g.key]||[]).forEach(k=>{ const al=g.alleles.find(z=>z.k===baseK(k)); if(al&&al.eff&&al.eff[ab]>0) owned.add(al.name); })));
-    const tgt=breedMin[ab]!=null?`≥ ${breedMin[ab]}`:`≤ ${breedMax[ab]}`;
-    return `<div style="margin:3px 0"><b>${esc(ab)} ${tgt}</b>: stack the highest-${esc(AB_SHORT[ab])} alleles — ${top}. `+
-      `Add them as <b>allele targets</b> above (pick the gene, then the allele) to plan a gathering path. `+
-      (owned.size?`<span class="muted">In your pool: ${[...owned].slice(0,6).map(esc).join(", ")}.</span>`:`<span class="muted">Your pool has none yet — you'll need to acquire one.</span>`)+`</div>`;
+  const plan=statTargetPlan(pool);
+  if(!plan.perAbility.length) return mutationPlanHTML(pool);   // only ceilings set → nothing to gather toward
+  let html=`<div style="font-weight:700;margin:2px 0 4px">Toward your stat targets <span class="muted" style="font-weight:400;font-size:12px">— auto-planned from your pool</span></div>`;
+  html+=plan.perAbility.map(p=>{ const sh=AB_SHORT[p.ability];
+    if(!p.picked.length) return `<div style="margin:3px 0"><b>${esc(p.ability)} ≥ ${p.target}</b>: your pool has no ${esc(sh)} allele yet — acquire or breed one first.</div>`;
+    const parts=p.picked.map(c=>`${esc(c.name)} <span class="muted">(${esc(GENE_BY_KEY[c.gene].label)} ${esc(sh)}+${c.eff}${c.owned>0?` ✦+${c.owned}`:""})</span>`).join(", ");
+    if(p.reached) return `<div style="margin:3px 0"><b>${esc(p.ability)} ≥ ${p.target}</b>: gather ${parts} onto one nicheling → <b>${esc(sh)} ${p.sum}</b> ✓</div>`;
+    return `<div style="margin:3px 0"><b>${esc(p.ability)} ≥ ${p.target}</b>: the most your pool can reach is <b>${esc(sh)} ${p.maxReach}</b> (gathering ${parts}) — short of ${p.target}. Acquire a higher-${esc(sh)} allele to close the gap.</div>`;
   }).join("");
+  if(plan.maxes.length) html+=`<div class="muted" style="font-size:11.5px;margin:4px 0 0">Ceiling${plan.maxes.length>1?"s":""}: ${plan.maxes.map(a=>`${esc(AB_SHORT[a])} ≤ ${breedMax[a]}`).join(", ")} — no gathering needed; the Real list already drops any pairing whose pup could exceed it.</div>`;
+  if(plan.conds.length){ const byGene={}; plan.conds.forEach(c=>{ (byGene[c.gene]||(byGene[c.gene]=[])).push(c); });
+    html+=`<div style="margin-top:8px">`+targetPlanHTML(pool, byGene, Object.keys(byGene))+`</div>`; }
   html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">A single high pairing can also reach the target directly — the Real list above keeps any pairing whose best-case pup meets your Min/Max.</p>`;
   return html;
 }
@@ -4352,7 +4383,7 @@ if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILIT
   baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catContribs,coveredBy,coveringSet,
   holdings,holdCovers,holdKeyCovers,holdValue,holdLabel,UNDESIRABLE,
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS,geneFeasible,targetPlan,mutInRange,targetBaseLabel,
-  mutBonus,statTotal,sidelineAdvice,genePairParts,offspringBST,soleAlleleLabels,offspringConsolidatesProb,nichelingAdvice,consolidationAdvice,ADVICE_RANK,holdingsFor};
+  mutBonus,statTotal,sidelineAdvice,genePairParts,offspringBST,soleAlleleLabels,offspringConsolidatesProb,nichelingAdvice,consolidationAdvice,ADVICE_RANK,holdingsFor,statTargetPlan};
 
 /* ---- boot (only in a real browser) ---- */
 /* =========================================================================
