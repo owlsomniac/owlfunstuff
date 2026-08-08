@@ -8,25 +8,25 @@
 <script>(function(){try{var t=localStorage.getItem('ofs-guide-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <style>
 :root{
-  --bg:#f4efe6;--bg2:#ece3d3;--panel:#fffdf8;--panel2:#f7f1e6;--ink:#3a3229;--muted:#8c7f6c;
-  --line:#e4d9c5;--brand:#c8622d;--brand-ink:#a1471c;--brand-soft:#f3d9c6;
-  --code-bg:#f0e7d6;--code-ink:#8a4a24;
-  --shadow:0 1px 2px rgba(60,45,25,.06),0 10px 28px rgba(60,45,25,.09);
+  --bg:#f3f2ef;--bg2:#e8e5df;--panel:#fbfaf8;--panel2:#efede9;--ink:#343230;--muted:#77726a;
+  --line:#e0dcd4;--brand:#5c7385;--brand-ink:#465b6c;--brand-soft:#dde3e9;
+  --code-bg:#ece9e3;--code-ink:#4a6070;
+  --shadow:0 1px 2px rgba(50,45,38,.06),0 10px 28px rgba(50,45,38,.09);
   --maxw:1080px;--radius:16px;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
 }
 /* dark: system default (no stamp) unless an explicit light choice is made */
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#201c17;--bg2:#17130f;--panel:#2b251d;--panel2:#241f18;--ink:#efe6d6;--muted:#a2957f;
-  --line:#43392c;--brand:#e0824c;--brand-ink:#efa579;--brand-soft:#4a3122;
-  --code-bg:#332a20;--code-ink:#f0b184;
+  --bg:#1e1d1b;--bg2:#161513;--panel:#282623;--panel2:#211f1d;--ink:#e7e3dc;--muted:#a09a8f;
+  --line:#3a3733;--brand:#86a2b8;--brand-ink:#a6c0d4;--brand-soft:#2c363f;
+  --code-bg:#2c2a26;--code-ink:#a9c3d6;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
 }}
 /* explicit toggle wins in both directions */
 :root[data-theme="dark"]{
-  --bg:#201c17;--bg2:#17130f;--panel:#2b251d;--panel2:#241f18;--ink:#efe6d6;--muted:#a2957f;
-  --line:#43392c;--brand:#e0824c;--brand-ink:#efa579;--brand-soft:#4a3122;
-  --code-bg:#332a20;--code-ink:#f0b184;
+  --bg:#1e1d1b;--bg2:#161513;--panel:#282623;--panel2:#211f1d;--ink:#e7e3dc;--muted:#a09a8f;
+  --line:#3a3733;--brand:#86a2b8;--brand-ink:#a6c0d4;--brand-soft:#2c363f;
+  --code-bg:#2c2a26;--code-ink:#a9c3d6;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box}
