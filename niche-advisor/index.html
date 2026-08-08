@@ -3566,7 +3566,7 @@ let rosterSort={key:"name",dir:1}, rosterCollapsed=null, rosterSecCollapsed=null
    breedOpt: Set of optimise keys (ability names + '__mut'); null → all abilities
    breedMode: 'real'|'plan'|'both' (single-gen pairings / multi-gen plan / both)
    breedMin/breedMax: { statKey: number } per-stat filters on the pup's expected value ('__mut' = mutation) */
-let breedConds=[], breedGenesSel=null, breedGeneMode="all", breedAlleleModeByGene={}, breedOpt=null, breedMode="real", breedMin={}, breedMax={}, breedWho="__any", breedMutMode="shown";
+let breedConds=[], breedGenesSel=null, breedGeneMode="all", breedAlleleModeByGene={}, breedOpt=null, breedMode="real", breedMin={}, breedMax={}, breedWho="__any", breedMutMode="shown", breedStatMode="all";   // breedStatMode: must offspring meet ALL stat limits, or ANY one
 const amode=gk=>breedAlleleModeByGene[gk]||"all";   // breedMutMode: 'shown'|'carried' — how the ✦ Mutation metric/filter counts mutation
 /* A nicheling's status: "active" (in your tribe), "sideline" (not in the tribe yet but kept on the
    bench — available for breeding), or "retired" (archived — can be brought back). Active is always in
@@ -3889,13 +3889,14 @@ function renderBreeding(){
     <p class="muted" style="font-size:12px;margin:8px 0 0">A breeding query: tick which stats to <b>optimise</b> (and optional min/max), add <b>gene / allele targets</b> with per-target mutation &amp; inheritance, and pick whether to show single-pairing options, a multi-generation plan, or both. Everything combines.</p>
 
     <h3 style="font-size:12px;color:var(--muted);margin:12px 0 4px">OPTIMISE &amp; STAT LIMITS</h3>
-    <table class="optgrid" style="border-collapse:collapse"><tr style="font-size:11px;color:var(--muted)"><td></td><td style="padding:0 6px">Rank</td><td style="padding:0 6px">Min</td><td style="padding:0 6px">Max</td></tr>
+    <table class="optgrid" style="border-collapse:collapse"><tr style="font-size:11px;color:var(--muted)"><td></td><td style="padding:0 6px;white-space:nowrap">Rank <a href="#" id="optAll" style="color:var(--brand-ink);text-decoration:none">all</a>/<a href="#" id="optNone" style="color:var(--brand-ink);text-decoration:none">none</a></td><td style="padding:0 6px">Min</td><td style="padding:0 6px">Max</td></tr>
       ${ABILITIES.map(a=>optRow(a,a)).join("")}
       ${optRow("__mut","✦ Mutation")}
     </table>
     <div class="row" style="gap:6px;align-items:center;margin-top:4px"><span class="muted" style="font-size:11px">✦ Mutation counts:</span>${seg("bMutMode",breedMutMode,[["shown","Shown"],["carried","Carried"]])}
       <span class="muted" style="font-size:10.5px">— <b>Shown</b> = ✦ the pup expresses; <b>Carried</b> = ✦ on any copy, even masked (to stack a line over generations)</span></div>
-    <div class="muted" style="font-size:10.5px;margin-top:2px">Min/Max bound each pup's <b>expected (average)</b> value — recessive traits &amp; ✦ mutations average well under 1.</div>
+    <div class="row" style="gap:6px;align-items:center;margin-top:4px"><span class="muted" style="font-size:11px">Offspring must meet:</span>${seg("bStatMode",breedStatMode,[["all","All limits"],["any","Any limit"]])}<span class="muted" style="font-size:10.5px">— <b>All</b>: every stat in range · <b>Any</b>: at least one</span></div>
+    <div class="muted" style="font-size:10.5px;margin-top:2px">Min/Max keep pairings whose offspring can land in that range — <b>Min</b> = the best a pup can reach, <b>Max</b> = the worst — not the average. (✦ Mutation Min/Max use the expected ✦ count.)</div>
 
     <h3 style="font-size:12px;color:var(--muted);margin:14px 0 4px">RESTRICT</h3>
     <div class="row"><label>Restrict to <select id="bWho"><option value="__any">Any pairing</option>${pool.filter(c=>c.sex!=="?").map(c=>`<option value="${c.id}" ${breedWho==c.id?"selected":""}>${esc(c.name)} ${c.sex==="F"?"♀":"♂"}${tag(c)}</option>`).join("")}</select></label></div>
@@ -3930,6 +3931,8 @@ function renderBreeding(){
   wireInc();
   // optimise grid
   $$("#view-breeding .oRank").forEach(cb=>cb.onchange=()=>{ const s=cb.dataset.s; if(cb.checked) breedOpt.add(s); else breedOpt.delete(s); runBreedSearch(); });
+  { const setAllRank=v=>{ $$("#view-breeding .oRank").forEach(cb=>{ cb.checked=v; if(v) breedOpt.add(cb.dataset.s); else breedOpt.delete(cb.dataset.s); }); runBreedSearch(); };
+    const oa=$("#optAll"), on=$("#optNone"); if(oa) oa.onclick=e=>{ e.preventDefault(); setAllRank(true); }; if(on) on.onclick=e=>{ e.preventDefault(); setAllRank(false); }; }
   const numHandler=(cls,store)=>$$("#view-breeding ."+cls).forEach(inp=>inp.oninput=()=>{ const s=inp.dataset.s, val=inp.value.trim();
     if(val==="") delete store[s]; else store[s]=parseFloat(val); runBreedSearch(); });
   numHandler("oMin",breedMin); numHandler("oMax",breedMax);
@@ -3942,9 +3945,9 @@ function renderBreeding(){
     b.classList.toggle("gray"); renderTargetSections(); runBreedSearch(); });
   // segmented toggles (across-gene match + show mode)
   const wireSeg=(cls,set)=>$$("#view-breeding ."+cls).forEach(b=>b.onclick=()=>{ set(b.dataset.v); $$("#view-breeding ."+cls).forEach(x=>x.classList.toggle("gray", x.dataset.v!==b.dataset.v)); runBreedSearch(); });
-  wireSeg("bGeneMode",v2=>breedGeneMode=v2); wireSeg("bMode",v2=>breedMode=v2); wireSeg("bMutMode",v2=>breedMutMode=v2);
+  wireSeg("bGeneMode",v2=>breedGeneMode=v2); wireSeg("bMode",v2=>breedMode=v2); wireSeg("bMutMode",v2=>breedMutMode=v2); wireSeg("bStatMode",v2=>breedStatMode=v2);
   $("#bRun").onclick=runBreedSearch;
-  $("#bClearT").onclick=()=>{ breedConds=[]; renderTargetSections(); runBreedSearch(); };
+  $("#bClearT").onclick=()=>{ breedConds=[]; breedGenesSel=new Set(); breedAlleleModeByGene={}; renderBreeding(); };   // full reset: drop targets AND deselect gene types, then rebuild + re-rank
   renderTargetSections();
   // preview
   $("#selMom").onchange=e=>{ breed.mom=+e.target.value; renderBreedOut(); };
@@ -4089,9 +4092,16 @@ function runBreedSearch(){
       joint = breedGeneMode==="all" ? per.reduce((s,p)=>s*p,1) : 1-per.reduce((s,p)=>s*(1-p),1);
       if(!(joint>0)) return null; }
     const o=offspringAbilityOutlook(a.geno,b.geno), eMut=offspringMutExpected(a.geno,b.geno,breedMutMode);
-    for(const s of ABILITIES){ if(breedMin[s]!=null && o.exp[s]<breedMin[s]-1e-9) return null; if(breedMax[s]!=null && o.exp[s]>breedMax[s]+1e-9) return null; }
-    if(breedMin["__mut"]!=null && eMut<breedMin["__mut"]-1e-9) return null;
-    if(breedMax["__mut"]!=null && eMut>breedMax["__mut"]+1e-9) return null;
+    // Min/Max bound the ACHIEVABLE range, not the average: a stat limit is met when the best a pup can
+    // reach (o.hi) clears Min and the worst (o.lo) stays within Max. ✦ Mutation has no range → its expected
+    // count. breedStatMode decides whether offspring must meet ALL set limits or ANY one.
+    { const lims=ABILITIES.concat("__mut").filter(k=>breedMin[k]!=null||breedMax[k]!=null);
+      if(lims.length){
+        const rng=k=> k==="__mut" ? {lo:eMut,hi:eMut} : {lo:o.lo[k], hi:o.hi[k]};
+        const met=k=>{ const v=rng(k); return (breedMin[k]==null||v.hi>=breedMin[k]-1e-9)&&(breedMax[k]==null||v.lo<=breedMax[k]+1e-9); };
+        const flags=lims.map(met);
+        if(breedStatMode==="any" ? !flags.some(Boolean) : !flags.every(Boolean)) return null;
+      } }
     let score=ABILITIES.reduce((s,ab)=>opt.has(ab)?s+o.exp[ab]:s,0)+(opt.has("__mut")?eMut:0);
     const topStats=ABILITIES.filter(ab=>o.exp[ab]>0.05).sort((x,y)=>o.exp[y]-o.exp[x]).slice(0,4).map(ab=>`${AB_SHORT[ab]} ~+${o.exp[ab].toFixed(1)}`).join(" · ");
     const F=a.sex==="F"?a:b, M=a.sex==="F"?b:a;
@@ -4114,7 +4124,8 @@ function runBreedSearch(){
   }
   if(breedMode==="plan"||breedMode==="both"){
     if(breedMode==="both") html+=`<div style="height:8px"></div>`;
-    html+= geneKeys.length ? targetPlanHTML(pool, byGene, geneKeys) : mutationPlanHTML(pool);
+    html+= geneKeys.length ? targetPlanHTML(pool, byGene, geneKeys)
+      : (ABILITIES.some(a=>breedMin[a]!=null) ? statTargetPlanHTML(pool) : mutationPlanHTML(pool));
   }
   out.innerHTML=html;
   $$("#bOut .bpair").forEach(el=>el.onclick=()=>{ breed.mom=+el.dataset.f; breed.dad=+el.dataset.m;
@@ -4235,6 +4246,28 @@ function targetPlanHTML(pool, byGene, geneKeys){
     if(recmid.length) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">To reliably <b>show</b> ${recmid.join(", ")} (recessive — a more-dominant allele masks it), make it homozygous: ${hz} (or pair with a more-recessive mate).</p>`;
     if(homoT.length) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">For <b>homozygous</b> ${homoT.join(", ")} (two copies), ${hz}.</p>`; }
   html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Each cross is ♀×♂ and luck-based — a parent passes only one of its two alleles, so keep the pup that got the target (and the sex the next step needs), then breed that.</p>`;
+  return html;
+}
+
+/* When only stat Min/Max are set (no allele targets), the allele planner has nothing to gather — so name
+   the alleles that grant each targeted stat, flag which the pool already owns, and point to adding them as
+   targets. Bridges "Strength ≥ 9" to the genes that actually raise Strength. */
+function statTargetPlanHTML(pool){
+  const mins=ABILITIES.filter(a=>breedMin[a]!=null || breedMax[a]!=null);
+  if(!mins.length) return mutationPlanHTML(pool);
+  let html=`<div style="font-weight:700;margin:2px 0 4px">Toward your stat targets</div>`;
+  html+=mins.map(ab=>{
+    const opts=[]; GENES.forEach(g=>g.alleles.forEach(a=>{ const eff=a.eff&&a.eff[ab]; if(eff>0) opts.push({g,a,eff}); }));
+    opts.sort((x,y)=>y.eff-x.eff);
+    if(!opts.length) return `<div style="margin:2px 0"><b>${esc(ab)}</b>: no allele grants ${esc(ab)}.</div>`;
+    const top=opts.slice(0,5).map(o=>`${esc(o.a.name)} <span class="muted">(${esc(o.g.label)} ${AB_SHORT[ab]}+${o.eff})</span>`).join(", ");
+    const owned=new Set(); pool.forEach(c=>GENES.forEach(g=>(c.geno[g.key]||[]).forEach(k=>{ const al=g.alleles.find(z=>z.k===baseK(k)); if(al&&al.eff&&al.eff[ab]>0) owned.add(al.name); })));
+    const tgt=breedMin[ab]!=null?`≥ ${breedMin[ab]}`:`≤ ${breedMax[ab]}`;
+    return `<div style="margin:3px 0"><b>${esc(ab)} ${tgt}</b>: stack the highest-${esc(AB_SHORT[ab])} alleles — ${top}. `+
+      `Add them as <b>allele targets</b> above (pick the gene, then the allele) to plan a gathering path. `+
+      (owned.size?`<span class="muted">In your pool: ${[...owned].slice(0,6).map(esc).join(", ")}.</span>`:`<span class="muted">Your pool has none yet — you'll need to acquire one.</span>`)+`</div>`;
+  }).join("");
+  html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">A single high pairing can also reach the target directly — the Real list above keeps any pairing whose best-case pup meets your Min/Max.</p>`;
   return html;
 }
 
