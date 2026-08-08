@@ -3425,19 +3425,23 @@ function soleAlleleLabels(cat, allCats, abilityOnly){
     if(!others.some(o=>(o.geno[gk]||[]).some(a=>baseK(a)===b))) out.push(holdLabel(k, mine[k])); }
   return out;
 }
-/* P(one offspring of X×Y carries the UNION of both parents' valuable alleles — a "merge" that preserves both
-   genomes in the offspring line, so both parents become releasable). 0 if any gene needs >2 distinct alleles. */
-function offspringCoversUnionProb(X, Y, abilityOnly){
+/* P(one offspring of X×Y carries EVERYTHING both parents hold that's valuable — every allele of each, at ≥
+   the same COPY COUNT and ✦ level — concentrating both genomes onto a single individual. Uses the copy-aware
+   holdKeyCovers rule, so a homozygous (2-copy) parent allele needs 2 copies in the pup, and two DIFFERENT
+   homozygous lines at one gene are impossible to merge (only two slots) → 0 for that gene. Breeding is always
+   ♀×♂; this is about getting the alleles onto one pup, not about which sex it is. */
+function offspringConsolidatesProb(X, Y, abilityOnly){
   const hx=holdingsFor(X.geno, abilityOnly), hy=holdingsFor(Y.geno, abilityOnly);
+  const at=(h,gk)=>{ const r={}; for(const k in h){ const i=k.indexOf("|"); if(k.slice(0,i)===gk) r[k.slice(i+1)]=h[k]; } return r; };
   let p=1;
-  for(const g of GENES){ const need={};
-    [hx,hy].forEach(h=>{ for(const k in h){ const i=k.indexOf("|"); if(k.slice(0,i)===g.key){ const b=k.slice(i+1), lv=h[k][0]; if(!(b in need)||lv>need[b]) need[b]=lv; } } });
-    const bases=Object.keys(need); if(!bases.length) continue;
-    if(bases.length>2) return 0;
+  for(const g of GENES){
+    const reqX=at(hx,g.key), reqY=at(hy,g.key);
+    if(!Object.keys(reqX).length && !Object.keys(reqY).length) continue;
     const xa=X.geno[g.key]||[], ya=Y.geno[g.key]||[]; if(!xa.length||!ya.length) return 0;
-    let ok=0,tot=0;
-    for(const xi of xa) for(const yi of ya){ tot++; const got={}; [xi,yi].forEach(a=>{ const b=baseK(a),lv=mutLevel(a); if(!(b in got)||lv>got[b]) got[b]=lv; });
-      if(bases.every(b=> (b in got) && got[b]>=need[b])) ok++; }
+    const covers=(pair,req)=>Object.keys(req).every(b=>{ const need=req[b], have=pair.filter(a=>baseK(a)===b).map(mutLevel).sort((m,n)=>n-m);
+        if(have.length<need.length) return false; for(let i=0;i<need.length;i++) if(have[i]<need[i]) return false; return true; });
+    let ok=0, tot=0;
+    for(const xi of xa) for(const yi of ya){ tot++; const pair=[xi,yi]; if(covers(pair,reqX) && covers(pair,reqY)) ok++; }
     p*= tot?ok/tot:0; if(!p) return 0;
   }
   return p;
@@ -3456,8 +3460,11 @@ function nichelingAdvice(cat, allCats, rrMap, abilityOnly){
     const r=rrMap&&rrMap[cat.id];
     if(r && r.lossValue===0 && r.kept>=1){ const who=(r.keepNames||[]).slice(0,2).join(" + ")||("another "+sg);
       return {action:"retire", reason:`${who} already carries everything it has (≥ ✦ & copies) — redundant in the tribe.`}; }
+    if(!holdValue(mine)) return {action:"keep", reason:`Your only ${sg} — only absence/undesirable alleles; keep it until you breed a better replacement.`};   // lone-of-sex, nothing of value
     const sole=soleAlleleLabels(cat, allCats, abilityOnly);
-    return {action:"keep", reason: sole.length?`Sole copy of ${sole.slice(0,3).join(", ")}${sole.length>3?", …":""} in your roster.`:`Holds valued alleles no single ${sg} fully covers.`};
+    if(sole.length) return {action:"keep", reason:`Sole copy of ${sole.slice(0,3).join(", ")}${sole.length>3?", …":""} in your roster.`};
+    // kept but not sole: is a same-sex peer actually a duplicate (mutual copies, kept as the earlier one)?
+    return {action:"keep", reason: activePeers.some(x=>holdCovers(x.h, mine))?`Kept as the first of identical ${sg} copies — its duplicate is the retire candidate.`:`Holds valued alleles no single ${sg} fully covers.`};
   }
   if(!holdValue(mine)) return {action:"release", reason:"Only absence/undesirable alleles — nothing of value to lose."};
   const coverer=activePeers.find(x=>holdCovers(x.h, mine));
@@ -3471,20 +3478,19 @@ function nichelingAdvice(cat, allCats, rrMap, abilityOnly){
   if(coverer) return {action:"release", reason:`${coverer.p.name} covers it — safe to delete permanently.`};
   return {action:"keep", reason:`Holds alleles no tribe ${sg} has — keep (bring it back to use).`};
 }
-/* Consolidation guidance for the Advice column: top-3 opposite-sex partners whose offspring can carry the
-   UNION of both parents' valuable alleles (→ both become releasable), ranked by that probability. If the
-   nicheling holds a SOLE-copy allele it can never be made releasable, so instead recommend the partners that
-   best spread the gene — highest expected offspring BST. */
+/* Consolidation guidance for the Advice column: the top-3 opposite-sex partners whose offspring can carry
+   EVERYTHING both parents hold on ONE individual (copy-aware) — so all the scattered valuable alleles end up
+   concentrated on a single pup and both parents can be released. Ranked by that probability. If no partner
+   can merge them onto one pup (two homozygous lines can't share a gene's two slots), fall back to spreading
+   the gene — the partners with the highest expected offspring BST. */
 function consolidationAdvice(cat, allCats, abilityOnly){
   if(cat.sex!=="F"&&cat.sex!=="M") return {mode:"none", note:"Set its sex for consolidation options."};
   const opp=cat.sex==="F"?"♂":"♀";
   const mates=allCats.filter(c=>c.id!==cat.id && (c.status==="active"||c.status==="sideline") && (c.sex==="F"||c.sex==="M") && c.sex!==cat.sex);
   if(!mates.length) return {mode:"none", note:`No ${opp} in the breeding pool to pair with.`};
+  const scored=mates.map(m=>({m, p:offspringConsolidatesProb(cat,m,abilityOnly)})).filter(x=>x.p>0).sort((a,b)=>b.p-a.p).slice(0,3);
+  if(scored.length) return {mode:"consolidate", pairs:scored};
   const sole=soleAlleleLabels(cat, allCats, abilityOnly);
-  if(!sole.length){
-    const scored=mates.map(m=>({m, p:offspringCoversUnionProb(cat,m,abilityOnly)})).filter(x=>x.p>0).sort((a,b)=>b.p-a.p).slice(0,3);
-    if(scored.length) return {mode:"consolidate", pairs:scored};
-  }
   const best=mates.map(m=>({m, bst:offspringBST(cat.geno,m.geno)})).sort((a,b)=>b.bst-a.bst).slice(0,3);
   return {mode:"spread", sole:sole.slice(0,3), best};
 }
@@ -3644,11 +3650,11 @@ function consCellHTML(cons){
   const sx=s=>s==="F"?"♀":"♂";
   if(!cons || cons.mode==="none") return `<span class="muted">${esc((cons&&cons.note)||"—")}</span>`;
   if(cons.mode==="consolidate"){
-    return `<span class="muted" style="font-size:10.5px">merge both → releasable:</span><br>`+
+    return `<span class="muted" style="font-size:10.5px">breed & keep ONE pup with everything both hold → release both:</span><br>`+
       cons.pairs.map((x,i)=>`${i+1}. ${esc(x.m.name)} ${sx(x.m.sex)} <b>${x.p*100>=1?Math.round(x.p*100):"<1"}%</b>`).join(" · ");
   }
   // spread
-  const lead = cons.sole&&cons.sole.length ? `<span class="adv-keep">Sole ${esc(cons.sole.join(", "))}</span> — can't be released; spread it:` : `No merge partner; spread via:`;
+  const lead = cons.sole&&cons.sole.length ? `<span class="adv-keep">Sole ${esc(cons.sole.join(", "))}</span> — can't be released; spread it:` : `No pairing frees both; spread via:`;
   return `<span class="muted" style="font-size:10.5px">${lead}</span><br>`+
     cons.best.map(x=>`${esc(x.m.name)} ${sx(x.m.sex)} <span class="muted">BST ~${x.bst.toFixed(1)}</span>`).join(" · ");
 }
@@ -4346,7 +4352,7 @@ if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILIT
   baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catContribs,coveredBy,coveringSet,
   holdings,holdCovers,holdKeyCovers,holdValue,holdLabel,UNDESIRABLE,
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS,geneFeasible,targetPlan,mutInRange,targetBaseLabel,
-  mutBonus,statTotal,sidelineAdvice,genePairParts,offspringBST,soleAlleleLabels,offspringCoversUnionProb,nichelingAdvice,consolidationAdvice,ADVICE_RANK,holdingsFor};
+  mutBonus,statTotal,sidelineAdvice,genePairParts,offspringBST,soleAlleleLabels,offspringConsolidatesProb,nichelingAdvice,consolidationAdvice,ADVICE_RANK,holdingsFor};
 
 /* ---- boot (only in a real browser) ---- */
 /* =========================================================================
