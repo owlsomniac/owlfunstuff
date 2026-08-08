@@ -125,6 +125,18 @@
   #view-nichelings .sideadvice .adv-add{color:var(--brand-ink);font-weight:800}
   #view-nichelings .sideadvice .adv-rel{color:var(--warn);font-weight:800}
   #view-nichelings .sideadvice .adv-sex{color:var(--muted);font-weight:700}
+  /* Advice column group */
+  #view-nichelings .rtbl td.advtype{font-weight:800;white-space:nowrap}
+  #view-nichelings .rtbl td.advtype .adv-keep{color:var(--brand-ink)}
+  #view-nichelings .rtbl td.advtype .adv-retire{color:var(--warn)}
+  #view-nichelings .rtbl td.advtype .adv-rel{color:var(--warn)}
+  #view-nichelings .rtbl td.advtype .adv-add{color:var(--brand-ink)}
+  #view-nichelings .rtbl td.advtype .adv-sex{color:var(--muted)}
+  #view-nichelings .rtbl td.advwhy{white-space:normal;min-width:180px;max-width:280px;font-size:11.5px;line-height:1.4;color:var(--ink)}
+  #view-nichelings .rtbl td.advcons{white-space:normal;min-width:190px;max-width:300px;font-size:11.5px;line-height:1.45}
+  #view-nichelings .rtbl td.advcons .adv-keep{color:var(--brand-ink);font-weight:700}
+  #view-nichelings .rtbl th.advh{cursor:default}
+  #view-nichelings .rtbl .stt{font-size:10px;color:var(--muted);font-weight:600}
 </style>
 
 <div class="wrap">
@@ -3404,6 +3416,78 @@ function genePairParts(g, pair){
   const lab=a=>{ const b=baseK(a), lv=mutLevel(a), al=g.alleles.find(z=>z.k===b); return (al?al.name:b)+(lv?` ✦+${lv}`:""); };
   return {domBase:baseK(top), recBase:baseK(bot), dom:lab(top), rec:lab(bot), homo:baseK(top)===baseK(bot)&&mutLevel(top)===mutLevel(bot)};
 }
+/* expected offspring Base-Stat-Total (sum of expected ability bonuses across all abilities) for a pairing */
+const offspringBST=(momGeno,dadGeno)=>{ const o=offspringAbilityOutlook(momGeno,dadGeno); return ABILITIES.reduce((s,a)=>s+o.exp[a],0); };
+/* the valuable base alleles a nicheling holds that NO OTHER nicheling in the roster carries (its ★ sole copies) */
+function soleAlleleLabels(cat, allCats){
+  const keys=GENES.map(g=>g.key), mine=holdings(cat.geno,keys,true), others=allCats.filter(c=>c.id!==cat.id), out=[];
+  for(const k in mine){ const i=k.indexOf("|"), gk=k.slice(0,i), b=k.slice(i+1);
+    if(!others.some(o=>(o.geno[gk]||[]).some(a=>baseK(a)===b))) out.push(holdLabel(k, mine[k])); }
+  return out;
+}
+/* P(one offspring of X×Y carries the UNION of both parents' valuable alleles — a "merge" that preserves both
+   genomes in the offspring line, so both parents become releasable). 0 if any gene needs >2 distinct alleles. */
+function offspringCoversUnionProb(X, Y){
+  const keys=GENES.map(g=>g.key), hx=holdings(X.geno,keys,true), hy=holdings(Y.geno,keys,true);
+  let p=1;
+  for(const g of GENES){ const need={};
+    [hx,hy].forEach(h=>{ for(const k in h){ const i=k.indexOf("|"); if(k.slice(0,i)===g.key){ const b=k.slice(i+1), lv=h[k][0]; if(!(b in need)||lv>need[b]) need[b]=lv; } } });
+    const bases=Object.keys(need); if(!bases.length) continue;
+    if(bases.length>2) return 0;
+    const xa=X.geno[g.key]||[], ya=Y.geno[g.key]||[]; if(!xa.length||!ya.length) return 0;
+    let ok=0,tot=0;
+    for(const xi of xa) for(const yi of ya){ tot++; const got={}; [xi,yi].forEach(a=>{ const b=baseK(a),lv=mutLevel(a); if(!(b in got)||lv>got[b]) got[b]=lv; });
+      if(bases.every(b=> (b in got) && got[b]>=need[b])) ok++; }
+    p*= tot?ok/tot:0; if(!p) return 0;
+  }
+  return p;
+}
+/* Unified per-nicheling verdict for the roster Advice column:
+   active → keep / retire · sideline → add / release · retired → keep / release.
+   Reuses the allele-identity coverage (holdings/holdCovers) so it agrees with the Retire/Release tabs;
+   for active cats it reads a precomputed retirementRanking map (rrMap) to inherit lone-survivor + mutual-
+   duplicate handling. */
+const ADVICE_RANK={release:0, retire:1, add:2, keep:3, setsex:4};
+function nichelingAdvice(cat, allCats, rrMap){
+  const sx=cat.sex; if(sx!=="F"&&sx!=="M") return {action:"setsex", reason:"Set its sex (♀/♂) for a recommendation."};
+  const keys=GENES.map(g=>g.key), mine=holdings(cat.geno,keys,true), sg=sx==="F"?"♀":"♂";
+  const activePeers=allCats.filter(c=>c.id!==cat.id && c.status==="active" && c.sex===sx).map(p=>({p,h:holdings(p.geno,keys,true)}));
+  if(cat.status==="active"){
+    const r=rrMap&&rrMap[cat.id];
+    if(r && r.lossValue===0 && r.kept>=1){ const who=(r.keepNames||[]).slice(0,2).join(" + ")||("another "+sg);
+      return {action:"retire", reason:`${who} already carries everything it has (≥ ✦ & copies) — redundant in the tribe.`}; }
+    const sole=soleAlleleLabels(cat, allCats);
+    return {action:"keep", reason: sole.length?`Sole copy of ${sole.slice(0,3).join(", ")}${sole.length>3?", …":""} in your roster.`:`Holds valued alleles no single ${sg} fully covers.`};
+  }
+  if(!holdValue(mine)) return {action:"release", reason:"Only absence/undesirable alleles — nothing of value to lose."};
+  const coverer=activePeers.find(x=>holdCovers(x.h, mine));
+  if(cat.status==="sideline"){
+    if(coverer) return {action:"release", reason:`${coverer.p.name} already carries everything it has — brings nothing new.`};
+    if(!activePeers.length) return {action:"add", reason:`No ${sg} in your tribe yet — adds that line.`};
+    const brings=[]; for(const k in mine){ if(!activePeers.some(x=>holdKeyCovers(x.h[k], mine[k]))) brings.push(holdLabel(k, mine[k])); }
+    return {action:"add", reason: brings.length?`Brings ${brings.slice(0,3).join(", ")}${brings.length>3?", …":""} the tribe lacks.`:`Concentrates scattered tribe alleles into one ${sg}.`};
+  }
+  // retired
+  if(coverer) return {action:"release", reason:`${coverer.p.name} covers it — safe to delete permanently.`};
+  return {action:"keep", reason:`Holds alleles no tribe ${sg} has — keep (bring it back to use).`};
+}
+/* Consolidation guidance for the Advice column: top-3 opposite-sex partners whose offspring can carry the
+   UNION of both parents' valuable alleles (→ both become releasable), ranked by that probability. If the
+   nicheling holds a SOLE-copy allele it can never be made releasable, so instead recommend the partners that
+   best spread the gene — highest expected offspring BST. */
+function consolidationAdvice(cat, allCats){
+  if(cat.sex!=="F"&&cat.sex!=="M") return {mode:"none", note:"Set its sex for consolidation options."};
+  const opp=cat.sex==="F"?"♂":"♀";
+  const mates=allCats.filter(c=>c.id!==cat.id && (c.status==="active"||c.status==="sideline") && (c.sex==="F"||c.sex==="M") && c.sex!==cat.sex);
+  if(!mates.length) return {mode:"none", note:`No ${opp} in the breeding pool to pair with.`};
+  const sole=soleAlleleLabels(cat, allCats);
+  if(!sole.length){
+    const scored=mates.map(m=>({m, p:offspringCoversUnionProb(cat,m)})).filter(x=>x.p>0).sort((a,b)=>b.p-a.p).slice(0,3);
+    if(scored.length) return {mode:"consolidate", pairs:scored};
+  }
+  const best=mates.map(m=>({m, bst:offspringBST(cat.geno,m.geno)})).sort((a,b)=>b.bst-a.bst).slice(0,3);
+  return {mode:"spread", sole:sole.slice(0,3), best};
+}
 /* the highest-level mutated allele a genotype carries for one gene (for labelling a step) */
 function topMutAllele(geno, key){ const p=geno[key]||[]; if(!p.length) return null;
   const best=p.slice().sort((a,b)=>mutLevel(b)-mutLevel(a))[0]; return mutLevel(best)>0?{base:baseK(best), level:mutLevel(best)}:null; }
@@ -3472,7 +3556,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const groupCls=g=>g==="body"?"grp-body":g==="color"?"grp-color":"grp-pattern";
 let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeSideline:true,includeRetired:false};
-let rosterSort={key:"name",dir:1}, rosterCollapsed=null, rosterSecCollapsed=null;   // roster table: sort col/dir + collapsed column-group keys + collapsed status-section keys (sideline/retired)
+let rosterSort={key:"name",dir:1}, rosterCollapsed=null, rosterSecCollapsed=null, rosterIgnoreSec=false;   // roster table: sort col/dir + collapsed column-group keys + collapsed status-section keys + ignore-sections (one flat sortable list)
 /* unified breeding finder state — a query builder (persists across re-renders):
    breedConds: [{gene, base, mutMin:num|null, mutMax:num|null, inherit:'carry'|'show', zyg:'either'|'homo'|'hetero'}]
      one target condition per allele; each selected gene type gets its own section of these rows.
@@ -3547,6 +3631,7 @@ function rosterSortVal(c, key){
 function rosterGroups(){
   const stat=GENES.filter(g=>ABILITY_GENE_KEYS.indexOf(g.key)>=0), appr=GENES.filter(g=>ABILITY_GENE_KEYS.indexOf(g.key)<0);
   return [
+    {key:"advice", label:"Advice", cols:[{kind:"advtype", label:"Do", sortk:"advice"},{kind:"advwhy", label:"Why"},{kind:"advcons", label:"Consolidate / spread"}]},
     {key:"quick", label:"Quick view", cols:[{kind:"qv", label:"At a glance"}]},
     {key:"stats", label:"Stats", cols:
       ABILITIES.map(a=>({kind:"num", label:AB_SHORT[a], sortk:"ab:"+a, title:a}))
@@ -3556,12 +3641,29 @@ function rosterGroups(){
     {key:"appear", label:"Appearance", cols: appr.map(g=>({kind:"gene", gene:g, label:g.label}))},
   ];
 }
-const rosterSortCats=cats=>cats.slice().sort((a,b)=>{ const va=rosterSortVal(a,rosterSort.key), vb=rosterSortVal(b,rosterSort.key);
-  let cmp=(typeof va==="string")?va.localeCompare(vb):(va-vb); if(!cmp) cmp=(a.name||"").localeCompare(b.name||""); return cmp*rosterSort.dir; });
+const ADV_META={keep:{label:"Keep",cls:"adv-keep"}, retire:{label:"Retire",cls:"adv-retire"}, release:{label:"Release",cls:"adv-rel"}, add:{label:"Add to tribe",cls:"adv-add"}, setsex:{label:"Set sex",cls:"adv-sex"}};
+function consCellHTML(cons){
+  const sx=s=>s==="F"?"♀":"♂";
+  if(!cons || cons.mode==="none") return `<span class="muted">${esc((cons&&cons.note)||"—")}</span>`;
+  if(cons.mode==="consolidate"){
+    return `<span class="muted" style="font-size:10.5px">merge both → releasable:</span><br>`+
+      cons.pairs.map((x,i)=>`${i+1}. ${esc(x.m.name)} ${sx(x.m.sex)} <b>${x.p*100>=1?Math.round(x.p*100):"<1"}%</b>`).join(" · ");
+  }
+  // spread
+  const lead = cons.sole&&cons.sole.length ? `<span class="adv-keep">Sole ${esc(cons.sole.join(", "))}</span> — can't be released; spread it:` : `No merge partner; spread via:`;
+  return `<span class="muted" style="font-size:10.5px">${lead}</span><br>`+
+    cons.best.map(x=>`${esc(x.m.name)} ${sx(x.m.sex)} <span class="muted">BST ~${x.bst.toFixed(1)}</span>`).join(" · ");
+}
 function rosterTableHTML(active, sideline, retired){
-  if(rosterCollapsed===null) rosterCollapsed=new Set(["genes","appear"]);   // compact default: Quick view + Stats open
+  if(rosterCollapsed===null) rosterCollapsed=new Set(["genes","appear"]);   // compact default: Advice + Quick view + Stats open
   if(rosterSecCollapsed===null) rosterSecCollapsed=new Set();     // sideline + retired shown by default; each row is collapsible
   const groups=rosterGroups();
+  const allCats=active.concat(sideline, retired);
+  const rrMap={}; retirementRanking(active,{abilityOnly:false}).forEach(r=>rrMap[r.id]=r);
+  const advMap={}, consMap={}; allCats.forEach(c=>{ advMap[c.id]=nichelingAdvice(c, allCats, rrMap); consMap[c.id]=consolidationAdvice(c, allCats); });
+  const sortVal=(c)=> rosterSort.key==="advice" ? (ADVICE_RANK[(advMap[c.id]||{}).action] ?? 9) : rosterSortVal(c, rosterSort.key);
+  const sortCats=arr=>arr.slice().sort((a,b)=>{ const va=sortVal(a), vb=sortVal(b);
+    let cmp=(typeof va==="string")?va.localeCompare(vb):(va-vb); if(!cmp) cmp=(a.name||"").localeCompare(b.name||""); return cmp*rosterSort.dir; });
   const totalCols = 1 + groups.reduce((s,g)=>s+(rosterCollapsed.has(g.key)?1:g.cols.length),0) + 1;
   const arr=k=>rosterSort.key!==k?`<span class="arr">↕</span>`:`<span class="arr">${rosterSort.dir>0?"↑":"↓"}</span>`;
   const aria=k=>rosterSort.key===k?(rosterSort.dir>0?"ascending":"descending"):"none";
@@ -3578,17 +3680,23 @@ function rosterTableHTML(active, sideline, retired){
         const chips=ABILITIES.map(a=>chip("ab:"+a, esc(AB_SHORT[a]), "Sort by "+a)).join("")
           + chip("total","Σ","Sort by total ability bonuses") + chip("mut","✦","Sort by total mutation bonus");
         h2+=`<th class="dualh${gs}" title="Sort by any stat"><div class="dhname">${esc(col.label)}</div><div class="dsorts qvsorts">${chips}</div></th>`;
+      } else if(col.kind==="advtype"){ h2+=`<th class="num${gs}" data-sortk="advice" aria-sort="${aria("advice")}" title="Sort by recommendation">${esc(col.label)} ${arr("advice")}</th>`;
+      } else if(col.kind==="advwhy"||col.kind==="advcons"){ h2+=`<th class="advh${gs}">${esc(col.label)}</th>`;
       } else { h2+=`<th class="num${gs}" data-sortk="${col.sortk}" aria-sort="${aria(col.sortk)}" title="Sort by ${esc(col.title)}">${esc(col.label)} ${arr(col.sortk)}</th>`; }
     });
   });
   h1+=`<th rowspan="2">Actions</th>`;
-  const cellsFor=c=>{ let row=`<td class="nmc" data-id="${c.id}">${esc(c.name)} <span class="muted" style="font-weight:400">${c.sex==="F"?"♀":c.sex==="M"?"♂":""}</span></td>`;
+  const stt=c=>c.status==="sideline"?` <span class="stt">· sideline</span>`:c.status==="retired"?` <span class="stt">· retired</span>`:"";
+  const cellsFor=c=>{ let row=`<td class="nmc" data-id="${c.id}">${esc(c.name)} <span class="muted" style="font-weight:400">${c.sex==="F"?"♀":c.sex==="M"?"♂":""}</span>${stt(c)}</td>`;
     groups.forEach(g=>{
       if(rosterCollapsed.has(g.key)){ row+=`<td class="strip" data-grp="${g.key}" title="Expand ${esc(g.label)}">▸</td>`; return; }
       g.cols.forEach((col,ci)=>{ const gs=ci===0?" grp-start":"";
         if(col.kind==="gene"){ const p=genePairParts(col.gene, (c.geno||{})[col.gene.key]);
           row+=`<td class="gcell${gs}"><span class="g-dom${p.homo?" g-homo":""}">${esc(p.dom)}</span><span class="g-rec">${p.homo?"〃":esc(p.rec)}</span></td>`;
         } else if(col.kind==="qv"){ row+=`<td class="qv${gs}">${qvCell(c)}</td>`; }
+        else if(col.kind==="advtype"){ const m=ADV_META[(advMap[c.id]||{}).action]||ADV_META.keep; row+=`<td class="advtype${gs}"><span class="${m.cls}">${m.label}</span></td>`; }
+        else if(col.kind==="advwhy"){ row+=`<td class="advwhy${gs}">${esc((advMap[c.id]||{}).reason||"")}</td>`; }
+        else if(col.kind==="advcons"){ row+=`<td class="advcons${gs}">${consCellHTML(consMap[c.id])}</td>`; }
         else { const v=rosterSortVal(c, col.sortk); row+=`<td class="num${gs}">${v?esc(String(v)):"·"}</td>`; }
       });
     });
@@ -3601,24 +3709,27 @@ function rosterTableHTML(active, sideline, retired){
     unretire:c=>`<button class="btn sm gray unretire" data-id="${c.id}" title="Bring back">↩︎</button>`,
     del:c=>`<button class="btn sm gray del" data-id="${c.id}" title="Delete">🗑</button>` };
   const actFor=(c,status)=>(status==="sideline"?[B.edit,B.tribe,B.del]:status==="retired"?[B.unretire,B.del]:[B.edit,B.clone,B.toSide,B.retire1,B.del]).map(f=>f(c)).join("");
-  const adviceRow=c=>{ const adv=sidelineAdvice(c, active);
-    const tag=adv.action==="add"?`<span class="adv-add">➕ Add to tribe</span>`:adv.action==="release"?`<span class="adv-rel">🕊️ Release</span>`:`<span class="adv-sex">⚲ Set sex</span>`;
-    return `<tr class="advrow"><td colspan="${totalCols}"><span class="sideadvice">${tag} — ${esc(adv.reason)}</span></td></tr>`; };
-  const dataRow=(c,status)=>`<tr class="drow" data-status="${status}">${cellsFor(c)}<td class="rowact">${actFor(c,status)}</td></tr>`+(status==="sideline"?adviceRow(c):"");
+  const dataRow=(c,status)=>`<tr class="drow" data-status="${status}">${cellsFor(c)}<td class="rowact">${actFor(c,status)}</td></tr>`;
   const secRow=(key,label,n)=>`<tr class="secrow" data-sec="${key}"><td colspan="${totalCols}">${rosterSecCollapsed.has(key)?"▸":"▾"} ${esc(label)} (${n})</td></tr>`;
-  let body=rosterSortCats(active).map(c=>dataRow(c,"active")).join("");
-  if(sideline&&sideline.length){ body+=secRow("sideline","🪑 Sidelines · not in the tribe, but breedable",sideline.length);
-    if(!rosterSecCollapsed.has("sideline")) body+=rosterSortCats(sideline).map(c=>dataRow(c,"sideline")).join(""); }
-  if(retired&&retired.length){ body+=secRow("retired","🗂 Retired · archived (kept out of breeding)",retired.length);
-    if(!rosterSecCollapsed.has("retired")) body+=rosterSortCats(retired).map(c=>dataRow(c,"retired")).join(""); }
-  return `<div class="rtbl"><table><thead><tr>${h1}</tr><tr>${h2}</tr></thead><tbody>${body}</tbody></table></div>`
-    +`<p class="muted" style="font-size:11px;margin:6px 2px 0">Click a group header (Quick view · Stats · Genes · Appearance) to collapse its columns; click any column/chip to sort. Gene cells stack the dominant allele on top, recessive below (〃 = homozygous). Sidelines &amp; Retired sit in their own collapsible rows.</p>`;
+  let body;
+  if(rosterIgnoreSec){ body=sortCats(allCats).map(c=>dataRow(c,c.status)).join(""); }
+  else {
+    body=sortCats(active).map(c=>dataRow(c,"active")).join("");
+    if(sideline.length){ body+=secRow("sideline","🪑 Sidelines · not in the tribe, but breedable",sideline.length);
+      if(!rosterSecCollapsed.has("sideline")) body+=sortCats(sideline).map(c=>dataRow(c,"sideline")).join(""); }
+    if(retired.length){ body+=secRow("retired","🗂 Retired · archived (kept out of breeding)",retired.length);
+      if(!rosterSecCollapsed.has("retired")) body+=sortCats(retired).map(c=>dataRow(c,"retired")).join(""); }
+  }
+  const toggle=`<div class="row" style="gap:10px;align-items:center;margin-top:8px"><label class="row" style="gap:6px;font-size:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="rIgnoreSec" ${rosterIgnoreSec?"checked":""}> Ignore sections (sort the whole roster as one list)</label></div>`;
+  return toggle+`<div class="rtbl"><table><thead><tr>${h1}</tr><tr>${h2}</tr></thead><tbody>${body}</tbody></table></div>`
+    +`<p class="muted" style="font-size:11px;margin:6px 2px 0">Advice: <b>Keep/Retire/Release/Add</b> (sortable) · why · consolidation partners. Click a group header to collapse its columns; click any column/chip to sort. Gene cells stack the dominant allele on top, recessive below (〃 = homozygous).</p>`;
 }
 function wireRosterTable(){
   $$("#view-nichelings .rtbl [data-grp]").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const k=el.dataset.grp;
     if(rosterCollapsed.has(k)) rosterCollapsed.delete(k); else rosterCollapsed.add(k); renderNichelings(); });
   $$("#view-nichelings .rtbl [data-sec]").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const k=el.dataset.sec;
     if(rosterSecCollapsed.has(k)) rosterSecCollapsed.delete(k); else rosterSecCollapsed.add(k); renderNichelings(); });
+  { const ig=$("#view-nichelings #rIgnoreSec"); if(ig) ig.onchange=e=>{ rosterIgnoreSec=e.target.checked; renderNichelings(); }; }
   $$("#view-nichelings .rtbl [data-sortk]").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const k=el.dataset.sortk;
     if(rosterSort.key===k) rosterSort.dir=-rosterSort.dir;
     else rosterSort={key:k, dir:(k==="name"||k.slice(0,4)==="dom:"||k.slice(0,4)==="rec:")?1:-1};
@@ -4289,7 +4400,7 @@ if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILIT
   baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catContribs,coveredBy,coveringSet,
   holdings,holdCovers,holdKeyCovers,holdValue,holdLabel,UNDESIRABLE,
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS,geneFeasible,targetPlan,mutInRange,targetBaseLabel,
-  mutBonus,statTotal,sidelineAdvice,genePairParts};
+  mutBonus,statTotal,sidelineAdvice,genePairParts,offspringBST,soleAlleleLabels,offspringCoversUnionProb,nichelingAdvice,consolidationAdvice,ADVICE_RANK};
 
 /* ---- boot (only in a real browser) ---- */
 /* =========================================================================
