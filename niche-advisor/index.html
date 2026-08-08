@@ -116,6 +116,11 @@
   #view-nichelings .rtbl td.qv{white-space:normal;min-width:220px;max-width:340px;line-height:1.5}
   #view-nichelings .rtbl td.rowact{white-space:nowrap;text-align:right}
   #view-nichelings .rtbl td.rowact button{margin:0 1px;padding:2px 6px}
+  #view-nichelings .rtbl th.dualh .dsorts.qvsorts{flex-wrap:wrap;max-width:300px}
+  #view-nichelings .rtbl tr.secrow td{background:var(--brand-soft);color:var(--brand-ink);font-weight:800;cursor:pointer;border-top:2px solid var(--line);white-space:normal}
+  #view-nichelings .rtbl tr.secrow td:hover{background:var(--brand);color:#fff}
+  #view-nichelings .rtbl tr.advrow td{background:var(--bg2);padding:2px 8px 6px;white-space:normal}
+  #view-nichelings .rtbl tr.advrow .sideadvice{margin:0}
   #view-nichelings .sideadvice{font-size:11.5px;margin-top:3px;line-height:1.4}
   #view-nichelings .sideadvice .adv-add{color:var(--brand-ink);font-weight:800}
   #view-nichelings .sideadvice .adv-rel{color:var(--warn);font-weight:800}
@@ -3467,7 +3472,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const groupCls=g=>g==="body"?"grp-body":g==="color"?"grp-color":"grp-pattern";
 let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeSideline:true,includeRetired:false};
-let rosterSort={key:"name",dir:1}, rosterCollapsed=null;   // roster table: sort col/dir + collapsed group keys (null → default)
+let rosterSort={key:"name",dir:1}, rosterCollapsed=null, rosterSecCollapsed=null;   // roster table: sort col/dir + collapsed column-group keys + collapsed status-section keys (sideline/retired)
 /* unified breeding finder state — a query builder (persists across re-renders):
    breedConds: [{gene, base, mutMin:num|null, mutMax:num|null, inherit:'carry'|'show', zyg:'either'|'homo'|'hetero'}]
      one target condition per allele; each selected gene type gets its own section of these rows.
@@ -3551,14 +3556,16 @@ function rosterGroups(){
     {key:"appear", label:"Appearance", cols: appr.map(g=>({kind:"gene", gene:g, label:g.label}))},
   ];
 }
-function rosterTableHTML(cats){
+const rosterSortCats=cats=>cats.slice().sort((a,b)=>{ const va=rosterSortVal(a,rosterSort.key), vb=rosterSortVal(b,rosterSort.key);
+  let cmp=(typeof va==="string")?va.localeCompare(vb):(va-vb); if(!cmp) cmp=(a.name||"").localeCompare(b.name||""); return cmp*rosterSort.dir; });
+function rosterTableHTML(active, sideline, retired){
   if(rosterCollapsed===null) rosterCollapsed=new Set(["genes","appear"]);   // compact default: Quick view + Stats open
+  if(rosterSecCollapsed===null) rosterSecCollapsed=new Set();     // sideline + retired shown by default; each row is collapsible
   const groups=rosterGroups();
-  const sorted=cats.slice().sort((a,b)=>{ const va=rosterSortVal(a,rosterSort.key), vb=rosterSortVal(b,rosterSort.key);
-    let cmp = (typeof va==="string") ? va.localeCompare(vb) : (va-vb);
-    if(!cmp) cmp=(a.name||"").localeCompare(b.name||""); return cmp*rosterSort.dir; });
+  const totalCols = 1 + groups.reduce((s,g)=>s+(rosterCollapsed.has(g.key)?1:g.cols.length),0) + 1;
   const arr=k=>rosterSort.key!==k?`<span class="arr">↕</span>`:`<span class="arr">${rosterSort.dir>0?"↑":"↓"}</span>`;
   const aria=k=>rosterSort.key===k?(rosterSort.dir>0?"ascending":"descending"):"none";
+  const chip=(k,label,title)=>`<span class="dsort" data-sortk="${k}" aria-sort="${aria(k)}" title="${esc(title)}">${label} ${arr(k)}</span>`;
   let h1=`<th class="nmc" rowspan="2" data-sortk="name" aria-sort="${aria("name")}" title="Sort by name">Name ${arr("name")}</th>`, h2="";
   groups.forEach(g=>{
     if(rosterCollapsed.has(g.key)){ h1+=`<th class="grp collapsed" rowspan="2" data-grp="${g.key}" title="Expand ${esc(g.label)}">${esc(g.label)}</th>`; return; }
@@ -3566,15 +3573,16 @@ function rosterTableHTML(cats){
     g.cols.forEach((col,ci)=>{ const gs=ci===0?" grp-start":"";
       if(col.kind==="gene"){ const gk=col.gene.key;
         h2+=`<th class="dualh${gs}" title="${esc(col.gene.label)}"><div class="dhname">${esc(col.label)}</div><div class="dsorts">`+
-          `<span class="dsort" data-sortk="dom:${gk}" aria-sort="${aria("dom:"+gk)}" title="Sort by dominant allele">Dom ${arr("dom:"+gk)}</span>`+
-          `<span class="dsort" data-sortk="rec:${gk}" aria-sort="${aria("rec:"+gk)}" title="Sort by recessive allele">Rec ${arr("rec:"+gk)}</span></div></th>`;
-      } else if(col.kind==="qv"){ h2+=`<th class="${gs}" data-sortk="total" aria-sort="${aria("total")}" title="Sort by total ability bonuses">${esc(col.label)} ${arr("total")}</th>`;
+          chip("dom:"+gk,"Dom","Sort by dominant allele")+chip("rec:"+gk,"Rec","Sort by recessive allele")+`</div></th>`;
+      } else if(col.kind==="qv"){   // Quick view header = sort chips for every stat + Σ total + ✦ mutation sum
+        const chips=ABILITIES.map(a=>chip("ab:"+a, esc(AB_SHORT[a]), "Sort by "+a)).join("")
+          + chip("total","Σ","Sort by total ability bonuses") + chip("mut","✦","Sort by total mutation bonus");
+        h2+=`<th class="dualh${gs}" title="Sort by any stat"><div class="dhname">${esc(col.label)}</div><div class="dsorts qvsorts">${chips}</div></th>`;
       } else { h2+=`<th class="num${gs}" data-sortk="${col.sortk}" aria-sort="${aria(col.sortk)}" title="Sort by ${esc(col.title)}">${esc(col.label)} ${arr(col.sortk)}</th>`; }
     });
   });
   h1+=`<th rowspan="2">Actions</th>`;
-  const body=sorted.map(c=>{
-    let row=`<td class="nmc" data-id="${c.id}">${esc(c.name)} <span class="muted" style="font-weight:400">${c.sex==="F"?"♀":c.sex==="M"?"♂":""}</span></td>`;
+  const cellsFor=c=>{ let row=`<td class="nmc" data-id="${c.id}">${esc(c.name)} <span class="muted" style="font-weight:400">${c.sex==="F"?"♀":c.sex==="M"?"♂":""}</span></td>`;
     groups.forEach(g=>{
       if(rosterCollapsed.has(g.key)){ row+=`<td class="strip" data-grp="${g.key}" title="Expand ${esc(g.label)}">▸</td>`; return; }
       g.cols.forEach((col,ci)=>{ const gs=ci===0?" grp-start":"";
@@ -3584,20 +3592,33 @@ function rosterTableHTML(cats){
         else { const v=rosterSortVal(c, col.sortk); row+=`<td class="num${gs}">${v?esc(String(v)):"·"}</td>`; }
       });
     });
-    row+=`<td class="rowact">`+
-      `<button class="btn sm gray edit" data-id="${c.id}" title="Edit">✏️</button>`+
-      `<button class="btn sm gray clone" data-id="${c.id}" title="Duplicate">⧉</button>`+
-      `<button class="btn sm gray toSide" data-id="${c.id}" title="Move to sidelines">🪑</button>`+
-      `<button class="btn sm gray retire1" data-id="${c.id}" title="Retire">🗂</button>`+
-      `<button class="btn sm gray del" data-id="${c.id}" title="Delete">🗑</button></td>`;
-    return `<tr>${row}</tr>`;
-  }).join("");
+    return row; };
+  const B={ edit:c=>`<button class="btn sm gray edit" data-id="${c.id}" title="Edit">✏️</button>`,
+    clone:c=>`<button class="btn sm gray clone" data-id="${c.id}" title="Duplicate">⧉</button>`,
+    toSide:c=>`<button class="btn sm gray toSide" data-id="${c.id}" title="Move to sidelines">🪑</button>`,
+    retire1:c=>`<button class="btn sm gray retire1" data-id="${c.id}" title="Retire">🗂</button>`,
+    tribe:c=>`<button class="btn sm gray tribe" data-id="${c.id}" title="Add to tribe">➕</button>`,
+    unretire:c=>`<button class="btn sm gray unretire" data-id="${c.id}" title="Bring back">↩︎</button>`,
+    del:c=>`<button class="btn sm gray del" data-id="${c.id}" title="Delete">🗑</button>` };
+  const actFor=(c,status)=>(status==="sideline"?[B.edit,B.tribe,B.del]:status==="retired"?[B.unretire,B.del]:[B.edit,B.clone,B.toSide,B.retire1,B.del]).map(f=>f(c)).join("");
+  const adviceRow=c=>{ const adv=sidelineAdvice(c, active);
+    const tag=adv.action==="add"?`<span class="adv-add">➕ Add to tribe</span>`:adv.action==="release"?`<span class="adv-rel">🕊️ Release</span>`:`<span class="adv-sex">⚲ Set sex</span>`;
+    return `<tr class="advrow"><td colspan="${totalCols}"><span class="sideadvice">${tag} — ${esc(adv.reason)}</span></td></tr>`; };
+  const dataRow=(c,status)=>`<tr class="drow" data-status="${status}">${cellsFor(c)}<td class="rowact">${actFor(c,status)}</td></tr>`+(status==="sideline"?adviceRow(c):"");
+  const secRow=(key,label,n)=>`<tr class="secrow" data-sec="${key}"><td colspan="${totalCols}">${rosterSecCollapsed.has(key)?"▸":"▾"} ${esc(label)} (${n})</td></tr>`;
+  let body=rosterSortCats(active).map(c=>dataRow(c,"active")).join("");
+  if(sideline&&sideline.length){ body+=secRow("sideline","🪑 Sidelines · not in the tribe, but breedable",sideline.length);
+    if(!rosterSecCollapsed.has("sideline")) body+=rosterSortCats(sideline).map(c=>dataRow(c,"sideline")).join(""); }
+  if(retired&&retired.length){ body+=secRow("retired","🗂 Retired · archived (kept out of breeding)",retired.length);
+    if(!rosterSecCollapsed.has("retired")) body+=rosterSortCats(retired).map(c=>dataRow(c,"retired")).join(""); }
   return `<div class="rtbl"><table><thead><tr>${h1}</tr><tr>${h2}</tr></thead><tbody>${body}</tbody></table></div>`
-    +`<p class="muted" style="font-size:11px;margin:6px 2px 0">Click a group header (Quick view · Stats · Genes · Appearance) to collapse it; click a column to sort. Gene cells show the dominant allele on top, recessive below (〃 = homozygous).</p>`;
+    +`<p class="muted" style="font-size:11px;margin:6px 2px 0">Click a group header (Quick view · Stats · Genes · Appearance) to collapse its columns; click any column/chip to sort. Gene cells stack the dominant allele on top, recessive below (〃 = homozygous). Sidelines &amp; Retired sit in their own collapsible rows.</p>`;
 }
 function wireRosterTable(){
   $$("#view-nichelings .rtbl [data-grp]").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const k=el.dataset.grp;
     if(rosterCollapsed.has(k)) rosterCollapsed.delete(k); else rosterCollapsed.add(k); renderNichelings(); });
+  $$("#view-nichelings .rtbl [data-sec]").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const k=el.dataset.sec;
+    if(rosterSecCollapsed.has(k)) rosterSecCollapsed.delete(k); else rosterSecCollapsed.add(k); renderNichelings(); });
   $$("#view-nichelings .rtbl [data-sortk]").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const k=el.dataset.sortk;
     if(rosterSort.key===k) rosterSort.dir=-rosterSort.dir;
     else rosterSort={key:k, dir:(k==="name"||k.slice(0,4)==="dom:"||k.slice(0,4)==="rec:")?1:-1};
@@ -3623,33 +3644,7 @@ function renderNichelings(){
   else if(!active.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings in your tribe yet — add one, bring one back from <b>Retired</b>, or <b>Add to tribe</b> a <b>Sideline</b> one below.</p>`;
   html+=`</div>`;
   html+=`<div id="editor"></div>`;   // editor sits above the table, so a just-added nicheling's form is right at the top
-  if(active.length) html+=rosterTableHTML(active);
-  if(sideline.length){
-    html+=`<details class="sideline-box" open><summary>🪑 Sidelines <span class="muted" style="font-weight:400;font-size:13px">(not in tribe · ${sideline.length})</span></summary>
-      <p class="muted" style="font-size:12px;margin:8px 0 10px">Not in your tribe yet, but <b>available everywhere for breeding</b> (parents, finders, best-mate). Record their genes; hit <b>Add to tribe</b> when you take one in.</p>
-      <div class="nlist">`+sideline.slice().reverse().map(c=>{ const adv=sidelineAdvice(c, active);
-        const advTag = adv.action==="add"?`<span class="adv-add">➕ Add to tribe</span>`
-          : adv.action==="release"?`<span class="adv-rel">🕊️ Release</span>`
-          : `<span class="adv-sex">⚲ Set sex</span>`;
-        return `<div class="nrow" data-id="${c.id}">
-        <div class="grow"><div class="nm">${esc(c.name)} <span class="muted" style="font-weight:400">${glyph(c)}</span></div>
-          <div class="ab">${abLine(c)}</div>
-          <div class="sideadvice">${advTag} — ${esc(adv.reason)}</div></div>
-        <button class="btn sm gray edit" data-id="${c.id}">✏️ Edit</button>
-        <button class="btn sm gray tribe" data-id="${c.id}">➕ Add to tribe</button>
-        <button class="btn sm gray del" data-id="${c.id}" title="Delete">🗑</button>
-      </div>`; }).join("")+`</div></details>`;
-  }
-  if(retired.length){
-    html+=`<details class="retired-box"><summary>🗂 Retired <span class="muted" style="font-weight:400;font-size:13px">(${retired.length})</span></summary>
-      <p class="muted" style="font-size:12px;margin:8px 0 10px">Archived — kept out of breeding by default. Bring one back to use it again, or delete it for good.</p>
-      <div class="nlist">`+retired.slice().reverse().map(c=>`<div class="nrow" data-id="${c.id}">
-        <div class="grow"><div class="nm">${esc(c.name)} <span class="muted" style="font-weight:400">${c.sex==="F"?"♀":c.sex==="M"?"♂":""}</span></div>
-          <div class="ab">${abLine(c)}</div></div>
-        <button class="btn sm gray unretire" data-id="${c.id}">↩︎ Bring back</button>
-        <button class="btn sm gray del" data-id="${c.id}" title="Delete permanently">🗑</button>
-      </div>`).join("")+`</div></details>`;
-  }
+  if(DB.cats.length) html+=rosterTableHTML(active, sideline, retired);
   v.innerHTML=html;
   wireRosterTable();
   $("#addCat").onclick=()=>{ const c=newCat(); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); };
