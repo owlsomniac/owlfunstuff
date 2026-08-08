@@ -4069,13 +4069,23 @@ function targetPlan(pool, byGene){
   // each intermediate kept pup must be the sex the NEXT cross needs (opposite of that partner's sex)
   steps.forEach((s,i)=>{ const nx=steps[i+1]; s.keepPupSex = nx ? (nx.partnerSex==="F"?"M":"F") : null; });
   const covered=[...all].every(k=>line.has(k));
-  // A homozygous cross is needed when the target explicitly wants two copies (zyg 'homo'), or when it's a
-  // RECESSIVE linear allele 'shown' (the most-dominant linear allele and any incomplete/blend allele
-  // already show from a single copy).
-  const homo=conds.filter(c=>{ const g=GENE_BY_KEY[c.gene]; if(!g) return false;
-      if((c.zyg||"either")==="homo") return true;
-      return c.inherit==="show" && g.mode==="linear" && (g.domRank[c.base]||0)>0; })
-    .map(c=>{ const g=GENE_BY_KEY[c.gene], al=g.alleles.find(a=>a.k===c.base); return (al?al.name:c.base); });
+  // When a homozygous cross is worth calling out, classified so the advice is worded correctly:
+  //   'homo'   — the target explicitly asks for two copies (any allele/gene, dominant or not).
+  //   'recabs' — a linear allele SHOWN that is the MOST recessive in its gene: nothing masks-proof but
+  //              homozygosity, so it truly needs two copies.
+  //   'recmid' — a linear allele SHOWN that is recessive but not the most recessive: a more-dominant
+  //              allele can still mask it, so homozygosity is the reliable route (it can also show
+  //              heterozygous opposite a more-recessive allele).
+  // Excluded (single copy already suffices, or the ask is one copy): the most-DOMINANT linear allele,
+  //   any allele on an incomplete/blend gene, a 'carry' target, and any zyg:'hetero' target.
+  const homo=conds.map(c=>{ const g=GENE_BY_KEY[c.gene]; if(!g) return null;
+      const al=g.alleles.find(a=>a.k===c.base), nm=al?al.name:c.base, zyg=c.zyg||"either";
+      if(zyg==="homo") return {name:nm, kind:"homo"};
+      if(zyg==="hetero") return null;                                  // explicitly one copy — never advise homozygous
+      if(c.inherit!=="show" || g.mode!=="linear") return null;         // carry, or incomplete blend → one copy shows
+      const r=g.domRank[c.base]; if(r==null || r<=0) return null;      // most-dominant linear allele shows from one copy
+      return {name:nm, kind: r>=g.alleles.length-1 ? "recabs" : "recmid"};
+    }).filter(Boolean);
   return {ok:true, steps, covered, seed:{name:seed.name,sex:seed.sex}, homo, all:[...all], line:[...line], impossible};
 }
 function targetPlanHTML(pool, byGene, geneKeys){
@@ -4104,7 +4114,12 @@ function targetPlanHTML(pool, byGene, geneKeys){
     return `<div style="margin:0 0 6px"><div style="font-weight:600;font-size:13px">Gen ${i+1}: ${left} × ${esc(s.partner)} ${sx(s.partnerSex)}</div>
       <div class="muted" style="font-size:12px">keep a pup that inherits ${esc(s.adds.join(", "))}${keep}</div></div>`; }).join("");
   if(!plan.covered) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Couldn't chain every target through opposite-sex carriers — recruit or breed a bridging mate to reach the rest.</p>`;
-  if(plan.homo.length) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">To <b>show</b> ${esc(plan.homo.join(", "))} (recessive needs two copies), finish by crossing two carriers and keeping a pup that inherited it from <b>both</b> parents.</p>`;
+  if(plan.homo && plan.homo.length){ const hz="finish by crossing two carriers and keeping a pup that inherited it from <b>both</b> parents";
+    const by=k=>plan.homo.filter(h=>h.kind===k).map(h=>esc(h.name));
+    const recabs=by("recabs"), recmid=by("recmid"), homoT=by("homo");
+    if(recabs.length) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">To <b>show</b> ${recabs.join(", ")} (the most recessive allele of its gene — needs two copies), ${hz}.</p>`;
+    if(recmid.length) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">To reliably <b>show</b> ${recmid.join(", ")} (recessive — a more-dominant allele masks it), make it homozygous: ${hz} (or pair with a more-recessive mate).</p>`;
+    if(homoT.length) html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">For <b>homozygous</b> ${homoT.join(", ")} (two copies), ${hz}.</p>`; }
   html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Each cross is ♀×♂ and luck-based — a parent passes only one of its two alleles, so keep the pup that got the target (and the sex the next step needs), then breed that.</p>`;
   return html;
 }
