@@ -3397,13 +3397,16 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 const groupCls=g=>g==="body"?"grp-body":g==="color"?"grp-color":"grp-pattern";
 let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeSideline:true,includeRetired:false};
 /* unified breeding finder state — a query builder (persists across re-renders):
-   breedConds: [{gene, base, mut:'any'|'yes'|'no', inherit:'carry'|'show'|'any'}] target conditions
-   breedGenesSel: Set of gene keys chosen (populates the grouped allele picker)
-   breedGeneMode/breedAlleleMode: 'all'|'any' (across genes / within a gene)
+   breedConds: [{gene, base, mutMin:num|null, mutMax:num|null, inherit:'carry'|'show', zyg:'either'|'homo'|'hetero'}]
+     one target condition per allele; each selected gene type gets its own section of these rows.
+   breedGenesSel: Set of gene keys chosen (each shows an allele-target section)
+   breedGeneMode: 'all'|'any' across gene types (global)
+   breedAlleleModeByGene: { geneKey: 'all'|'any' } — how a gene's own allele rows combine (per section)
    breedOpt: Set of optimise keys (ability names + '__mut'); null → all abilities
    breedMode: 'real'|'plan'|'both' (single-gen pairings / multi-gen plan / both)
    breedMin/breedMax: { statKey: number } per-stat filters on the pup's expected value ('__mut' = mutation) */
-let breedConds=[], breedGenesSel=null, breedGeneMode="all", breedAlleleMode="all", breedOpt=null, breedMode="real", breedMin={}, breedMax={}, breedWho="__any";
+let breedConds=[], breedGenesSel=null, breedGeneMode="all", breedAlleleModeByGene={}, breedOpt=null, breedMode="real", breedMin={}, breedMax={}, breedWho="__any";
+const amode=gk=>breedAlleleModeByGene[gk]||"all";
 /* A nicheling's status: "active" (in your tribe), "sideline" (not in the tribe yet but kept on the
    bench — available for breeding), or "retired" (archived — can be brought back). Active is always in
    the breeding pool; sideline is in by default (toggle on) and retired is out by default (toggle off). */
@@ -3640,16 +3643,9 @@ function renderBreeding(){
     <h3 style="font-size:12px;color:var(--muted);margin:14px 0 4px">TARGET TRAITS</h3>
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center"><span class="muted" style="font-size:11.5px">Gene type:</span>${GENES.map(geneChip).join("")}
       <span class="muted" style="font-size:11.5px;margin-left:6px">match across gene types:</span>${seg("bGeneMode",breedGeneMode,[["all","All"],["any","Any"]])}</div>
-    <div class="row" style="margin-top:8px;align-items:flex-end;gap:8px;flex-wrap:wrap">
-      <label>Allele <select id="bAllele" multiple size="4" style="min-width:180px"></select></label>
-      <label>Mutation <select id="bMut"><option value="any">Any</option><option value="yes">✦ Yes</option><option value="no">No</option></select></label>
-      <label>Inheritance <select id="bInherit"><option value="carry">Carries</option><option value="show">Shows</option><option value="any">Any</option></select></label>
-      <button class="btn sm gray" id="bAdd">＋ Add allele</button>
-      <span id="bAddHint" class="muted" style="font-size:11px"></span>
-    </div>
-    <div class="row" style="margin-top:8px;gap:8px;align-items:center;flex-wrap:wrap"><span class="muted" style="font-size:11.5px">when one gene type has several targets, match:</span>${seg("bAlleleMode",breedAlleleMode,[["all","All"],["any","Any"]])}</div>
-    <div class="row" style="margin-top:10px"><button class="btn sm" id="bRun">Rank pairings</button></div>
-    <div id="bConds" style="margin-top:8px"></div>
+    <p class="muted" style="font-size:11px;margin:6px 0 0">Pick one or more gene types — each opens a section below. Add one row per allele you want: its ✦ range (blank = any), Carries vs Shows, and zygosity. “＋ Add allele” commits the row and opens a fresh one.</p>
+    <div id="bSections" style="margin-top:6px"></div>
+    <div class="row" style="margin-top:10px;gap:8px"><button class="btn sm" id="bRun">Rank pairings</button><button class="btn sm gray" id="bClearT">Clear all targets</button></div>
 
     <h3 style="font-size:12px;color:var(--muted);margin:14px 0 4px">SHOW</h3>
     <div class="row" style="gap:6px">${seg("bMode",breedMode,[["real","Real possibilities"],["plan","Multi-gen plans"],["both","Both"]])}</div>
@@ -3679,25 +3675,17 @@ function renderBreeding(){
   numHandler("oMin",breedMin); numHandler("oMax",breedMax);
   // restrict
   $("#bWho").onchange=e=>{ breedWho=e.target.value==="__any"?"__any":+e.target.value; runBreedSearch(); };
-  // gene chips → repopulate allele picker
-  const fillAlleles=()=>{ const sel=$("#bAllele"); if(!sel) return;
-    const genes=GENES.filter(g=>breedGenesSel.has(g.key));
-    sel.innerHTML = genes.length ? genes.map(g=>`<optgroup label="${esc(g.label)}">`+g.alleles.map(a=>`<option value="${g.key}|${esc(a.k)}">${esc(a.name)}</option>`).join("")+`</optgroup>`).join("")
-      : `<option disabled>Pick a gene category above ↑</option>`; };
-  $$("#view-breeding .bgene").forEach(b=>b.onclick=()=>{ const g=b.dataset.g; if(breedGenesSel.has(g)) breedGenesSel.delete(g); else breedGenesSel.add(g); b.classList.toggle("gray"); fillAlleles(); });
-  fillAlleles();
-  // segmented toggles
+  // gene chips → open/close that gene's target section (deselecting drops its targets)
+  $$("#view-breeding .bgene").forEach(b=>b.onclick=()=>{ const g=b.dataset.g;
+    if(breedGenesSel.has(g)){ breedGenesSel.delete(g); breedConds=breedConds.filter(c=>c.gene!==g); }
+    else breedGenesSel.add(g);
+    b.classList.toggle("gray"); renderTargetSections(); runBreedSearch(); });
+  // segmented toggles (across-gene match + show mode)
   const wireSeg=(cls,set)=>$$("#view-breeding ."+cls).forEach(b=>b.onclick=()=>{ set(b.dataset.v); $$("#view-breeding ."+cls).forEach(x=>x.classList.toggle("gray", x.dataset.v!==b.dataset.v)); runBreedSearch(); });
-  wireSeg("bGeneMode",v2=>breedGeneMode=v2); wireSeg("bAlleleMode",v2=>breedAlleleMode=v2); wireSeg("bMode",v2=>breedMode=v2);
-  // add target
-  $("#bAdd").onclick=()=>{ const sel=$("#bAllele"), chosen=[...sel.selectedOptions].filter(o=>!o.disabled), hint=$("#bAddHint");
-    if(!chosen.length){ if(hint) hint.textContent="Pick a gene type above, highlight one or more alleles, then ＋ Add allele."; return; }
-    if(hint) hint.textContent="";
-    const mut=$("#bMut").value, inherit=$("#bInherit").value;
-    chosen.forEach(o=>{ const [gk,base]=o.value.split("|"); if(!breedConds.some(c=>c.gene===gk&&c.base===base&&c.mut===mut&&c.inherit===inherit)) breedConds.push({gene:gk,base,mut,inherit}); });
-    renderBreedConds(); runBreedSearch(); };
+  wireSeg("bGeneMode",v2=>breedGeneMode=v2); wireSeg("bMode",v2=>breedMode=v2);
   $("#bRun").onclick=runBreedSearch;
-  renderBreedConds();
+  $("#bClearT").onclick=()=>{ breedConds=[]; renderTargetSections(); runBreedSearch(); };
+  renderTargetSections();
   // preview
   $("#selMom").onchange=e=>{ breed.mom=+e.target.value; renderBreedOut(); };
   $("#selDad").onchange=e=>{ breed.dad=+e.target.value; renderBreedOut(); };
@@ -3712,7 +3700,8 @@ function renderBreeding(){
 const canPair=(a,b)=>(a.sex==="F"&&b.sex==="M")||(a.sex==="M"&&b.sex==="F");
 const hasFM=list=>list.some(c=>c.sex==="F")&&list.some(c=>c.sex==="M");
 const needSexMsg='<p class="muted">Pairings need one ♀ and one ♂ — set each nicheling\'s sex in its editor (the ♀/♂ dropdown).</p>';
-const mutOk=(lv,req)=>req==="yes"?lv>0:req==="no"?lv===0:true;
+const mutOk=(lv,req)=>req==="yes"?lv>0:req==="no"?lv===0:true;   // legacy yes/no helper (still used by a few call sites)
+const mutInRange=(lv,cond)=>(cond.mutMin==null||lv>=cond.mutMin)&&(cond.mutMax==null||lv<=cond.mutMax);  // ✦ level within [min,max]; blank = open
 
 function offspringCarryProb(gene, momPair, dadPair, alleleBase){
   const gd=offspringGenotypeDist(momPair&&momPair.length?momPair:[gene.alleles[0].k,gene.alleles[0].k], dadPair&&dadPair.length?dadPair:[gene.alleles[0].k,gene.alleles[0].k]);
@@ -3730,11 +3719,19 @@ function offspringMutExpected(momGeno, dadGeno){
       const lvl = ex.kind==="single" ? mutLevel(ex.allele) : Math.max(...ex.alleles.map(mutLevel));
       e+=gd[key]*lvl; } }); return e;
 }
-/* does one offspring genotype (two full allele strings) satisfy a target condition? */
+/* Does one offspring genotype (two full allele strings) satisfy a target condition?
+   cond = {base, mutMin, mutMax, inherit:'carry'|'show', zyg:'either'|'homo'|'hetero'}.
+   Zygosity counts how many of the two slots are the target allele (within the ✦ range);
+   inheritance 'show' additionally requires the target to be the EXPRESSED phenotype. */
 function condSatisfied(gene, copies, cond){
+  const cnt=copies.filter(a=>baseK(a)===cond.base && mutInRange(mutLevel(a),cond)).length;
+  const zyg=cond.zyg||"either";
+  if(zyg==="homo"){ if(cnt<2) return false; }        // both slots are the target
+  else if(zyg==="hetero"){ if(cnt!==1) return false; } // exactly one slot
+  else { if(cnt<1) return false; }                    // either → at least one
   if(cond.inherit==="show"){ const ex=expressGene(gene, copies); const shown = ex.kind==="single"?[ex.allele]:ex.alleles;
-    return shown.some(a=>baseK(a)===cond.base && mutOk(mutLevel(a),cond.mut)); }
-  return copies.some(a=>baseK(a)===cond.base && mutOk(mutLevel(a),cond.mut));   // carry / any → ≥1 copy
+    return shown.some(a=>baseK(a)===cond.base && mutInRange(mutLevel(a),cond)); }
+  return true;   // carry → zygosity/count already satisfied
 }
 /* P(a pup meets [all|any of] a gene's target conditions), from the pairing's genotype distribution for that gene. */
 function geneConditionProb(gene, momPair, dadPair, conds, mode){
@@ -3747,19 +3744,59 @@ function geneConditionProb(gene, momPair, dadPair, conds, mode){
   return p;
 }
 
-function condLabel(c){ const g=GENE_BY_KEY[c.gene], al=g&&g.alleles.find(a=>a.k===c.base);
-  const nm=al?al.name:c.base, m=c.mut==="yes"?" ✦":c.mut==="no"?" (no ✦)":"", inh=c.inherit==="show"?" shown":c.inherit==="any"?"":" carried";
-  return `${esc(nm)}${m}${inh}`; }
-function renderBreedConds(){
-  const el=$("#bConds"); if(!el) return;
-  if(!breedConds.length){ el.innerHTML=`<span class="muted" style="font-size:12px">No targets — ranks every pairing by your Optimise picks. Add gene + allele targets above to require specific traits.</span>`; return; }
-  const byGene={}; breedConds.forEach((c,i)=>{ (byGene[c.gene]||(byGene[c.gene]=[])).push({c,i}); });
-  el.innerHTML=Object.keys(byGene).map(gk=>{ const g=GENE_BY_KEY[gk];
-    return `<div style="margin:2px 0"><span class="muted" style="font-size:11px">${esc(g.label)}:</span> `+
-      byGene[gk].map(x=>`<span class="pill">${condLabel(x.c)} <a href="#" data-rm="${x.i}" style="text-decoration:none;color:var(--warn)">✕</a></span>`).join("")+`</div>`;
-  }).join("")+`<button class="btn sm gray" id="bClear" style="margin-top:4px">Clear targets</button>`;
-  $$("#bConds [data-rm]").forEach(a=>a.onclick=e=>{ e.preventDefault(); breedConds.splice(+a.dataset.rm,1); renderBreedConds(); runBreedSearch(); });
-  if($("#bClear")) $("#bClear").onclick=()=>{ breedConds=[]; renderBreedConds(); runBreedSearch(); };
+/* Per-gene-type target sections: one appears for each selected gene type, holding a stack of allele-target
+   rows (allele + ✦min/max + Carries/Shows + zygosity), a per-section All/Any, and a trailing "＋ Add" row. */
+const alleleOptions=(g,sel)=>g.alleles.map(a=>`<option value="${esc(a.k)}" ${a.k===sel?"selected":""}>${esc(a.name)}</option>`).join("");
+const INH_OPTS=v=>`<option value="carry" ${v==="carry"||v==null?"selected":""}>Carries</option><option value="show" ${v==="show"?"selected":""}>Shows</option>`;
+const ZYG_OPTS=v=>`<option value="either" ${(v||"either")==="either"?"selected":""}>Either</option><option value="homo" ${v==="homo"?"selected":""}>Homozygous</option><option value="hetero" ${v==="hetero"?"selected":""}>Heterozygous</option>`;
+const bMutCells=(minCls,maxCls,c)=>`<span class="muted" style="font-size:11px">✦</span>`+
+  `<input type="number" min="0" class="${minCls}" value="${c&&c.mutMin!=null?c.mutMin:""}" placeholder="min" title="min ✦ (blank = any)" style="width:46px">`+
+  `<input type="number" min="0" class="${maxCls}" value="${c&&c.mutMax!=null?c.mutMax:""}" placeholder="max" title="max ✦ (blank = any)" style="width:46px">`;
+function targetRowHTML(g,c,idx){
+  return `<div class="row brow" data-i="${idx}" style="gap:5px;align-items:center;margin-top:5px;flex-wrap:wrap">
+    <select class="bcAllele" style="min-width:130px">${alleleOptions(g,c.base)}</select>
+    ${bMutCells("bcMin","bcMax",c)}
+    <select class="bcInherit">${INH_OPTS(c.inherit)}</select>
+    <select class="bcZyg">${ZYG_OPTS(c.zyg)}</select>
+    <button class="btn sm gray bcRemove" title="Remove this target">✕</button></div>`;
+}
+function draftRowHTML(g){
+  return `<div class="row bdraft" data-g="${g.key}" style="gap:5px;align-items:center;margin-top:5px;flex-wrap:wrap">
+    <select class="bdAllele" style="min-width:130px">${alleleOptions(g,g.alleles[0].k)}</select>
+    ${bMutCells("bdMin","bdMax",null)}
+    <select class="bdInherit">${INH_OPTS("carry")}</select>
+    <select class="bdZyg">${ZYG_OPTS("either")}</select>
+    <button class="btn sm bdAdd">＋ Add allele</button></div>`;
+}
+const bNum=v=>{ v=(v||"").trim(); if(v==="") return null; const n=parseInt(v,10); return isNaN(n)?null:Math.max(0,n); };
+function renderTargetSections(){
+  const host=$("#bSections"); if(!host) return;
+  const sel=GENES.filter(g=>breedGenesSel && breedGenesSel.has(g.key));
+  if(!sel.length){ host.innerHTML=`<span class="muted" style="font-size:12px">No gene types picked — every pairing is ranked by your Optimise choices. Pick a gene type above to target specific alleles.</span>`; return; }
+  host.innerHTML=sel.map(g=>{
+    const rows=breedConds.map((c,i)=>({c,i})).filter(x=>x.c.gene===g.key);
+    const segBtns=[["all","All"],["any","Any"]].map(([v,l])=>`<button class="btn sm ${amode(g.key)===v?"":"gray"} bAM" data-g="${g.key}" data-v="${v}">${l}</button>`).join("");
+    const matchUI = rows.length>1 ? `<span class="row" style="gap:4px;align-items:center"><span class="muted" style="font-size:11px">match these:</span>${segBtns}</span>` : "";
+    return `<div class="bsection" data-g="${g.key}" style="margin:8px 0;padding:8px;border:1px solid var(--line);border-radius:8px">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><b style="font-size:12.5px">${esc(g.label)} alleles</b>${matchUI}</div>
+      ${rows.map(x=>targetRowHTML(g,x.c,x.i)).join("")}
+      ${draftRowHTML(g)}</div>`;
+  }).join("");
+  $$("#bSections .bAM").forEach(b=>b.onclick=()=>{ breedAlleleModeByGene[b.dataset.g]=b.dataset.v;
+    $$("#bSections .bsection[data-g='"+b.dataset.g+"'] .bAM").forEach(x=>x.classList.toggle("gray", x.dataset.v!==b.dataset.v)); runBreedSearch(); });
+  $$("#bSections .brow").forEach(row=>{ const i=+row.dataset.i;
+    const upd=()=>{ const c=breedConds[i]; if(!c) return; c.base=row.querySelector(".bcAllele").value;
+      c.mutMin=bNum(row.querySelector(".bcMin").value); c.mutMax=bNum(row.querySelector(".bcMax").value);
+      c.inherit=row.querySelector(".bcInherit").value; c.zyg=row.querySelector(".bcZyg").value; runBreedSearch(); };
+    row.querySelectorAll("select").forEach(s=>s.onchange=upd);
+    row.querySelectorAll("input").forEach(inp=>inp.oninput=upd);
+    row.querySelector(".bcRemove").onclick=()=>{ breedConds.splice(i,1); renderTargetSections(); runBreedSearch(); };
+  });
+  $$("#bSections .bdraft").forEach(row=>{ row.querySelector(".bdAdd").onclick=()=>{ const gk=row.dataset.g;
+    breedConds.push({gene:gk, base:row.querySelector(".bdAllele").value,
+      mutMin:bNum(row.querySelector(".bdMin").value), mutMax:bNum(row.querySelector(".bdMax").value),
+      inherit:row.querySelector(".bdInherit").value, zyg:row.querySelector(".bdZyg").value});
+    renderTargetSections(); runBreedSearch(); }; });
 }
 
 function runBreedSearch(){
@@ -3783,7 +3820,7 @@ function runBreedSearch(){
 
   const rows=pairs.map(([a,b])=>{
     let joint=1;
-    if(geneKeys.length){ const per=geneKeys.map(gk=>geneConditionProb(GENE_BY_KEY[gk], a.geno[gk], b.geno[gk], byGene[gk], breedAlleleMode));
+    if(geneKeys.length){ const per=geneKeys.map(gk=>geneConditionProb(GENE_BY_KEY[gk], a.geno[gk], b.geno[gk], byGene[gk], amode(gk)));
       joint = breedGeneMode==="all" ? per.reduce((s,p)=>s*p,1) : 1-per.reduce((s,p)=>s*(1-p),1);
       if(!(joint>0)) return null; }
     const o=offspringAbilityOutlook(a.geno,b.geno), eMut=offspringMutExpected(a.geno,b.geno);
@@ -3823,11 +3860,17 @@ function runBreedSearch(){
 /* Multi-generation plan toward the target: gather every needed allele into one line (greedy, opposite-sex
    crosses), then note the extra homozygous cross a "shown" recessive needs. A rough roadmap — each cross is
    luck-based (keep a pup that inherited the allele). */
+/* Human label for a target allele + its ✦ range, e.g. "Nimble Fingers ✦2–4" / "Bird Beak". */
+function targetBaseLabel(c){ const g=GENE_BY_KEY[c.gene], al=g&&g.alleles.find(a=>a.k===c.base); const nm=al?al.name:c.base;
+  if(c.mutMin==null&&c.mutMax==null) return nm;
+  if(c.mutMin!=null&&c.mutMin===c.mutMax) return nm+" ✦"+c.mutMin;
+  return nm+" ✦"+(c.mutMin!=null?c.mutMin:"")+"–"+(c.mutMax!=null?c.mutMax:""); }
 /* Can ONE diploid genotype (two allele slots) satisfy a gene's target conditions under the given
    within-gene mode? Mirrors condSatisfied/expressGene so it agrees with the Real search: three
    different 'carry' bases on one gene, or two different 'show' bases on a linear gene, are impossible. */
 function geneFeasible(gene, conds, mode){
-  const copies=[]; gene.alleles.forEach(a=>{ copies.push(a.k); copies.push(withMut(a.k,1)); });
+  const levels=new Set([0,1]); conds.forEach(c=>{ if(c.mutMin!=null) levels.add(c.mutMin); if(c.mutMax!=null) levels.add(c.mutMax); });
+  const copies=[]; gene.alleles.forEach(a=>levels.forEach(L=>copies.push(withMut(a.k,L))));
   for(let i=0;i<copies.length;i++) for(let j=i;j<copies.length;j++){
     const pair=[copies[i],copies[j]], sats=conds.map(c=>condSatisfied(gene,pair,c));
     if(mode==="all"?sats.every(Boolean):sats.some(Boolean)) return true;
@@ -3835,19 +3878,20 @@ function geneFeasible(gene, conds, mode){
   return false;
 }
 function targetPlan(pool, byGene){
-  const mode=(typeof breedAlleleMode!=="undefined"?breedAlleleMode:"all");
   // A nicheling has only two slots per gene, so some target sets can never coexist in one pup.
-  // Flag those genes and drop them from the gather so the plan can't claim an impossible outcome
-  // (which would otherwise contradict the Real single-pairing search's "No pairing").
+  // Flag those genes (per the section's own All/Any) and drop them from the gather so the plan can't
+  // claim an impossible outcome (which would contradict the Real single-pairing search's "No pairing").
   const impossible=[];
   Object.keys(byGene).forEach(gk=>{ const g=GENE_BY_KEY[gk];
-    if(g && !geneFeasible(g, byGene[gk], mode)) impossible.push({gene:gk, label:g.label,
-      bases:byGene[gk].map(c=>{ const al=g.alleles.find(a=>a.k===c.base); return (al?al.name:c.base)+(c.mut==="yes"?" ✦":c.mut==="no"?" (no ✦)":""); })}); });
+    if(g && !geneFeasible(g, byGene[gk], amode(gk))) impossible.push({gene:gk, label:g.label, bases:byGene[gk].map(targetBaseLabel)}); });
   const impSet=new Set(impossible.map(x=>x.gene));
-  const needed=[]; Object.keys(byGene).forEach(gk=>{ if(!impSet.has(gk)) byGene[gk].forEach(c=>needed.push(c)); });
-  const carries=(cat,c)=>(cat.geno[c.gene]||[]).some(a=>baseK(a)===c.base && mutOk(mutLevel(a),c.mut));
+  const carries=(cat,c)=>(cat.geno[c.gene]||[]).some(a=>baseK(a)===c.base && mutInRange(mutLevel(a),c));
   const ownsBase=(cat,c)=>(cat.geno[c.gene]||[]).some(a=>baseK(a)===c.base);
-  const keyOf=c=>c.gene+"|"+c.base+"|"+c.mut+"|"+c.inherit;
+  // 'All' gene → gather every allele target; 'Any' gene → gather only the single one the pool supplies most.
+  const needed=[]; Object.keys(byGene).forEach(gk=>{ if(impSet.has(gk)) return; const cs=byGene[gk];
+    if(amode(gk)==="any" && cs.length>1){ let best=cs[0],bestN=-1; cs.forEach(c=>{ const n=pool.filter(cat=>carries(cat,c)).length; if(n>bestN){bestN=n;best=c;} }); needed.push(best); }
+    else cs.forEach(c=>needed.push(c)); });
+  const keyOf=c=>[c.gene,c.base,c.mutMin,c.mutMax,c.inherit,c.zyg].join("|");
   const uniq={}; needed.forEach(c=>uniq[keyOf(c)]=c); const conds=Object.values(uniq);
   if(!conds.length) return {ok:false, missing:[], impossible};
   // unreachable condition: distinguish "own no copy of the base at all" from "own it, wrong ✦ form"
@@ -3868,16 +3912,18 @@ function targetPlan(pool, byGene){
       if(add.length>bestGain){ bestGain=add.length; best=c; bestAdd=add; } });
     if(!best) break;
     used.add(best.id); bestAdd.forEach(k=>line.add(k));
-    steps.push({partner:best.name, partnerSex:best.sex, adds:bestAdd.map(k=>{ const c=uniq[k]; const g=GENE_BY_KEY[c.gene], al=g.alleles.find(a=>a.k===c.base); return (al?al.name:c.base)+(c.mut==="yes"?" ✦":""); })});
+    steps.push({partner:best.name, partnerSex:best.sex, adds:bestAdd.map(k=>targetBaseLabel(uniq[k]))});
     lastSex=want;
   }
   // each intermediate kept pup must be the sex the NEXT cross needs (opposite of that partner's sex)
   steps.forEach((s,i)=>{ const nx=steps[i+1]; s.keepPupSex = nx ? (nx.partnerSex==="F"?"M":"F") : null; });
   const covered=[...all].every(k=>line.has(k));
-  // a 'shown' target only needs a homozygous cross when it's a RECESSIVE linear allele — the most-dominant
-  // linear allele, and every allele on an incomplete/blend gene, already show from a single copy.
-  const homo=conds.filter(c=>{ if(c.inherit!=="show") return false; const g=GENE_BY_KEY[c.gene];
-      return g && g.mode==="linear" && (g.domRank[c.base]||0)>0; })
+  // A homozygous cross is needed when the target explicitly wants two copies (zyg 'homo'), or when it's a
+  // RECESSIVE linear allele 'shown' (the most-dominant linear allele and any incomplete/blend allele
+  // already show from a single copy).
+  const homo=conds.filter(c=>{ const g=GENE_BY_KEY[c.gene]; if(!g) return false;
+      if((c.zyg||"either")==="homo") return true;
+      return c.inherit==="show" && g.mode==="linear" && (g.domRank[c.base]||0)>0; })
     .map(c=>{ const g=GENE_BY_KEY[c.gene], al=g.alleles.find(a=>a.k===c.base); return (al?al.name:c.base); });
   return {ok:true, steps, covered, seed:{name:seed.name,sex:seed.sex}, homo, all:[...all], line:[...line], impossible};
 }
@@ -3887,10 +3933,10 @@ function targetPlanHTML(pool, byGene, geneKeys){
   const impHTML=(plan.impossible&&plan.impossible.length)?
     `<p class="muted" style="font-size:11.5px;margin:2px 0 6px;color:var(--warn)">⚠ These can't all appear in one nicheling (only two allele slots per gene): `+
       plan.impossible.map(x=>`<b>${esc(x.label)}</b> — ${x.bases.map(esc).join(", ")}`).join("; ")+
-      `. Drop some, or set “when one gene type has several targets, match” to <b>Any</b>, to plan the rest.</p>`:"";
+      `. Drop some, or set that section's <b>match</b> to <b>Any</b>, to plan the rest.</p>`:"";
   if(!plan.ok){
     if(plan.needSex) return needSexMsg;
-    const nm=c=>{ const gg=GENE_BY_KEY[c.gene], al=gg.alleles.find(a=>a.k===c.base); return (al?al.name:c.base)+(c.mut==="yes"?" ✦":c.mut==="no"?" (no ✦)":""); };
+    const nm=c=>targetBaseLabel(c);
     const none=(plan.missing||[]).filter(m=>!m.hasBase).map(m=>nm(m.c));
     const wrong=(plan.missing||[]).filter(m=>m.hasBase).map(m=>nm(m.c));
     let msg="";
@@ -4081,7 +4127,7 @@ if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILIT
   abilityTotals,offspringGenotypeDist,offspringPhenotypeDist,offspringAbilityOutlook,offspringCarryProb,offspringShowProb,offspringMutExpected,geneConditionProb,condSatisfied,genoToCode,codeToGeno,sampleOffspring,
   baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catContribs,coveredBy,coveringSet,
   holdings,holdCovers,holdKeyCovers,holdValue,holdLabel,UNDESIRABLE,
-  geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS,geneFeasible,targetPlan};
+  geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS,geneFeasible,targetPlan,mutInRange,targetBaseLabel};
 
 /* ---- boot (only in a real browser) ---- */
 /* =========================================================================
