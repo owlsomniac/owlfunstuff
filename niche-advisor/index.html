@@ -4073,6 +4073,10 @@ function renderBreeding(){
 const canPair=(a,b)=>(a.sex==="F"&&b.sex==="M")||(a.sex==="M"&&b.sex==="F");
 const hasFM=list=>list.some(c=>c.sex==="F")&&list.some(c=>c.sex==="M");
 const needSexMsg='<p class="muted">Pairings need one ♀ and one ♂ — set each nicheling\'s sex in its editor (the ♀/♂ dropdown).</p>';
+/* Throughput tip for every luck-based plan: males have NO breeding cooldown, so one male can sire several
+   litters in the same round. Fanning a male out across multiple females multiplies your rolls at the lucky pup
+   with no waiting — so keep the gathering line on a MALE where you can. */
+const cooldownTip='<p class="muted" style="font-size:11.5px;margin:5px 0 0;color:var(--brand-ink)">💡 <b>Speed it up:</b> males have <b>no breeding cooldown</b> (females do), so at any luck-based cross you can breed <b>one male with several females the same round</b> — every extra litter is another roll at the pup you want, with no waiting. Keep the gathering line on a <b>male</b> and fan him out across every female carrier each round; keep whichever pup got the alleles.</p>';
 const mutOk=(lv,req)=>req==="yes"?lv>0:req==="no"?lv===0:true;   // legacy yes/no helper (still used by a few call sites)
 const mutInRange=(lv,cond)=>(cond.mutMin==null||lv>=cond.mutMin)&&(cond.mutMax==null||lv<=cond.mutMax);  // ✦ level within [min,max]; blank = open
 
@@ -4374,7 +4378,7 @@ function targetPlanHTML(pool, byGene, geneKeys){
       const keep=s.keepPupSex?` <b>(keep a ${sx(s.keepPupSex)} pup)</b>`:"";
       return `<div style="margin:0 0 6px"><div style="font-weight:600;font-size:13px">Gen ${i+1}: ${left} × ${esc(s.partner)} ${sx(s.partnerSex)}${keep}</div>`+
         `<div class="muted" style="font-size:12px">→ that pup should carry all ${s.have.length} so far: <b>${esc(s.have.join(", "))}</b>${s.adds.length?` <span style="opacity:.8">(new this cross: ${esc(s.adds.join(", "))})</span>`:""}</div></div>`; }).join("");
-  const luck=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Every cross is ♀×♂ and luck-based — a parent passes only one of its two alleles, so keep the pup that got the targets (and the sex noted for the next cross), then breed on.</p>`;
+  const luck=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Every cross is ♀×♂ and luck-based — a parent passes only one of its two alleles, so keep the pup that got the targets (and the sex noted for the next cross), then breed on.</p>`+cooldownTip;
   const cantChain=`<p class="muted" style="font-size:11.5px;margin:4px 0 0;color:var(--warn)">Couldn't bring <b>${esc((plan.uncovered||[]).join(", "))}</b> onto this line — no nicheling in the selected pool carries ${plan.uncovered&&plan.uncovered.length>1?"them":"it"} that can be bred in. Acquire or breed one that carries ${plan.uncovered&&plan.uncovered.length>1?"them":"it"}, then re-run.</p>`;
   if(!plan.needTwo.length){
     // Every target shows from a single copy (dominant 'show' or 'carry') — one gather line yields the finished nicheling.
@@ -4799,7 +4803,7 @@ function mergePlanHTML(plan){
   }
   if(plan.crossLoc)
     h+=`<p class="muted" style="font-size:11.5px;margin:4px 0 0;color:var(--warn)">⚠ The picked nichelings are in different locations (${esc(plan.locs.join(", "))}). Nichelings only breed in the same place — move them together first.</p>`;
-  h+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Every cross is ♀×♂ and luck-based — a parent passes only one of its two alleles, so keep the right pup, then breed on. Once the final pup carries everything, release <b>${esc(plan.freed.join(", "))}</b>.</p>`;
+  h+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Every cross is ♀×♂ and luck-based — a parent passes only one of its two alleles, so keep the right pup, then breed on. Once the final pup carries everything, release <b>${esc(plan.freed.join(", "))}</b>.</p>`+cooldownTip;
   return h;
 }
 function renderConsolidate(){
