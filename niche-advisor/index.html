@@ -4610,21 +4610,33 @@ function mergePlan(pool, group, homoKeys){
 }
 /* Auto-merge finder: fusible PAIRS — each brings a WORTH-PRESERVING allele the other lacks (not a subset), and
    their combined worthy alleles fit one body (≤2 distinct/gene). Only preserve-worthy alleles count (a same-
-   gene/same-skill inferior like Deformed Paw is ignored). Ranked by concentration (distinct alleles, then ✦). */
+   gene/same-skill inferior like Deformed Paw is ignored). Ranked EASIEST-first — the most alleles already IN
+   COMMON and the fewest that DIFFER — with a deterministic id tiebreak so the order is STABLE (see the sort). */
 function autoMerges(pool){
   const worthy=preserveWorthy(pool);
   const wa=c=>groupAlleles([c], worthy);                                 // one cat's worthy alleles → {gk:{base:lvl}}
   const wkeys=w=>{ const s=[]; for(const gk in w) for(const b in w[gk]) s.push(gk+"|"+b); return s; };
   const covers=(w1,w2)=>wkeys(w2).every(k=>{ const i=k.indexOf("|"),gk=k.slice(0,i),b=k.slice(i+1); return w1[gk]&&w1[gk][b]!=null && w1[gk][b]>=w2[gk][b]; });   // w1 ⊇ w2 (≥ level)
-  const cand=pool.filter(c=>c.sex==="F"||c.sex==="M").map(c=>({c, w:wa(c)})).filter(x=>wkeys(x.w).length>0);
+  const cand=pool.filter(c=>c.sex==="F"||c.sex==="M").map(c=>{ const w=wa(c); return {c, w, keys:new Set(wkeys(w))}; }).filter(x=>x.keys.size>0);
   const res=[];
   for(let i=0;i<cand.length;i++) for(let j=i+1;j<cand.length;j++){ const A=cand[i], B=cand[j];
     if(covers(A.w,B.w) || covers(B.w,A.w)) continue;                     // one already has every worthy allele the other does → plain release
     const u=groupAlleles([A.c,B.c], worthy);
     let ok=true; for(const gk in u){ if(Object.keys(u[gk]).length>2){ ok=false; break; } } if(!ok) continue;   // can't fit both on one body
     let distinct=0, val=0; for(const gk in u) for(const b in u[gk]){ distinct++; val+=1+u[gk][b]; }
-    res.push({group:[A.c,B.c], distinct, val, crossLoc: !!(effLoc(A.c) && effLoc(B.c) && effLoc(A.c)!==effLoc(B.c))}); }
-  res.sort((a,b)=> b.distinct-a.distinct || b.val-a.val);
+    let shared=0; A.keys.forEach(k=>{ if(B.keys.has(k)) shared++; });     // worthy alleles BOTH already carry (at the best ✦) — pass to the pup almost for free
+    const diff=distinct-shared;                                          // alleles only ONE carries → the pup must inherit these to complete the merge
+    const crossLoc=!!(effLoc(A.c) && effLoc(B.c) && effLoc(A.c)!==effLoc(B.c));
+    const sameSex=A.c.sex===B.c.sex;                                     // same sex → the plan bridges through a neutral mate (an extra cross)
+    const setup=(sameSex?1:0)+(crossLoc?1:0);                            // 0 = you can breed them right now (opposite sex, same place)
+    res.push({group:[A.c,B.c], distinct, val, shared, diff, crossLoc, sameSex, setup,
+      lo:Math.min(A.c.id,B.c.id), hi:Math.max(A.c.id,B.c.id)}); }
+  // EASIEST / fastest-to-release first (the whole point of a merge is to fuse two lines and release BOTH):
+  //   1. net overlap (shared − differing): most in common AND fewest to chase — the shared set passes for free;
+  //   2. more in common on ties;  3. fewer differences;  4. breedable now (opposite sex + same location);
+  //   5. higher ✦ value.  A final id tiebreak makes the order fully DETERMINISTIC, so adding an unrelated
+  //   nicheling never reshuffles which pair is suggested first — a suggestion stays put until you act on it.
+  res.sort((a,b)=> (b.shared-b.diff)-(a.shared-a.diff) || b.shared-a.shared || a.diff-b.diff || a.setup-b.setup || b.val-a.val || a.lo-b.lo || a.hi-b.hi);
   return res;
 }
 
@@ -4880,14 +4892,14 @@ function renderConsolidate(){
   if(!autos.length){
     html+=`<p class="muted" style="font-size:12.5px">No two nichelings both add something and still fit on one body — your good alleles are already either duplicated (see roster Advice to release the copies) or spread across genes that need separate studs (above).</p>`;
   } else {
-    html+=`<div class="muted" style="font-size:12px;margin:2px 0 5px">Top pairs whose alleles combine onto one nicheling (each brings something the other lacks):</div>`;
+    html+=`<div class="muted" style="font-size:12px;margin:2px 0 5px">Easiest first — the pair with the <b>most alleles in common</b> and the <b>fewest differences</b> to breed across. The shared alleles pass to the pup almost for free, so you only chase the few that differ, fuse the two lines, and release both. (The order is stable — adding nichelings won't reshuffle it.)</div>`;
     autos.slice(0,AUTO_MAX).forEach(m=>{
       const [A,B]=m.group, cid="a"+Math.min(A.id,B.id)+"_"+Math.max(A.id,B.id), open=consOpen.has(cid);
       const homoKeys=[...consHomo].filter(k=>k.indexOf(cid+"::")===0).map(k=>k.slice(cid.length+2));
       const plan=open?mergePlan(pool,[A,B],homoKeys):null;
       html+=`<div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin:0 0 6px">`+
         `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`+
-        `<div style="font-size:12.5px"><b>${esc(A.name)}</b> ${sx(A.sex)} <span class="muted">+</span> <b>${esc(B.name)}</b> ${sx(B.sex)} <span class="muted">→ ${m.distinct} alleles on one pup</span>${m.crossLoc?` <span class="stt" style="color:var(--warn)">⚠ diff. location</span>`:""}</div>`+
+        `<div style="font-size:12.5px"><b>${esc(A.name)}</b> ${sx(A.sex)} <span class="muted">+</span> <b>${esc(B.name)}</b> ${sx(B.sex)} <span class="muted">— ${m.shared} in common · ${m.diff} to breed across → ${m.distinct} on one pup</span>${m.sameSex?` <span class="stt muted" title="Same sex — the plan bridges through a neutral mate">bridge</span>`:""}${m.crossLoc?` <span class="stt" style="color:var(--warn)">⚠ diff. location</span>`:""}</div>`+
         `<button class="btn sm gray consPlanToggle" data-card="${cid}">${open?"Hide plan":"Show plan"}</button></div>`;
       if(open){
         const gal=groupAlleles([A,B],worthy); const homoOpts=[]; for(const gk in gal) for(const b in gal[gk]) homoOpts.push({gk,b,key:gk+"|"+b});
