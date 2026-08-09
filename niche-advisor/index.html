@@ -4442,23 +4442,26 @@ function bestLevelOwned(pool, gk, base){ let m=-1; pool.forEach(c=>{ (c.geno[gk]
    its base stat AND its total (base + best ✦ owned): Deformed Paw (Col+1) drops the moment you own Nimble
    Fingers (Col+2). But a higher base and a higher mutated total can live on different alleles — Digging Paw
    (Col+3) vs a ✦3 Nimble Fingers (Col+2 → 5) — and then NEITHER dominates, so both are kept. Returns
-   { geneKey: Set(worthy base) } over the pool; different genes are never compared (a Collecting snout and a
-   Collecting paw are both kept — different slots). */
+   { geneKey: { worthy base: roster-best ✦ level } } over the pool — the best-✦ level is stored so a merge
+   group holding an INFERIOR copy (Goat Horns ✦1 when a ✦2 exists elsewhere) can be recognised and skipped.
+   Different genes are never compared (a Collecting snout and a Collecting paw are both kept — different slots). */
 function preserveWorthy(pool){
   const byGene={};
   pool.forEach(c=>{ const h=holdingsFor(c.geno,true); for(const key in h){ const i=key.indexOf("|"), gk=key.slice(0,i), b=key.slice(i+1); (byGene[gk]||(byGene[gk]=new Set())).add(b); } });
   const out={};
   for(const gk in byGene){ const recs=[...byGene[gk]].map(b=>({b, ab:alleleAbilityOf(gk,b), base:alleleBaseVal(gk,b), total:alleleBaseVal(gk,b)+Math.max(0,bestLevelOwned(pool,gk,b))}));
-    out[gk]=new Set(recs.filter(x=> !recs.some(y=> y!==x && y.ab && y.ab===x.ab && y.base>=x.base && y.total>=x.total && (y.base>x.base||y.total>x.total))).map(x=>x.b)); }
+    const keep=recs.filter(x=> !recs.some(y=> y!==x && y.ab && y.ab===x.ab && y.base>=x.base && y.total>=x.total && (y.base>x.base||y.total>x.total)));
+    const m={}; keep.forEach(x=>{ m[x.b]=Math.max(0, bestLevelOwned(pool,gk,x.b)); }); out[gk]=m; }
   return out;
 }
 /* union of a group's beneficial alleles → { geneKey: { base: bestLevel } } (best ✦ across the group per base).
-   When `worthy` (from preserveWorthy) is passed, alleles a same-gene/same-skill better allele dominates are
-   dropped — the merge won't waste effort preserving an inferior copy (e.g. Deformed Paw when Nimble is owned). */
+   When `worthy` (from preserveWorthy) is passed, an allele is dropped unless it's (a) a worthy base — no same-
+   gene/same-skill allele beats it (so Deformed Paw goes when Nimble is owned) — AND (b) the group holds it at
+   the ROSTER-best ✦: a group carrying Goat Horns ✦1 is skipped when a ✦2 lives on another nicheling you'd keep. */
 function groupAlleles(cats, worthy){ const u={};
   cats.forEach(c=>{ const h=holdingsFor(c.geno,true);
     for(const key in h){ const i=key.indexOf("|"), gk=key.slice(0,i), b=key.slice(i+1), lv=h[key][0];
-      if(worthy && !(worthy[gk] && worthy[gk].has(b))) continue;
+      if(worthy && !(worthy[gk] && worthy[gk][b]!=null && lv>=worthy[gk][b])) continue;   // non-worthy base, or a copy below the roster-best ✦ → skip
       (u[gk]||(u[gk]={})); if(u[gk][b]==null || lv>u[gk][b]) u[gk][b]=lv; } });
   return u; }
 /* SECTION 1 — allele inventory: every beneficial ability allele owned → who carries it. Best ✦ dominates:
@@ -4478,8 +4481,8 @@ function beneficialAlleleInventory(pool){
         a.carriers.sort((x,y)=> y.level-x.level || y.copies-x.copies); });
       alleles.sort((a,b)=>a.name.localeCompare(b.name));
       // Split into worth-preserving vs REDUNDANT (a same-skill allele in this same gene beats it on base AND total).
-      const kept=alleles.filter(a=>worthy[gk] && worthy[gk].has(a.base));
-      const redundant=alleles.filter(a=>!(worthy[gk] && worthy[gk].has(a.base))).map(a=>{
+      const kept=alleles.filter(a=>worthy[gk] && worthy[gk][a.base]!=null);
+      const redundant=alleles.filter(a=>!(worthy[gk] && worthy[gk][a.base]!=null)).map(a=>{
         const ab=alleleAbilityOf(gk,a.base), better=kept.filter(k=>alleleAbilityOf(gk,k.base)===ab).sort((x,y)=>(alleleBaseVal(gk,y.base)+y.bestLevel)-(alleleBaseVal(gk,x.base)+x.bestLevel))[0];
         return {base:a.base, name:a.name, bestLevel:a.bestLevel, betterName: better?better.name:null, betterLabel: better?consAlleleLabel(gk,better.base,better.bestLevel):null}; });
       if(kept.length) genes.push({gene:g, alleles:kept, redundant}); } });
@@ -4802,6 +4805,12 @@ function mergePlanHTML(plan){
 function renderConsolidate(){
   const v=$("#view-consolidate"); if(!v) return;
   const pool=breedingPool();
+  const worthy=preserveWorthy(pool);   // roster-wide worth-preserving alleles (base dominance + roster-best ✦), for the merge homozygous lists
+  // the optional "make homozygous" upgrade box for a merge plan — explains what ticking does; only worth-preserving alleles listed
+  const homoBox=(cid,opts,gal)=> !opts.length ? "" :
+    `<div style="margin-top:7px;font-size:11.5px;border-top:1px dashed var(--line);padding-top:6px">`+
+    `<div class="muted" style="margin-bottom:3px"><b>Optional — make homozygous.</b> By default the plan just <b>carries</b> each allele (one copy). Tick an allele to have the final pup carry <b>two</b> copies of it — it then <b>shows</b> the trait and passes it to <b>100%</b> of that pup's own offspring — which adds one extra "double-up" cross to the plan. Leave them all unticked for the simple carry-only merge.</div>`+
+    opts.map(o=>`<label style="margin-right:8px;white-space:nowrap"><input type="checkbox" class="consHomo" data-card="${cid}" data-key="${esc(o.key)}" ${consHomo.has(cid+"::"+o.key)?"checked":""}> ${esc(consAlleleLabel(o.gk,o.b,gal[o.gk][o.b]))}</label>`).join("")+`</div>`;
   const withVal=pool.filter(c=>holdValue(holdingsFor(c.geno,true))>0);
   let html=`<div class="card"><h2 style="margin:0 0 4px">🧬 Consolidate your lines</h2>`+
     `<p class="muted" style="margin:0 0 4px;font-size:12.5px">Concentrate the good alleles now scattered across your roster onto as few nichelings as possible, then release the rest. <b>Ability &amp; resistance alleles only</b> — appearance is ignored. The best ✦ mutation of an allele wins; a lower-✦ copy is inferior and not counted as distinct. Pool = <b>everyone</b> — tribe + rogues + retired (${pool.length} nichelings).</p></div>`;
@@ -4855,10 +4864,8 @@ function renderConsolidate(){
         `<div style="font-size:12.5px"><b>${esc(A.name)}</b> ${sx(A.sex)} <span class="muted">+</span> <b>${esc(B.name)}</b> ${sx(B.sex)} <span class="muted">→ ${m.distinct} alleles on one pup</span>${m.crossLoc?` <span class="stt" style="color:var(--warn)">⚠ diff. location</span>`:""}</div>`+
         `<button class="btn sm gray consPlanToggle" data-card="${cid}">${open?"Hide plan":"Show plan"}</button></div>`;
       if(open){
-        const gal=groupAlleles([A,B]); const homoOpts=[]; for(const gk in gal) for(const b in gal[gk]) homoOpts.push({gk,b,key:gk+"|"+b});
-        html+=`<div style="margin-top:6px">${mergePlanHTML(plan)}</div>`+
-          `<div style="margin-top:6px;font-size:11.5px"><span class="muted">Make homozygous (shows &amp; passes 100%):</span> `+
-          homoOpts.map(o=>`<label style="margin-right:8px;white-space:nowrap"><input type="checkbox" class="consHomo" data-card="${cid}" data-key="${esc(o.key)}" ${consHomo.has(cid+"::"+o.key)?"checked":""}> ${esc(consAlleleLabel(o.gk,o.b,gal[o.gk][o.b]))}</label>`).join("")+`</div>`;
+        const gal=groupAlleles([A,B],worthy); const homoOpts=[]; for(const gk in gal) for(const b in gal[gk]) homoOpts.push({gk,b,key:gk+"|"+b});
+        html+=`<div style="margin-top:6px">${mergePlanHTML(plan)}</div>`+homoBox(cid,homoOpts,gal);
       }
       html+=`</div>`;
     });
@@ -4872,10 +4879,9 @@ function renderConsolidate(){
     const grp=sexed.filter(c=>consSel.has(c.id)), cid="manual";
     const homoKeys=[...consHomo].filter(k=>k.indexOf(cid+"::")===0).map(k=>k.slice(cid.length+2));
     const plan=mergePlan(pool,grp,homoKeys);
-    const gal=groupAlleles(grp); const homoOpts=[]; for(const gk in gal) for(const b in gal[gk]) homoOpts.push({gk,b,key:gk+"|"+b});
+    const gal=groupAlleles(grp,worthy); const homoOpts=[]; for(const gk in gal) for(const b in gal[gk]) homoOpts.push({gk,b,key:gk+"|"+b});
     html+=`<div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px">${mergePlanHTML(plan)}`+
-      (plan.ok && !plan.trivial ? `<div style="margin-top:6px;font-size:11.5px"><span class="muted">Make homozygous:</span> `+
-        homoOpts.map(o=>`<label style="margin-right:8px;white-space:nowrap"><input type="checkbox" class="consHomo" data-card="${cid}" data-key="${esc(o.key)}" ${consHomo.has(cid+"::"+o.key)?"checked":""}> ${esc(consAlleleLabel(o.gk,o.b,gal[o.gk][o.b]))}</label>`).join("")+`</div>` : "")+
+      (plan.ok && !plan.trivial ? homoBox(cid,homoOpts,gal) : "")+
       `</div>`;
   } else if(consSel.size===1){ html+=`<p class="muted" style="font-size:12px">Pick at least one more to plan a merge.</p>`; }
   html+=`</div></div>`;
