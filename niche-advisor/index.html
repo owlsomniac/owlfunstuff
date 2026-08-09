@@ -4378,17 +4378,40 @@ function targetPlanHTML(pool, byGene, geneKeys){
 /* label a beneficial allele: "Nimble ✦+3 (Col)" */
 function consAlleleLabel(gk, base, level){ const g=GENE_BY_KEY[gk], al=g&&g.alleles.find(a=>a.k===base), ab=al&&Object.keys(al.eff)[0];
   return `${al?al.name:base}${level?` ✦+${level}`:""}${ab?` (${AB_SHORT[ab]||ab})`:""}`; }
-/* union of a group's beneficial alleles → { geneKey: { base: bestLevel } } (best ✦ across the group per base) */
-function groupAlleles(cats){ const u={};
+/* the single ability an allele grants (or null) + its base stat value */
+function alleleAbilityOf(gk, base){ const g=GENE_BY_KEY[gk], al=g&&g.alleles.find(a=>a.k===base); return al?(Object.keys(al.eff)[0]||null):null; }
+function alleleBaseVal(gk, base){ const g=GENE_BY_KEY[gk], al=g&&g.alleles.find(a=>a.k===base); if(!al) return 0; const ab=Object.keys(al.eff)[0]; return ab?al.eff[ab]:0; }
+/* best ✦ mutation level owned for a (gene, base) across the pool (−1 if none owned) */
+function bestLevelOwned(pool, gk, base){ let m=-1; pool.forEach(c=>{ (c.geno[gk]||[]).forEach(a=>{ if(baseK(a)===base){ const l=mutLevel(a); if(l>m) m=l; } }); }); return m; }
+/* PRESERVE-WORTHINESS. Two alleles are comparable only when they sit in the SAME gene slot AND grant the SAME
+   skill. Within such a pair, an allele is REDUNDANT — not worth preserving — when the other beats it on BOTH
+   its base stat AND its total (base + best ✦ owned): Deformed Paw (Col+1) drops the moment you own Nimble
+   Fingers (Col+2). But a higher base and a higher mutated total can live on different alleles — Digging Paw
+   (Col+3) vs a ✦3 Nimble Fingers (Col+2 → 5) — and then NEITHER dominates, so both are kept. Returns
+   { geneKey: Set(worthy base) } over the pool; different genes are never compared (a Collecting snout and a
+   Collecting paw are both kept — different slots). */
+function preserveWorthy(pool){
+  const byGene={};
+  pool.forEach(c=>{ const h=holdingsFor(c.geno,true); for(const key in h){ const i=key.indexOf("|"), gk=key.slice(0,i), b=key.slice(i+1); (byGene[gk]||(byGene[gk]=new Set())).add(b); } });
+  const out={};
+  for(const gk in byGene){ const recs=[...byGene[gk]].map(b=>({b, ab:alleleAbilityOf(gk,b), base:alleleBaseVal(gk,b), total:alleleBaseVal(gk,b)+Math.max(0,bestLevelOwned(pool,gk,b))}));
+    out[gk]=new Set(recs.filter(x=> !recs.some(y=> y!==x && y.ab && y.ab===x.ab && y.base>=x.base && y.total>=x.total && (y.base>x.base||y.total>x.total))).map(x=>x.b)); }
+  return out;
+}
+/* union of a group's beneficial alleles → { geneKey: { base: bestLevel } } (best ✦ across the group per base).
+   When `worthy` (from preserveWorthy) is passed, alleles a same-gene/same-skill better allele dominates are
+   dropped — the merge won't waste effort preserving an inferior copy (e.g. Deformed Paw when Nimble is owned). */
+function groupAlleles(cats, worthy){ const u={};
   cats.forEach(c=>{ const h=holdingsFor(c.geno,true);
     for(const key in h){ const i=key.indexOf("|"), gk=key.slice(0,i), b=key.slice(i+1), lv=h[key][0];
+      if(worthy && !(worthy[gk] && worthy[gk].has(b))) continue;
       (u[gk]||(u[gk]={})); if(u[gk][b]==null || lv>u[gk][b]) u[gk][b]=lv; } });
   return u; }
 /* SECTION 1 — allele inventory: every beneficial ability allele owned → who carries it. Best ✦ dominates:
    `sole` = only ONE nicheling holds it at the best level (releasing that one loses the best copy). Each
    carrier records its own top ✦, copies (homozygous = 2 copies of that base), and status/location. */
 function beneficialAlleleInventory(pool){
-  const genes=[];
+  const genes=[], worthy=preserveWorthy(pool);
   ABILITY_GENE_KEYS.forEach(gk=>{ const g=GENE_BY_KEY[gk], byBase={};
     pool.forEach(c=>{ const h=holdingsFor(c.geno,true);
       for(const key in h){ const i=key.indexOf("|"); if(key.slice(0,i)!==gk) continue;
@@ -4399,7 +4422,13 @@ function beneficialAlleleInventory(pool){
     const alleles=Object.values(byBase);
     if(alleles.length){ alleles.forEach(a=>{ a.sole = a.carriers.filter(x=>x.level>=a.bestLevel).length===1;
         a.carriers.sort((x,y)=> y.level-x.level || y.copies-x.copies); });
-      genes.push({gene:g, alleles: alleles.sort((a,b)=>a.name.localeCompare(b.name))}); } });
+      alleles.sort((a,b)=>a.name.localeCompare(b.name));
+      // Split into worth-preserving vs REDUNDANT (a same-skill allele in this same gene beats it on base AND total).
+      const kept=alleles.filter(a=>worthy[gk] && worthy[gk].has(a.base));
+      const redundant=alleles.filter(a=>!(worthy[gk] && worthy[gk].has(a.base))).map(a=>{
+        const ab=alleleAbilityOf(gk,a.base), better=kept.filter(k=>alleleAbilityOf(gk,k.base)===ab).sort((x,y)=>(alleleBaseVal(gk,y.base)+y.bestLevel)-(alleleBaseVal(gk,x.base)+x.bestLevel))[0];
+        return {base:a.base, name:a.name, bestLevel:a.bestLevel, betterName: better?better.name:null, betterLabel: better?consAlleleLabel(gk,better.base,better.bestLevel):null}; });
+      if(kept.length) genes.push({gene:g, alleles:kept, redundant}); } });
   return genes;
 }
 /* SECTION 2 — fewest studs. K_g = distinct beneficial alleles at gene g; studs needed = max_g ⌈K_g/2⌉.
@@ -4413,11 +4442,15 @@ function minStudsPlan(pool){
   const studs=Array.from({length:N},()=>({genes:{}}));   // stud → { geneKey: [alleleRecord] }
   perGene.forEach(pg=>{ pg.alleles.forEach((a,idx)=>{ const s=idx%N;    // round-robin balances the studs; K≤2N ⇒ ≤2 per gene
       (studs[s].genes[pg.gene.key]||(studs[s].genes[pg.gene.key]=[])).push({base:a.base, name:a.name, level:a.bestLevel, gk:pg.gene.key}); }); });
+  // A gene has TWO slots. When only ONE worthy allele lands on a stud for that gene, there's nothing better to
+  // put in the other slot → double it up (homozygous ×2) so it shows and passes down 100%. Two alleles share.
+  studs.forEach(s=>{ for(const gk in s.genes){ if(s.genes[gk].length===1) s.genes[gk][0].homo=true; } });
   const bottleneck=perGene.filter(pg=>pg.need===N);
   return {N, studs, perGene, bottleneck, totalAlleles:perGene.reduce((s,x)=>s+x.K,0)};
 }
-/* Can a GROUP's combined beneficial alleles all be CARRIED on one nicheling? (≤2 distinct bases per gene). */
-function mergeGroupFeasible(cats){ const u=groupAlleles(cats), overflow=[];
+/* Can a GROUP's combined beneficial alleles all be CARRIED on one nicheling? (≤2 distinct bases per gene).
+   `worthy` (preserveWorthy) drops same-gene/same-skill inferiors so they don't count against the two slots. */
+function mergeGroupFeasible(cats, worthy){ const u=groupAlleles(cats, worthy), overflow=[];
   for(const gk in u){ const bases=Object.keys(u[gk]); if(bases.length>2) overflow.push({gene:GENE_BY_KEY[gk], bases}); }
   return {ok:overflow.length===0, overflow, union:u}; }
 /* SECTION 3 — concrete plan to fuse a group's lines onto ONE nicheling (then release the group).
@@ -4426,7 +4459,7 @@ function mergeGroupFeasible(cats){ const u=groupAlleles(cats), overflow=[];
    alleles — one extra cross of two carriers. Returns a structured plan the renderer turns into steps. */
 function mergePlan(pool, group, homoKeys){
   const homo=new Set(homoKeys||[]);
-  const u=groupAlleles(group);
+  const u=groupAlleles(group, preserveWorthy(pool));   // only preserve the best of each same-gene/same-skill allele
   const labelKey=k=>{ const i=k.indexOf("|"); return consAlleleLabel(k.slice(0,i), k.slice(i+1), u[k.slice(0,i)][k.slice(i+1)]); };
   const allKeys=[]; for(const gk in u) for(const b in u[gk]) allKeys.push(gk+"|"+b);
   // Feasibility. Carry: ≤2 distinct bases/gene. Homozygous a base needs both slots → it can't share its gene.
@@ -4492,18 +4525,22 @@ function mergePlan(pool, group, homoKeys){
     freed:group.map(c=>c.name), homoLabels, crossLoc: locs.length>1, locs,
     lastGen: crosses.length?crosses[crosses.length-1].gen:0};
 }
-/* Auto-merge finder: fusible PAIRS — each brings alleles the other lacks (not a subset), and their combined
-   alleles fit one body (≤2 distinct/gene). Ranked by how much they concentrate (distinct alleles, then ✦
-   value). Subset pairs are skipped (those are a plain release, already surfaced in the roster Advice). */
+/* Auto-merge finder: fusible PAIRS — each brings a WORTH-PRESERVING allele the other lacks (not a subset), and
+   their combined worthy alleles fit one body (≤2 distinct/gene). Only preserve-worthy alleles count (a same-
+   gene/same-skill inferior like Deformed Paw is ignored). Ranked by concentration (distinct alleles, then ✦). */
 function autoMerges(pool){
-  const cand=pool.filter(c=>(c.sex==="F"||c.sex==="M") && holdValue(holdingsFor(c.geno,true))>0);
+  const worthy=preserveWorthy(pool);
+  const wa=c=>groupAlleles([c], worthy);                                 // one cat's worthy alleles → {gk:{base:lvl}}
+  const wkeys=w=>{ const s=[]; for(const gk in w) for(const b in w[gk]) s.push(gk+"|"+b); return s; };
+  const covers=(w1,w2)=>wkeys(w2).every(k=>{ const i=k.indexOf("|"),gk=k.slice(0,i),b=k.slice(i+1); return w1[gk]&&w1[gk][b]!=null && w1[gk][b]>=w2[gk][b]; });   // w1 ⊇ w2 (≥ level)
+  const cand=pool.filter(c=>c.sex==="F"||c.sex==="M").map(c=>({c, w:wa(c)})).filter(x=>wkeys(x.w).length>0);
   const res=[];
   for(let i=0;i<cand.length;i++) for(let j=i+1;j<cand.length;j++){ const A=cand[i], B=cand[j];
-    const hA=holdingsFor(A.geno,true), hB=holdingsFor(B.geno,true);
-    if(holdCovers(hA,hB) || holdCovers(hB,hA)) continue;                 // one already covers the other → release, not merge
-    if(!mergeGroupFeasible([A,B]).ok) continue;                          // can't fit both on one body
-    const u=groupAlleles([A,B]); let distinct=0, val=0; for(const gk in u) for(const b in u[gk]){ distinct++; val+=1+u[gk][b]; }
-    res.push({group:[A,B], distinct, val, crossLoc: !!(A.location && B.location && A.location!==B.location)}); }
+    if(covers(A.w,B.w) || covers(B.w,A.w)) continue;                     // one already has every worthy allele the other does → plain release
+    const u=groupAlleles([A.c,B.c], worthy);
+    let ok=true; for(const gk in u){ if(Object.keys(u[gk]).length>2){ ok=false; break; } } if(!ok) continue;   // can't fit both on one body
+    let distinct=0, val=0; for(const gk in u) for(const b in u[gk]){ distinct++; val+=1+u[gk][b]; }
+    res.push({group:[A.c,B.c], distinct, val, crossLoc: !!(A.c.location && B.c.location && A.c.location!==B.c.location)}); }
   res.sort((a,b)=> b.distinct-a.distinct || b.val-a.val);
   return res;
 }
@@ -4724,7 +4761,8 @@ function renderConsolidate(){
         const carr=a.carriers.map(x=>`${esc(x.cat.name)} ${sx(x.cat.sex)} <span class="muted">${x.level?`✦+${x.level}`:""}${x.homo?" ×2":""} · ${esc(statusText(x.cat))}</span>`).join(" &nbsp;·&nbsp; ");
         return `<div style="margin:2px 0 5px"><b>${esc(consAlleleLabel(gr.gene.key,a.base,a.bestLevel))}</b>${a.sole?` <span class="stt" style="color:var(--warn)">★ sole best copy</span>`:` <span class="muted">(${a.carriers.filter(x=>x.level>=a.bestLevel).length} at best ✦)</span>`}<div style="font-size:11.5px;margin-left:8px">${carr}</div></div>`;
       }).join("");
-      return `<div style="margin:0 0 8px"><div style="font-weight:600;font-size:12.5px;border-bottom:1px solid var(--line);padding-bottom:2px;margin-bottom:3px">${esc(gr.gene.label)}</div>${rows}</div>`;
+      const redLine=(gr.redundant&&gr.redundant.length)?`<div class="muted" style="font-size:11px;margin:0 0 2px 8px;opacity:.75">Won't preserve (a better same-slot allele beats it on base <em>and</em> ✦ total): ${gr.redundant.map(r=>`${esc(r.name)}${r.bestLevel?` ✦+${r.bestLevel}`:""}${r.betterName?` — keep ${esc(r.betterName)}`:""}`).join(" · ")}</div>`:"";
+      return `<div style="margin:0 0 8px"><div style="font-weight:600;font-size:12.5px;border-bottom:1px solid var(--line);padding-bottom:2px;margin-bottom:3px">${esc(gr.gene.label)}</div>${rows}${redLine}</div>`;
     }).join("")+`</div>` : "";
   html+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px">`+
     `<h3 style="margin:0">Allele inventory <span class="muted" style="font-weight:400;font-size:12px">— every beneficial allele you own &amp; who carries it (★ = one holder of the best copy)</span></h3>`+
@@ -4738,10 +4776,10 @@ function renderConsolidate(){
     msBody=`<p style="margin:2px 0 6px;font-size:13px">All <b>${ms.totalAlleles}</b> of your beneficial alleles fit on <b>${ms.N}</b> nicheling${ms.N>1?"s":""}.`+
       (ms.N>1?` <span class="muted">Bounded by ${bott} — a gene has only two allele slots.</span>`:` <span class="muted">Everything fits on a single nicheling.</span>`)+`</p>`+
       `<div style="display:flex;flex-wrap:wrap;gap:8px">`+ms.studs.map((s,i)=>{
-        const lines=Object.keys(s.genes).map(gk=>`<div style="font-size:11.5px"><span class="muted">${esc(GENE_BY_KEY[gk].label)}:</span> ${s.genes[gk].map(a=>esc(consAlleleLabel(gk,a.base,a.level))).join(", ")}</div>`).join("");
+        const lines=Object.keys(s.genes).map(gk=>`<div style="font-size:11.5px"><span class="muted">${esc(GENE_BY_KEY[gk].label)}:</span> ${s.genes[gk].map(a=>esc(consAlleleLabel(gk,a.base,a.level))+(a.homo?` <b style="color:var(--brand-ink)">×2</b>`:"")).join(", ")}</div>`).join("");
         return `<div style="flex:1 1 220px;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:7px 9px"><div style="font-weight:600;font-size:12.5px;margin-bottom:3px">Stud ${i+1}</div>${lines||'<span class="muted">—</span>'}</div>`;
       }).join("")+`</div>`+
-      `<p class="muted" style="font-size:11.5px;margin:6px 0 0">These are targets, not existing nichelings — the merge plans below build them from what you own. Recessive alleles are preserved by carrying (1 copy); make one homozygous when you want it to show.</p>`;
+      `<p class="muted" style="font-size:11.5px;margin:6px 0 0">These are targets, not existing nichelings — the merge plans below build them from what you own. <b>×2</b> = double it up homozygous: when only one worthy allele lands on a gene's two slots, breeding it to two copies makes it show and pass down 100%. Two different alleles share a gene's slots (one each).</p>`;
   } else msBody=`<p class="muted">Nothing to condense.</p>`;
   html+=`<div class="card"><h3 style="margin:0 0 2px">Fewest studs <span class="muted" style="font-weight:400;font-size:12px">— the smallest set that still preserves every allele</span></h3>${msBody}</div>`;
 
@@ -4830,7 +4868,7 @@ if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILIT
   holdings,holdCovers,holdKeyCovers,holdValue,holdLabel,UNDESIRABLE,
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS,geneFeasible,targetPlan,mutInRange,targetBaseLabel,
   mutBonus,statTotal,sidelineAdvice,genePairParts,offspringBST,soleAlleleLabels,offspringConsolidatesProb,nichelingAdvice,consolidationAdvice,ADVICE_RANK,holdingsFor,statTargetPlan,
-  beneficialAlleleInventory,minStudsPlan,mergeGroupFeasible,mergePlan,autoMerges,groupAlleles,consAlleleLabel};
+  beneficialAlleleInventory,minStudsPlan,mergeGroupFeasible,mergePlan,autoMerges,groupAlleles,consAlleleLabel,preserveWorthy,alleleAbilityOf,alleleBaseVal,bestLevelOwned};
 
 /* ---- boot (only in a real browser) ---- */
 /* =========================================================================
