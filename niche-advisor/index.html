@@ -59,12 +59,13 @@
   .slot .al{display:flex;align-items:center;gap:4px;flex:1;min-width:0}
   .slot .al select{flex:1;min-width:0}
   .mutstep{display:inline-flex;align-items:stretch;flex:0 0 auto}
-  .mutn{width:36px;padding:5px 2px;text-align:center;flex:0 0 auto;font-family:inherit;font-size:13.5px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:0;border-left:none;border-right:none;-moz-appearance:textfield}
+  .mutn{width:34px;padding:4px 2px;text-align:center;flex:0 0 auto;font-family:inherit;font-size:13.5px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px 0 0 8px;border-right:none;-moz-appearance:textfield}
   .mutn::-webkit-outer-spin-button,.mutn::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-  .mstep{width:28px;padding:0;font-size:17px;font-weight:700;line-height:1;color:var(--brand-ink);background:var(--chip);border:1px solid var(--line);cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+  .msteps{display:flex;flex-direction:column;width:22px;flex:0 0 auto}   /* + over − — a vertical spinner, saves horizontal space on mobile */
+  .mstep{flex:1;min-height:16px;padding:0;font-size:13px;font-weight:700;line-height:1;color:var(--brand-ink);background:var(--chip);border:1px solid var(--line);cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation;display:flex;align-items:center;justify-content:center}
   .mstep:hover{background:var(--line)} .mstep:active{background:var(--line)}
-  .mstep[data-mstep="-1"]{border-radius:8px 0 0 8px;border-right:none}
-  .mstep[data-mstep="1"]{border-radius:0 8px 8px 0;border-left:none}
+  .mstep[data-mstep="1"]{border-radius:0 8px 0 0;border-bottom:none}
+  .mstep[data-mstep="-1"]{border-radius:0 0 8px 0}
   .grp-body{background:var(--g-body)} .grp-color{background:var(--g-color)} .grp-pattern{background:var(--g-pattern)}
   .nlist{display:flex;flex-direction:column;gap:8px}
   .retired-box,.sideline-box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow);margin:0 0 16px}
@@ -3938,7 +3939,7 @@ function renderEditor(){
       const pair=c.geno[g.key]||[g.alleles[0].k,g.alleles[0].k];
       const opts=a=>g.alleles.map(al=>`<option value="${esc(al.k)}" ${al.k===baseK(a)?"selected":""}>${esc(al.name)}</option>`).join("");
       const alrow=i=>`<div class="al"><select data-g="${g.key}" data-i="${i}">${opts(pair[i])}</select>`+
-        (g.mode==="incomplete"?"":`<div class="mutstep"><button type="button" class="mstep" data-mstep="-1" data-mut="${g.key}" data-mi="${i}" title="Lower ✦ mutation" aria-label="Lower mutation level">−</button><input type="number" class="mutn" min="0" max="35" step="1" value="${mutLevel(pair[i])}" data-mut="${g.key}" data-mi="${i}" title="✦ Mutation level — adds +N to this allele's bonus (0 = none). Tap −/+ or type."><button type="button" class="mstep" data-mstep="1" data-mut="${g.key}" data-mi="${i}" title="Raise ✦ mutation" aria-label="Raise mutation level">+</button></div>`)+`</div>`;
+        (g.mode==="incomplete"?"":`<div class="mutstep"><input type="number" class="mutn" min="0" max="35" step="1" value="${mutLevel(pair[i])}" data-mut="${g.key}" data-mi="${i}" title="✦ Mutation level — adds +N to this allele's bonus (0 = none). Tap +/− or type."><div class="msteps"><button type="button" class="mstep" data-mstep="1" data-mut="${g.key}" data-mi="${i}" title="Raise ✦ mutation" aria-label="Raise mutation level">+</button><button type="button" class="mstep" data-mstep="-1" data-mut="${g.key}" data-mi="${i}" title="Lower ✦ mutation" aria-label="Lower mutation level">−</button></div></div>`)+`</div>`;
       html+=`<div class="slot ${groupCls(grp)}"><div class="nm">${g.label} <span style="font-weight:400">· ${g.mode==="incomplete"?"blend":"dominant/recessive"}</span></div>
         <div class="sel">${alrow(0)}${alrow(1)}</div></div>`;
     });
@@ -3963,7 +3964,7 @@ function renderEditor(){
   $$("#editor .mstep").forEach(b=>b.onclick=()=>{   // −/+ steppers: bump this allele's ✦ mutation without typing
     const g=b.dataset.mut, i=+b.dataset.mi, nv=Math.max(0,Math.min(35, mutLevel(c.geno[g][i])+ (+b.dataset.mstep)));
     c.geno[g][i]=withMut(c.geno[g][i], nv);
-    const inp=b.parentElement.querySelector(".mutn"); if(inp) inp.value=nv;
+    const inp=b.closest(".mutstep").querySelector(".mutn"); if(inp) inp.value=nv;
     save(DB); refreshTotals();
   });
   $("#copyCode").onclick=()=>{ const t=$("#edCode"); t.select();
