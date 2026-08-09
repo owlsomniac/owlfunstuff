@@ -39,7 +39,7 @@
   .btn.sm{padding:5px 9px;font-size:12.5px;border-radius:8px}
   .btn.gray{border-color:var(--line);background:var(--panel);color:var(--ink)}
   .btn:disabled{opacity:.5;cursor:default}
-  select,input[type=text]{font-family:inherit;font-size:13.5px;color:var(--ink);background:var(--panel);
+  select,input[type=text],input[type=search]{font-family:inherit;font-size:13.5px;color:var(--ink);background:var(--panel);
     border:1px solid var(--line);border-radius:8px;padding:6px 8px;max-width:100%}
   label{font-size:12.5px;color:var(--muted);font-weight:600}
   .muted{color:var(--muted)}
@@ -99,6 +99,7 @@
   #view-nichelings .rtbl th.grp{text-align:center;background:var(--brand-soft);color:var(--brand-ink);font-weight:800;letter-spacing:.2px;border-left:3px solid var(--line)}
   #view-nichelings .rtbl th.grp:hover{background:var(--brand);color:#fff}
   #view-nichelings .rtbl th.grp.collapsed{writing-mode:vertical-rl;padding:8px 3px;font-size:11px;font-weight:700;width:22px;min-width:22px}
+  #view-nichelings .rtbl td.rtempty{padding:16px;text-align:center;color:var(--muted);white-space:normal;font-size:12.5px}
   #view-nichelings .rtbl td.strip{width:22px;min-width:22px;text-align:center;color:var(--muted);cursor:pointer;border-left:3px solid var(--line)}
   #view-nichelings .rtbl td.strip:hover{background:var(--brand);color:#fff}
   #view-nichelings .rtbl .grp-start{border-left:3px solid var(--line)}
@@ -3621,7 +3622,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const groupCls=g=>g==="body"?"grp-body":g==="color"?"grp-color":"grp-pattern";
 let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeSideline:true,includeRetired:false};
-let rosterSort={key:"name",dir:1}, rosterCollapsed=null, rosterSecCollapsed=null, rosterIgnoreSec=false, rosterAbilityOnly=false;   // roster table: sort col/dir + collapsed column-group keys + collapsed status-section keys + ignore-sections (flat list) + master compare mode (ability-only vs all genes)
+let rosterSort={key:"name",dir:1}, rosterCollapsed=null, rosterSecCollapsed=null, rosterIgnoreSec=false, rosterAbilityOnly=false, rosterSearch="";   // roster table: sort col/dir + collapsed column-group keys + collapsed status-section keys + ignore-sections (flat list) + master compare mode + free-text search filter
 /* unified breeding finder state — a query builder (persists across re-renders):
    breedConds: [{gene, base, mutMin:num|null, mutMax:num|null, inherit:'carry'|'show', zyg:'either'|'homo'|'hetero'}]
      one target condition per allele; each selected gene type gets its own section of these rows.
@@ -3709,6 +3710,20 @@ function rosterGroups(){
   ];
 }
 const ADV_META={keep:{label:"Keep",cls:"adv-keep"}, retire:{label:"Retire",cls:"adv-retire"}, release:{label:"Release",cls:"adv-rel"}, add:{label:"Add to tribe",cls:"adv-add"}, setsex:{label:"Set sex",cls:"adv-sex"}};
+/* Free-text search haystack for a nicheling: name · sex · bucket/location · every ability it has (long + short
+   name + value) · every gene's allele names (all 18, dom + rec) · its Advice verdict + action synonyms (so
+   "retire", "release"/"remove", "add", … all match) · mutation. Lower-cased for case-insensitive contains-match. */
+const ADV_SYN={keep:"keep hold", retire:"retire archive", release:"release remove delete cull drop", add:"add tribe promote", setsex:"set sex"};
+function catSearchText(c, advAction){
+  const t=abilityTotals(c.geno);
+  const abils=ABILITIES.filter(a=>t[a]).map(a=>`${a} ${AB_SHORT[a]} +${t[a]}`).join(" ");
+  const genes=GENES.map(g=>{ const p=(c.geno||{})[g.key]||[]; return p.map(x=>{ const b=baseK(x), al=g.alleles.find(z=>z.k===b); return al?al.name:b; }).join(" "); }).join(" ");
+  const bk=catBucket(c), bucketWords=`${BUCKET_LABEL[bk]} ${bk==="rogue"?"sideline":bk==="retired"?"archived":bk==="uncat"?"unsorted uncategorized":""}`;
+  const sexWord=c.sex==="F"?"female ♀":c.sex==="M"?"male ♂":"unsexed";
+  const adv=`${(ADV_META[advAction]||{}).label||""} ${ADV_SYN[advAction]||""}`;
+  const mb=mutBonus(c.geno), mut=mb?`mutation ✦+${mb}`:"";
+  return `${c.name} ${sexWord} ${bucketWords} ${abils} ${genes} ${adv} ${mut}`.toLowerCase();
+}
 function consCellHTML(cons){
   const sx=s=>s==="F"?"♀":"♂";
   if(!cons || cons.mode==="none") return `<span class="muted">${esc((cons&&cons.note)||"—")}</span>`;
@@ -3787,11 +3802,15 @@ function rosterTableHTML(active, sideline, retired){
   const secRow=(key,label,n)=>`<tr class="secrow" data-sec="${key}"><td colspan="${totalCols}">${rosterSecCollapsed.has(key)?"▸":"▾"} ${esc(label)} (${n})</td></tr>`;
   // Group every nicheling by its bucket (Uncategorized first so just-added ones are up top and easy to sort),
   // one collapsible section each; empty buckets are skipped so a section vanishes when it has no nichelings.
-  const byBucket={}; BUCKETS.forEach(k=>byBucket[k]=[]); allCats.forEach(c=>byBucket[catBucket(c)].push(c));
+  // free-text search: keep a nicheling only if EVERY whitespace-separated term appears in its search haystack
+  const terms=rosterSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matchCat=c=> !terms.length || (()=>{ const hay=catSearchText(c,(advMap[c.id]||{}).action); return terms.every(t=>hay.includes(t)); })();
+  const shown=allCats.filter(matchCat);
+  const byBucket={}; BUCKETS.forEach(k=>byBucket[k]=[]); shown.forEach(c=>byBucket[catBucket(c)].push(c));
   // keep the edited nicheling's section open so its in-place editor is never orphaned (e.g. after a location change moves it)
-  if(editId!=null){ const ec=allCats.find(c=>c.id===editId); if(ec) rosterSecCollapsed.delete(catBucket(ec)); }
+  if(editId!=null){ const ec=shown.find(c=>c.id===editId); if(ec) rosterSecCollapsed.delete(catBucket(ec)); }
   let body;
-  if(rosterIgnoreSec){ body=sortCats(allCats).map(dataRow).join(""); }
+  if(rosterIgnoreSec){ body=sortCats(shown).map(dataRow).join(""); }
   else {
     body="";
     BUCKETS.forEach(k=>{ const grp=byBucket[k]; if(!grp.length) return;
@@ -3799,7 +3818,12 @@ function rosterTableHTML(active, sideline, retired){
       body+=secRow(k,label,grp.length);
       if(!rosterSecCollapsed.has(k)) body+=sortCats(grp).map(dataRow).join(""); });
   }
+  if(!shown.length) body=`<tr><td colspan="${totalCols}" class="rtempty">No nichelings match <b>${esc(rosterSearch)}</b>. Try a name, stat (Str / Collecting), gene (Bird Beak), location (Desert / Rogue), or a verdict (retire / release).</td></tr>`;
+  const searchBox=`<div class="row" style="gap:6px;align-items:center;flex:1 1 240px;min-width:220px">`+
+    `<input type="search" id="rSearch" placeholder="Search name, stat, gene, location, retire/release…" value="${esc(rosterSearch)}" style="flex:1;min-width:160px" aria-label="Search roster">`+
+    (rosterSearch?`<button class="btn sm gray" id="rSearchClear" title="Clear search">✕</button><span class="muted" style="font-size:11.5px;white-space:nowrap">${shown.length} match${shown.length===1?"":"es"}</span>`:"")+`</div>`;
   const toggle=`<div class="row" style="gap:14px;align-items:center;margin-top:8px;flex-wrap:wrap">`+
+    searchBox+
     `<label class="row" style="gap:6px;font-size:12px;font-weight:600">Compare on: <select id="rCompare"><option value="all" ${!rosterAbilityOnly?"selected":""}>All genes</option><option value="ability" ${rosterAbilityOnly?"selected":""}>Ability &amp; resistance only</option></select></label>`+
     `<label class="row" style="gap:6px;font-size:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="rIgnoreSec" ${rosterIgnoreSec?"checked":""}> Ignore sections (sort the whole roster as one list)</label>`+
     `</div>`;
@@ -3816,6 +3840,10 @@ function wireRosterTable(){
     renderNichelings(); });
   { const ig=$("#view-nichelings #rIgnoreSec"); if(ig) ig.onchange=e=>{ rosterIgnoreSec=e.target.checked; renderNichelings(); }; }
   { const cm=$("#view-nichelings #rCompare"); if(cm) cm.onchange=e=>{ rosterAbilityOnly=e.target.value==="ability"; renderNichelings(); }; }
+  // free-text search — re-render on each keystroke, then restore focus + caret to the (recreated) input
+  { const sb=$("#view-nichelings #rSearch"); if(sb) sb.oninput=e=>{ rosterSearch=e.target.value; const pos=e.target.selectionStart;
+      renderNichelings(); const n=$("#view-nichelings #rSearch"); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(_){} } };
+    const sc=$("#view-nichelings #rSearchClear"); if(sc) sc.onclick=()=>{ rosterSearch=""; renderNichelings(); const n=$("#view-nichelings #rSearch"); if(n) n.focus(); }; }
   $$("#view-nichelings .rtbl [data-sortk]").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const k=el.dataset.sortk;
     if(rosterSort.key===k) rosterSort.dir=-rosterSort.dir;
     else rosterSort={key:k, dir:(k==="name"||k.slice(0,4)==="dom:"||k.slice(0,4)==="rec:"||k==="advice"||k==="value")?1:-1};   // advice/value default ascending → keepers sink to the bottom
@@ -3847,12 +3875,16 @@ function renderNichelings(){
   v.innerHTML=html;
   { const rt=$("#view-nichelings .rtbl"); if(rt && prevScroll) rt.scrollTop=prevScroll; }
   wireRosterTable();
-  $("#addCat").onclick=()=>{ const c=newCat(); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); };
-  $("#addSideline").onclick=()=>{ const c=newCat(null,"sideline"); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); };
+  // open a just-added nicheling's editor and bring it into view (clear any active search so the new one isn't filtered out,
+  // and scroll to the editor since the scroll pane otherwise stays where it was)
+  const addAndEdit=c=>{ DB.cats.push(c); rosterSearch=""; save(DB); editId=c.id; renderNichelings();
+    const ed=$("#view-nichelings #editor"); if(ed && ed.scrollIntoView) ed.scrollIntoView({block:"center"}); };
+  $("#addCat").onclick=()=>addAndEdit(newCat());
+  $("#addSideline").onclick=()=>addAndEdit(newCat(null,"sideline"));
   $("#fromCode").onclick=()=>{
     const code=prompt("Paste a gene code (starts with NB1-):"); if(!code) return;
     const geno=codeToGeno(code); if(!geno){ alert("That doesn't look like a valid gene code."); return; }
-    const c=newCat(); c.geno=geno; DB.cats.push(c); save(DB); editId=c.id; renderNichelings();
+    const c=newCat(); c.geno=geno; addAndEdit(c);
   };
   $("#exp").onclick=exportRoster;
   $("#impBtn").onclick=()=>$("#impFile").click();
