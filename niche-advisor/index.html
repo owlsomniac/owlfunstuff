@@ -4537,13 +4537,33 @@ function minStudsPlan(pool){
 function mergeGroupFeasible(cats, worthy){ const u=groupAlleles(cats, worthy), overflow=[];
   for(const gk in u){ const bases=Object.keys(u[gk]); if(bases.length>2) overflow.push({gene:GENE_BY_KEY[gk], bases}); }
   return {ok:overflow.length===0, overflow, union:u}; }
+/* A bridge cross needs an opposite-sex mate, but that mate is NOT genetically neutral — the kept pup inherits half
+   its genes from it too. So pick the best available mate you already own: the opposite-sex nicheling (not one being
+   released with this group) that shares the MOST of the seed's NOTABLE alleles (its non-default worthy alleles — the
+   scarce ones being consolidated, ignoring the universal baseline everyone has). A matching mate makes the kept pup
+   far more likely to carry the seed's alleles (two sources → higher odds, maybe homozygous). Prefer one in the seed's
+   biome (breedable now); id tiebreak keeps it deterministic. Returns null when nobody shares a notable allele → "any ♂". */
+function bestBridgeMate(pool, seed, group, worthy){
+  worthy=worthy||preserveWorthy(pool);
+  const sw=groupAlleles([seed], worthy), notable=[];
+  for(const gk in sw) for(const b in sw[gk]) if(GENE_BY_KEY[gk].alleles[0].k!==b) notable.push(gk+"|"+b);   // drop the default (most-dominant) allele of each gene
+  if(!notable.length) return null;                                        // seed carries only baseline defaults → any mate is equally fine
+  const grpIds=new Set(group.map(c=>c.id)), oppSex=seed.sex==="F"?"M":"F", seedLoc=effLoc(seed);
+  const cand=pool.filter(c=>c.sex===oppSex && !grpIds.has(c.id)).map(c=>{
+    const cw=groupAlleles([c], worthy);
+    const sharedKeys=notable.filter(k=>{ const i=k.indexOf("|"), gk=k.slice(0,i), b=k.slice(i+1); return cw[gk] && cw[gk][b]!=null; });
+    return {c, shared:sharedKeys.length, sharedKeys, sameBiome:!!(seedLoc && effLoc(c)===seedLoc), id:c.id}; });
+  cand.sort((a,b)=> b.shared-a.shared || (b.sameBiome?1:0)-(a.sameBiome?1:0) || a.id-b.id);
+  return (cand[0] && cand[0].shared>0) ? cand[0] : null;                  // nobody shares a notable allele → fall back to "any ♂"
+}
 /* SECTION 3 — concrete plan to fuse a group's lines onto ONE nicheling (then release the group).
    Sex-agnostic: chains carriers, bridging a same-sex seed through a neutral mate when the group is all
    one sex. Optional homoKeys ("geneKey|base") upgrade the final stud to homozygous (2 copies) for those
    alleles — one extra cross of two carriers. Returns a structured plan the renderer turns into steps. */
 function mergePlan(pool, group, homoKeys){
   const homo=new Set(homoKeys||[]);
-  const u=groupAlleles(group, preserveWorthy(pool));   // only preserve the best of each same-gene/same-skill allele
+  const worthy=preserveWorthy(pool);
+  const u=groupAlleles(group, worthy);   // only preserve the best of each same-gene/same-skill allele
   const labelKey=k=>{ const i=k.indexOf("|"); return consAlleleLabel(k.slice(0,i), k.slice(i+1), u[k.slice(0,i)][k.slice(i+1)]); };
   const allKeys=[]; for(const gk in u) for(const b in u[gk]) allKeys.push(gk+"|"+b);
   // Feasibility. Carry: ≤2 distinct bases/gene. Homozygous a base needs both slots → it can't share its gene.
@@ -4579,11 +4599,16 @@ function mergePlan(pool, group, homoKeys){
   // Walk the ordered chain, recording each cross's new alleles ("brings") + running total ("have").
   const seen=new Set(); const provNew=c=>{ const ns=memProvides(c).filter(k=>!seen.has(k)); ns.forEach(k=>seen.add(k)); return ns; };
   const opp=s=>s==="F"?"M":"F", crosses=[];
-  const locOf=c=>c.location||"";
+  const locOf=c=>effLoc(c);   // the seed's EFFECTIVE biome (breeding needs same biome); rogues/retired aren't pinned to a stale tag
   const seedBring=provNew(seed);
+  let bridgeMate=null;
   if(bridge){
-    // Gen 1: seed × any opposite-sex mate; keep an [opp seed] pup carrying the seed's alleles.
-    crosses.push({gen:1, kind:"bridge", leftCat:seed, leftLabel:`${seed.name}`, leftSex:seed.sex, rightLabel:`any ${opp(seed.sex)==="F"?"♀":"♂"}${locOf(seed)?` in ${locOf(seed)}`:""}`, keepSex:opp(seed.sex),
+    // Gen 1: seed × the best-matching opposite-sex mate (shares the seed's notable alleles), keep an [opp seed] pup.
+    const mate=bestBridgeMate(pool, seed, group, worthy);
+    const oppSym=opp(seed.sex)==="F"?"♀":"♂", loc=locOf(seed)?` in ${locOf(seed)}`:"";
+    const rightLabel = mate ? `${mate.c.name} ${oppSym} (best match)` : `any ${oppSym}${loc}`;
+    if(mate) bridgeMate={ name:mate.c.name, sex:mate.c.sex, sameBiome:mate.sameBiome, loc:locOf(seed), shared:mate.sharedKeys.map(labelKey) };
+    crosses.push({gen:1, kind:"bridge", leftCat:seed, leftLabel:`${seed.name}`, leftSex:seed.sex, rightLabel, rightCat:mate?mate.c:null, keepSex:opp(seed.sex),
       brings:seedBring.map(labelKey), have:[...seen].map(labelKey)});
   }
   const lineSex0 = bridge ? opp(seed.sex) : seed.sex;   // sex of the line-holder going into the first member cross
@@ -4604,7 +4629,7 @@ function mergePlan(pool, group, homoKeys){
   // Homozygous upgrade (Step C): the carry pup holds the homo targets heterozygous; keep two carrier pups
   // (♀+♂) and cross to double them all at once.
   const homoLabels=allKeys.filter(k=>homo.has(k)).map(labelKey);
-  return {ok:true, bridge, crosses, covered, allLabels:allKeys.map(labelKey),
+  return {ok:true, bridge, bridgeMate, crosses, covered, allLabels:allKeys.map(labelKey),
     seed:{name:seed.name, sex:seed.sex}, redundant:redundant.map(c=>c.name),
     freed:group.map(c=>c.name), homoLabels, crossLoc: locs.length>1, locs,
     lastGen: crosses.length?crosses[crosses.length-1].gen:0};
@@ -4820,8 +4845,12 @@ function mergePlanHTML(plan){
   if(plan.trivial)
     return `<p class="muted"><b>${esc(plan.keeper.name)}</b> already carries everything the other${plan.freed.length>1?"s do":" does"} — no breeding needed, just release <b>${esc(plan.freed.join(", "))}</b>.</p>`;
   let h=`<div class="muted" style="font-size:12px;margin-bottom:5px">One line, one pup: keep the pup that inherits the noted alleles at each cross (born the sex marked for the next cross), then release the parents.</div>`;
-  if(plan.bridge)
-    h+=`<div class="muted" style="font-size:11.5px;margin-bottom:5px">Every picked nicheling is the same sex, so the first cross uses a <b>bridge</b> — any opposite-sex mate — purely to move <b>${esc(plan.seed.name)}</b>'s alleles into an opposite-sex pup so the rest can chain in.</div>`;
+  if(plan.bridge){
+    h+=`<div class="muted" style="font-size:11.5px;margin-bottom:5px">Every picked nicheling is the same sex, so the first cross uses a <b>bridge</b> mate — to move <b>${esc(plan.seed.name)}</b>'s alleles into an opposite-sex pup so the rest can chain in.`;
+    if(plan.bridgeMate) h+=` The mate isn't neutral (its pup keeps half its genes), so use one that already shares ${esc(plan.seed.name)}'s alleles — the kept pup is then far likelier to carry them. Best you own: <b>${esc(plan.bridgeMate.name)}</b> ${sx(plan.bridgeMate.sex)}${plan.bridgeMate.shared&&plan.bridgeMate.shared.length?` (also carries <b>${esc(plan.bridgeMate.shared.join(", "))}</b>)`:""}${(!plan.bridgeMate.sameBiome&&plan.bridgeMate.loc)?` — bring it to ${esc(plan.bridgeMate.loc)} first`:""}.`;
+    else h+=` Any opposite-sex mate works here — none of your others share its notable alleles.`;
+    h+=`</div>`;
+  }
   h+=plan.crosses.map(c=>{
     const left = `${esc(c.leftLabel)} ${sx(c.leftSex)}`;
     const right = c.kind==="bridge" ? esc(c.rightLabel) : `${esc(c.rightLabel)} ${sx(c.rightSex)}`;
