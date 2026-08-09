@@ -148,6 +148,7 @@
 
   <div id="view-nichelings"></div>
   <div id="view-breeding" class="hide"></div>
+  <div id="view-consolidate" class="hide"></div>
   <div id="view-genes" class="hide"></div>
   <div id="view-sync" class="hide"></div>
 
@@ -3584,22 +3585,27 @@ let rosterSort={key:"name",dir:1}, rosterCollapsed=null, rosterSecCollapsed=null
    breedMin/breedMax: { statKey: number } per-stat filters on the pup's expected value ('__mut' = mutation) */
 let breedConds=[], breedGenesSel=null, breedGeneMode="all", breedAlleleModeByGene={}, breedOpt=null, breedMode="real", breedMin={}, breedMax={}, breedWho="__any", breedMutMode="shown", breedStatMode="all";   // breedStatMode: must offspring meet ALL stat limits, or ANY one
 const amode=gk=>breedAlleleModeByGene[gk]||"all";   // breedMutMode: 'shown'|'carried' — how the ✦ Mutation metric/filter counts mutation
+/* Consolidate tab state: which nichelings are picked for a manual merge (ids), which alleles ("geneKey|base")
+   the user asked to make homozygous on the merged stud, which auto/manual plan cards are expanded, and
+   whether the (long) allele-inventory section is expanded. */
+let consSel=new Set(), consHomo=new Set(), consOpen=new Set(), consInvOpen=false;
 /* A nicheling's status: "active" (in your tribe), "sideline" (not in the tribe yet but kept on the
    bench — available for breeding), or "retired" (archived — can be brought back). Active is always in
    the breeding pool; sideline is in by default (toggle on) and retired is out by default (toggle off). */
 const activeCats=()=>DB.cats.filter(c=>c.status==="active");
 const breedingPool=()=>DB.cats.filter(c=>["active","sideline","retired"].includes(c.status||"active"));   // always include everyone; status + location tags show real breedability
 
-const TABS=[["nichelings","🐾 My nichelings"],["breeding","💞 Breeding"],["genes","📖 Gene reference"],["sync","☁︎ Sync"]];
+const TABS=[["nichelings","🐾 My nichelings"],["breeding","💞 Breeding"],["consolidate","🧬 Consolidate"],["genes","📖 Gene reference"],["sync","☁︎ Sync"]];
 function renderTabs(){
   $("#tabs").innerHTML=TABS.map(([k,l])=>`<button class="tab ${TAB===k?"on":""}" data-tab="${k}">${l}</button>`).join("");
   $$("#tabs .tab").forEach(b=>b.onclick=()=>{ TAB=b.dataset.tab; showTab(); });
 }
 function showTab(){
   renderTabs();
-  ["nichelings","breeding","genes","sync"].forEach(k=>$("#view-"+k).classList.toggle("hide", k!==TAB));
+  ["nichelings","breeding","consolidate","genes","sync"].forEach(k=>$("#view-"+k).classList.toggle("hide", k!==TAB));
   if(TAB==="nichelings") renderNichelings();
   if(TAB==="breeding") renderBreeding();
+  if(TAB==="consolidate") renderConsolidate();
   if(TAB==="genes") renderGenes();
   if(TAB==="sync") renderSync();
 }
@@ -4319,6 +4325,154 @@ function targetPlanHTML(pool, byGene, geneKeys){
   return html+luck;
 }
 
+/* =========================================================================
+   CONSOLIDATION — concentrate scattered beneficial alleles onto the fewest
+   nichelings, then release the rest. Ability alleles only (appearance ignored);
+   ✦-aware (the best mutation level of an allele dominates — a lesser copy is
+   inferior and not counted as distinct). Pool = active + sideline + retired.
+
+   Model: each gene has TWO allele slots, so preserving K DISTINCT valuable
+   alleles at one gene needs ⌈K/2⌉ nichelings ("studs"); the whole roster's
+   floor is the worst gene, max_g ⌈K_g/2⌉. Merging two lines onto one pup is
+   only possible when their combined alleles fit those two slots per gene.
+   Breeding is ♀×♂, but two SAME-SEX carriers can still be combined: cross one
+   with any opposite-sex mate to flip its alleles into an opposite-sex "bridge"
+   pup, then cross that into the line. Only the FIRST cross is sex-constrained;
+   every kept pup after it is born whichever sex the next cross needs.
+   ========================================================================= */
+/* label a beneficial allele: "Nimble ✦+3 (Col)" */
+function consAlleleLabel(gk, base, level){ const g=GENE_BY_KEY[gk], al=g&&g.alleles.find(a=>a.k===base), ab=al&&Object.keys(al.eff)[0];
+  return `${al?al.name:base}${level?` ✦+${level}`:""}${ab?` (${AB_SHORT[ab]||ab})`:""}`; }
+/* union of a group's beneficial alleles → { geneKey: { base: bestLevel } } (best ✦ across the group per base) */
+function groupAlleles(cats){ const u={};
+  cats.forEach(c=>{ const h=holdingsFor(c.geno,true);
+    for(const key in h){ const i=key.indexOf("|"), gk=key.slice(0,i), b=key.slice(i+1), lv=h[key][0];
+      (u[gk]||(u[gk]={})); if(u[gk][b]==null || lv>u[gk][b]) u[gk][b]=lv; } });
+  return u; }
+/* SECTION 1 — allele inventory: every beneficial ability allele owned → who carries it. Best ✦ dominates:
+   `sole` = only ONE nicheling holds it at the best level (releasing that one loses the best copy). Each
+   carrier records its own top ✦, copies (homozygous = 2 copies of that base), and status/location. */
+function beneficialAlleleInventory(pool){
+  const genes=[];
+  ABILITY_GENE_KEYS.forEach(gk=>{ const g=GENE_BY_KEY[gk], byBase={};
+    pool.forEach(c=>{ const h=holdingsFor(c.geno,true);
+      for(const key in h){ const i=key.indexOf("|"); if(key.slice(0,i)!==gk) continue;
+        const base=key.slice(i+1), levels=h[key], top=levels[0];
+        const rec=byBase[base]||(byBase[base]={base, name:(g.alleles.find(a=>a.k===base)||{}).name||base, bestLevel:0, carriers:[]});
+        if(top>rec.bestLevel) rec.bestLevel=top;
+        rec.carriers.push({cat:c, level:top, copies:levels.length, homo:levels.length>=2 && levels[0]===levels[1]}); } });
+    const alleles=Object.values(byBase);
+    if(alleles.length){ alleles.forEach(a=>{ a.sole = a.carriers.filter(x=>x.level>=a.bestLevel).length===1;
+        a.carriers.sort((x,y)=> y.level-x.level || y.copies-x.copies); });
+      genes.push({gene:g, alleles: alleles.sort((a,b)=>a.name.localeCompare(b.name))}); } });
+  return genes;
+}
+/* SECTION 2 — fewest studs. K_g = distinct beneficial alleles at gene g; studs needed = max_g ⌈K_g/2⌉.
+   Pack every allele onto that many studs (round-robin per gene → ≤2 per gene per stud, so nothing is
+   dropped — the overflow lands on the extra studs). Names which allele goes on which stud. */
+function minStudsPlan(pool){
+  const inv=beneficialAlleleInventory(pool);
+  const perGene=inv.map(x=>({gene:x.gene, alleles:x.alleles, K:x.alleles.length, need:Math.ceil(x.alleles.length/2)}));
+  let N=0; perGene.forEach(pg=>{ if(pg.need>N) N=pg.need; });
+  if(N<1) return {N:0, studs:[], perGene:[], bottleneck:[], totalAlleles:0, empty:true};
+  const studs=Array.from({length:N},()=>({genes:{}}));   // stud → { geneKey: [alleleRecord] }
+  perGene.forEach(pg=>{ pg.alleles.forEach((a,idx)=>{ const s=idx%N;    // round-robin balances the studs; K≤2N ⇒ ≤2 per gene
+      (studs[s].genes[pg.gene.key]||(studs[s].genes[pg.gene.key]=[])).push({base:a.base, name:a.name, level:a.bestLevel, gk:pg.gene.key}); }); });
+  const bottleneck=perGene.filter(pg=>pg.need===N);
+  return {N, studs, perGene, bottleneck, totalAlleles:perGene.reduce((s,x)=>s+x.K,0)};
+}
+/* Can a GROUP's combined beneficial alleles all be CARRIED on one nicheling? (≤2 distinct bases per gene). */
+function mergeGroupFeasible(cats){ const u=groupAlleles(cats), overflow=[];
+  for(const gk in u){ const bases=Object.keys(u[gk]); if(bases.length>2) overflow.push({gene:GENE_BY_KEY[gk], bases}); }
+  return {ok:overflow.length===0, overflow, union:u}; }
+/* SECTION 3 — concrete plan to fuse a group's lines onto ONE nicheling (then release the group).
+   Sex-agnostic: chains carriers, bridging a same-sex seed through a neutral mate when the group is all
+   one sex. Optional homoKeys ("geneKey|base") upgrade the final stud to homozygous (2 copies) for those
+   alleles — one extra cross of two carriers. Returns a structured plan the renderer turns into steps. */
+function mergePlan(pool, group, homoKeys){
+  const homo=new Set(homoKeys||[]);
+  const u=groupAlleles(group);
+  const labelKey=k=>{ const i=k.indexOf("|"); return consAlleleLabel(k.slice(0,i), k.slice(i+1), u[k.slice(0,i)][k.slice(i+1)]); };
+  const allKeys=[]; for(const gk in u) for(const b in u[gk]) allKeys.push(gk+"|"+b);
+  // Feasibility. Carry: ≤2 distinct bases/gene. Homozygous a base needs both slots → it can't share its gene.
+  const overflow=[], homoClash=[];
+  for(const gk in u){ const bases=Object.keys(u[gk]), homoHere=bases.filter(b=>homo.has(gk+"|"+b));
+    if(bases.length>2) overflow.push({gene:GENE_BY_KEY[gk], bases:bases.map(b=>consAlleleLabel(gk,b,u[gk][b]))});
+    else if(homoHere.length>1 || (homoHere.length===1 && bases.length>1))
+      homoClash.push({gene:GENE_BY_KEY[gk], homo:homoHere.map(b=>consAlleleLabel(gk,b,u[gk][b])), other:bases.filter(b=>!homoHere.includes(b)).map(b=>consAlleleLabel(gk,b,u[gk][b]))}); }
+  if(overflow.length || homoClash.length) return {ok:false, overflow, homoClash, allLabels:allKeys.map(labelKey)};
+  const unsexed=group.filter(c=>c.sex!=="F" && c.sex!=="M").map(c=>c.name);
+  if(unsexed.length) return {ok:false, needSetSex:unsexed, allLabels:allKeys.map(labelKey)};
+  if(!hasFM(pool)) return {ok:false, needSex:true, allLabels:allKeys.map(labelKey)};
+  // Which targets a member supplies at the union-best ✦ (only the best-level holder brings a given allele).
+  const memProvides=c=>{ const h=holdingsFor(c.geno,true), out=[];
+    for(const key in h){ const i=key.indexOf("|"), gk=key.slice(0,i), b=key.slice(i+1);
+      if(u[gk] && u[gk][b]!=null && h[key][0]>=u[gk][b]) out.push(gk+"|"+b); } return out; };
+  // Greedy chain order: repeatedly take the member adding the most NEW targets (skips members a prior one
+  // already covers — those are redundant, released without a dedicated cross).
+  const line=new Set(), chain=[], pend=group.slice(), redundant=[];
+  while(pend.length){ let best=null,bi=-1,gain=-1;
+    pend.forEach((c,idx)=>{ const g=memProvides(c).filter(k=>!line.has(k)).length; if(g>gain){gain=g;best=c;bi=idx;} });
+    pend.splice(bi,1);
+    if(gain<=0){ redundant.push(best); continue; }        // brings nothing new → plain release, no cross
+    memProvides(best).forEach(k=>line.add(k)); chain.push(best); }
+  // Trivial: one member already carries everything the group holds → just release the others.
+  if(chain.length<=1) return {ok:true, trivial:true, keeper:chain[0]||group[0], freed:group.filter(c=>c!==(chain[0]||group[0])).map(c=>c.name), allLabels:allKeys.map(labelKey)};
+  // Fix sexes. Only the FIRST cross is constrained (seed × opposite). If the chain isn't all one sex, put an
+  // opposite-sex member second; otherwise bridge the seed through a neutral mate.
+  const seed=chain[0], allSame=chain.every(c=>c.sex===seed.sex);
+  let bridge=false, ordered=chain.slice();
+  if(!allSame){ const j=ordered.findIndex((c,idx)=>idx>0 && c.sex!==seed.sex); if(j>1){ const m=ordered.splice(j,1)[0]; ordered.splice(1,0,m); } }
+  else bridge=true;
+  // Walk the ordered chain, recording each cross's new alleles ("brings") + running total ("have").
+  const seen=new Set(); const provNew=c=>{ const ns=memProvides(c).filter(k=>!seen.has(k)); ns.forEach(k=>seen.add(k)); return ns; };
+  const opp=s=>s==="F"?"M":"F", crosses=[];
+  const locOf=c=>c.location||"";
+  const seedBring=provNew(seed);
+  if(bridge){
+    // Gen 1: seed × any opposite-sex mate; keep an [opp seed] pup carrying the seed's alleles.
+    crosses.push({gen:1, kind:"bridge", leftCat:seed, leftLabel:`${seed.name}`, leftSex:seed.sex, rightLabel:`any ${opp(seed.sex)==="F"?"♀":"♂"}${locOf(seed)?` in ${locOf(seed)}`:""}`, keepSex:opp(seed.sex),
+      brings:seedBring.map(labelKey), have:[...seen].map(labelKey)});
+  }
+  const lineSex0 = bridge ? opp(seed.sex) : seed.sex;   // sex of the line-holder going into the first member cross
+  let lineSex=lineSex0;
+  const members = bridge ? ordered.slice(1) : ordered.slice(1);
+  // In the non-bridge case, gen 1 is seed × ordered[1]; the seed itself supplies its alleles as the start line.
+  let gen = bridge ? 2 : 1;
+  members.forEach((m,idx)=>{ const brings=provNew(m);
+    const isLast = idx===members.length-1;
+    const nextMember = members[idx+1];
+    const keepSex = isLast ? null : opp(nextMember.sex);   // pup born opposite the NEXT member so its cross is valid
+    crosses.push({gen, kind:"cross", leftLabel: (bridge||idx>0)?"the kept pup":`${seed.name}`, leftIsSeed: !bridge && idx===0, leftSeedCat: (!bridge&&idx===0)?seed:null, leftSex:lineSex,
+      rightCat:m, rightLabel:m.name, rightSex:m.sex, keepSex, brings:brings.map(labelKey), have:[...seen].map(labelKey)});
+    lineSex = keepSex || lineSex; gen++; });
+  const covered = seen.size===allKeys.length;
+  // Location: every cross must be same-location; flag if the group spans locations.
+  const locs=[...new Set(group.map(c=>c.location).filter(Boolean))];
+  // Homozygous upgrade (Step C): the carry pup holds the homo targets heterozygous; keep two carrier pups
+  // (♀+♂) and cross to double them all at once.
+  const homoLabels=allKeys.filter(k=>homo.has(k)).map(labelKey);
+  return {ok:true, bridge, crosses, covered, allLabels:allKeys.map(labelKey),
+    seed:{name:seed.name, sex:seed.sex}, redundant:redundant.map(c=>c.name),
+    freed:group.map(c=>c.name), homoLabels, crossLoc: locs.length>1, locs,
+    lastGen: crosses.length?crosses[crosses.length-1].gen:0};
+}
+/* Auto-merge finder: fusible PAIRS — each brings alleles the other lacks (not a subset), and their combined
+   alleles fit one body (≤2 distinct/gene). Ranked by how much they concentrate (distinct alleles, then ✦
+   value). Subset pairs are skipped (those are a plain release, already surfaced in the roster Advice). */
+function autoMerges(pool){
+  const cand=pool.filter(c=>(c.sex==="F"||c.sex==="M") && holdValue(holdingsFor(c.geno,true))>0);
+  const res=[];
+  for(let i=0;i<cand.length;i++) for(let j=i+1;j<cand.length;j++){ const A=cand[i], B=cand[j];
+    const hA=holdingsFor(A.geno,true), hB=holdingsFor(B.geno,true);
+    if(holdCovers(hA,hB) || holdCovers(hB,hA)) continue;                 // one already covers the other → release, not merge
+    if(!mergeGroupFeasible([A,B]).ok) continue;                          // can't fit both on one body
+    const u=groupAlleles([A,B]); let distinct=0, val=0; for(const gk in u) for(const b in u[gk]){ distinct++; val+=1+u[gk][b]; }
+    res.push({group:[A,B], distinct, val, crossLoc: !!(A.location && B.location && A.location!==B.location)}); }
+  res.sort((a,b)=> b.distinct-a.distinct || b.val-a.val);
+  return res;
+}
+
 /* Auto stat MAXIMISER — JOINT across the chosen stats. Driven by which stats are ranked (Optimise ticked); a Min
    also pulls a stat in (as a floor), a Max is a ceiling. A nicheling shows ONE allele per gene and stats share
    genes (Strength & Collecting both draw on Head/Paws/Tail), so the objectives can't be maxed independently —
@@ -4476,6 +4630,140 @@ function renderBreedOut(){
 const sx=s=>s==="F"?"♀":"♂";
 
 /* =========================================================================
+   TAB: Consolidate — concentrate scattered beneficial alleles onto the
+   fewest nichelings, then release the rest. (§1 inventory · §2 fewest studs ·
+   §3 merge plans — auto + manual, with an optional "make homozygous" upgrade.)
+   ========================================================================= */
+/* render a mergePlan() result into concrete gen-by-gen crosses */
+function mergePlanHTML(plan){
+  if(!plan.ok){
+    if(plan.overflow&&plan.overflow.length){
+      const worst=Math.max(...plan.overflow.map(o=>Math.ceil(o.bases.length/2)));
+      return `<p class="muted" style="color:var(--warn);font-size:12px">⚠ These can't all sit on one nicheling — `+
+        plan.overflow.map(o=>`<b>${esc(o.gene.label)}</b> has ${o.bases.length} distinct alleles (${o.bases.map(esc).join(", ")})`).join("; ")+
+        `. A gene has only two slots, so keep them across <b>${worst}</b> nichelings instead — see <b>Fewest studs</b> above.</p>`;
+    }
+    if(plan.homoClash&&plan.homoClash.length)
+      return `<p class="muted" style="color:var(--warn);font-size:12px">⚠ Can't make ${plan.homoClash.map(o=>`<b>${esc(o.homo.join(", "))}</b> homozygous while also carrying <b>${esc((o.other||[]).join(", "))}</b> at ${esc(o.gene.label)}`).join("; ")} — a homozygous allele uses both of that gene's slots. Untick one.</p>`;
+    if(plan.needSetSex) return `<p class="muted">Set the sex (♀/♂) of <b>${esc(plan.needSetSex.join(", "))}</b> in the editor to plan a merge.</p>`;
+    if(plan.needSex) return needSexMsg;
+    return `<p class="muted">Nothing to plan.</p>`;
+  }
+  if(plan.trivial)
+    return `<p class="muted"><b>${esc(plan.keeper.name)}</b> already carries everything the other${plan.freed.length>1?"s do":" does"} — no breeding needed, just release <b>${esc(plan.freed.join(", "))}</b>.</p>`;
+  let h=`<div class="muted" style="font-size:12px;margin-bottom:5px">One line, one pup: keep the pup that inherits the noted alleles at each cross (born the sex marked for the next cross), then release the parents.</div>`;
+  if(plan.bridge)
+    h+=`<div class="muted" style="font-size:11.5px;margin-bottom:5px">Every picked nicheling is the same sex, so the first cross uses a <b>bridge</b> — any opposite-sex mate — purely to move <b>${esc(plan.seed.name)}</b>'s alleles into an opposite-sex pup so the rest can chain in.</div>`;
+  h+=plan.crosses.map(c=>{
+    const left = `${esc(c.leftLabel)} ${sx(c.leftSex)}`;
+    const right = c.kind==="bridge" ? esc(c.rightLabel) : `${esc(c.rightLabel)} ${sx(c.rightSex)}`;
+    const keep = c.keepSex ? ` <b>(keep a ${sx(c.keepSex)} pup)</b>` : ` <b>(keep either-sex pup)</b>`;
+    return `<div style="margin:0 0 6px"><div style="font-weight:600;font-size:13px">Gen ${c.gen}: ${left} × ${right}${keep}</div>`+
+      `<div class="muted" style="font-size:12px">→ that pup should carry all ${c.have.length}: <b>${esc(c.have.join(", "))}</b>${c.brings.length?` <span style="opacity:.8">(new this cross: ${esc(c.brings.join(", "))})</span>`:""}</div></div>`;
+  }).join("");
+  if(plan.homoLabels && plan.homoLabels.length){
+    const many=plan.homoLabels.length>1;
+    h+=`<div style="font-weight:600;font-size:13px;margin:8px 0 2px">Make ${many?"them":"it"} homozygous: ${esc(plan.homoLabels.join(", "))}</div>`+
+      `<div class="muted" style="font-size:12px;margin-bottom:2px">The pup above carries ${many?"these":"this"} on one copy (hidden for a recessive). Keep <b>two</b> carrier pups from the last cross — a ♀ and a ♂ (breed it twice, or keep two from one litter) — then cross them:</div>`+
+      `<div style="margin:0 0 4px"><div style="font-weight:600;font-size:13px">Gen ${plan.lastGen+1}: carrier ♀ × carrier ♂</div>`+
+      `<div class="muted" style="font-size:12px">keep the pup that got <b>${esc(plan.homoLabels.join(", "))}</b> from <b>both</b> parents — now homozygous (2 copies) and fully shown.</div></div>`;
+  }
+  if(plan.crossLoc)
+    h+=`<p class="muted" style="font-size:11.5px;margin:4px 0 0;color:var(--warn)">⚠ The picked nichelings are in different locations (${esc(plan.locs.join(", "))}). Nichelings only breed in the same place — move them together first.</p>`;
+  h+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Every cross is ♀×♂ and luck-based — a parent passes only one of its two alleles, so keep the right pup, then breed on. Once the final pup carries everything, release <b>${esc(plan.freed.join(", "))}</b>.</p>`;
+  return h;
+}
+function renderConsolidate(){
+  const v=$("#view-consolidate"); if(!v) return;
+  const pool=breedingPool();
+  const withVal=pool.filter(c=>holdValue(holdingsFor(c.geno,true))>0);
+  let html=`<div class="card"><h2 style="margin:0 0 4px">🧬 Consolidate your lines</h2>`+
+    `<p class="muted" style="margin:0 0 4px;font-size:12.5px">Concentrate the good alleles now scattered across your roster onto as few nichelings as possible, then release the rest. <b>Ability &amp; resistance alleles only</b> — appearance is ignored. The best ✦ mutation of an allele wins; a lower-✦ copy is inferior and not counted as distinct. Pool = <b>active + sideline + retired</b> (${pool.length} nichelings).</p></div>`;
+
+  if(!withVal.length){ v.innerHTML=html+`<div class="card"><p class="muted">No nicheling carries a beneficial ability allele yet — nothing to consolidate.</p></div>`; return; }
+
+  /* ---- §1 Allele inventory ---- */
+  const inv=beneficialAlleleInventory(pool);
+  const invBody = consInvOpen ? `<div style="margin-top:6px">`+inv.map(gr=>{
+      const rows=gr.alleles.map(a=>{
+        const carr=a.carriers.map(x=>`${esc(x.cat.name)} ${sx(x.cat.sex)} <span class="muted">${x.level?`✦+${x.level}`:""}${x.homo?" ×2":""} · ${esc(statusText(x.cat))}</span>`).join(" &nbsp;·&nbsp; ");
+        return `<div style="margin:2px 0 5px"><b>${esc(consAlleleLabel(gr.gene.key,a.base,a.bestLevel))}</b>${a.sole?` <span class="stt" style="color:var(--warn)">★ sole best copy</span>`:` <span class="muted">(${a.carriers.filter(x=>x.level>=a.bestLevel).length} at best ✦)</span>`}<div style="font-size:11.5px;margin-left:8px">${carr}</div></div>`;
+      }).join("");
+      return `<div style="margin:0 0 8px"><div style="font-weight:600;font-size:12.5px;border-bottom:1px solid var(--line);padding-bottom:2px;margin-bottom:3px">${esc(gr.gene.label)}</div>${rows}</div>`;
+    }).join("")+`</div>` : "";
+  html+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px">`+
+    `<h3 style="margin:0">Allele inventory <span class="muted" style="font-weight:400;font-size:12px">— every beneficial allele you own &amp; who carries it (★ = one holder of the best copy)</span></h3>`+
+    `<button class="btn sm gray" id="consInvToggle">${consInvOpen?"Hide":"Show"}</button></div>${invBody}</div>`;
+
+  /* ---- §2 Fewest studs ---- */
+  const ms=minStudsPlan(pool);
+  let msBody="";
+  if(ms.N){
+    const bott = ms.bottleneck.map(b=>`<b>${esc(b.gene.label)}</b> (${b.K} distinct → needs ${b.need})`).join(", ");
+    msBody=`<p style="margin:2px 0 6px;font-size:13px">All <b>${ms.totalAlleles}</b> of your beneficial alleles fit on <b>${ms.N}</b> nicheling${ms.N>1?"s":""}.`+
+      (ms.N>1?` <span class="muted">Bounded by ${bott} — a gene has only two allele slots.</span>`:` <span class="muted">Everything fits on a single nicheling.</span>`)+`</p>`+
+      `<div style="display:flex;flex-wrap:wrap;gap:8px">`+ms.studs.map((s,i)=>{
+        const lines=Object.keys(s.genes).map(gk=>`<div style="font-size:11.5px"><span class="muted">${esc(GENE_BY_KEY[gk].label)}:</span> ${s.genes[gk].map(a=>esc(consAlleleLabel(gk,a.base,a.level))).join(", ")}</div>`).join("");
+        return `<div style="flex:1 1 220px;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:7px 9px"><div style="font-weight:600;font-size:12.5px;margin-bottom:3px">Stud ${i+1}</div>${lines||'<span class="muted">—</span>'}</div>`;
+      }).join("")+`</div>`+
+      `<p class="muted" style="font-size:11.5px;margin:6px 0 0">These are targets, not existing nichelings — the merge plans below build them from what you own. Recessive alleles are preserved by carrying (1 copy); make one homozygous when you want it to show.</p>`;
+  } else msBody=`<p class="muted">Nothing to condense.</p>`;
+  html+=`<div class="card"><h3 style="margin:0 0 2px">Fewest studs <span class="muted" style="font-weight:400;font-size:12px">— the smallest set that still preserves every allele</span></h3>${msBody}</div>`;
+
+  /* ---- §3 Merge recommendations ---- */
+  html+=`<div class="card"><h3 style="margin:0 0 2px">Merge plans <span class="muted" style="font-weight:400;font-size:12px">— fuse two lines onto one pup, then release both</span></h3>`;
+  // Auto
+  const autos=autoMerges(pool);
+  const AUTO_MAX=8;
+  if(!autos.length){
+    html+=`<p class="muted" style="font-size:12.5px">No two nichelings both add something and still fit on one body — your good alleles are already either duplicated (see roster Advice to release the copies) or spread across genes that need separate studs (above).</p>`;
+  } else {
+    html+=`<div class="muted" style="font-size:12px;margin:2px 0 5px">Top pairs whose alleles combine onto one nicheling (each brings something the other lacks):</div>`;
+    autos.slice(0,AUTO_MAX).forEach(m=>{
+      const [A,B]=m.group, cid="a"+Math.min(A.id,B.id)+"_"+Math.max(A.id,B.id), open=consOpen.has(cid);
+      const homoKeys=[...consHomo].filter(k=>k.indexOf(cid+"::")===0).map(k=>k.slice(cid.length+2));
+      const plan=open?mergePlan(pool,[A,B],homoKeys):null;
+      html+=`<div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin:0 0 6px">`+
+        `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`+
+        `<div style="font-size:12.5px"><b>${esc(A.name)}</b> ${sx(A.sex)} <span class="muted">+</span> <b>${esc(B.name)}</b> ${sx(B.sex)} <span class="muted">→ ${m.distinct} alleles on one pup</span>${m.crossLoc?` <span class="stt" style="color:var(--warn)">⚠ diff. location</span>`:""}</div>`+
+        `<button class="btn sm gray consPlanToggle" data-card="${cid}">${open?"Hide plan":"Show plan"}</button></div>`;
+      if(open){
+        const gal=groupAlleles([A,B]); const homoOpts=[]; for(const gk in gal) for(const b in gal[gk]) homoOpts.push({gk,b,key:gk+"|"+b});
+        html+=`<div style="margin-top:6px">${mergePlanHTML(plan)}</div>`+
+          `<div style="margin-top:6px;font-size:11.5px"><span class="muted">Make homozygous (shows &amp; passes 100%):</span> `+
+          homoOpts.map(o=>`<label style="margin-right:8px;white-space:nowrap"><input type="checkbox" class="consHomo" data-card="${cid}" data-key="${esc(o.key)}" ${consHomo.has(cid+"::"+o.key)?"checked":""}> ${esc(consAlleleLabel(o.gk,o.b,gal[o.gk][o.b]))}</label>`).join("")+`</div>`;
+      }
+      html+=`</div>`;
+    });
+    if(autos.length>AUTO_MAX) html+=`<div class="muted" style="font-size:11.5px">…and ${autos.length-AUTO_MAX} more fusible pair${autos.length-AUTO_MAX>1?"s":""}. Use the manual picker for any combination.</div>`;
+  }
+  // Manual
+  const sexed=pool.filter(c=>c.sex==="F"||c.sex==="M");
+  html+=`<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:600;font-size:12.5px">Manual merge <span class="muted" style="font-weight:400">— tick 2+ nichelings to plan fusing them</span></div>${consSel.size?`<button class="btn sm gray" id="consClearSel">Clear (${consSel.size})</button>`:""}</div>`;
+  html+=`<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin:6px 0;font-size:12px">`+sexed.map(c=>`<label style="white-space:nowrap"><input type="checkbox" class="consPick" data-id="${c.id}" ${consSel.has(c.id)?"checked":""}> ${esc(c.name)} ${sx(c.sex)} <span class="muted">${esc(statusText(c))}</span></label>`).join("")+`</div>`;
+  if(consSel.size>=2){
+    const grp=sexed.filter(c=>consSel.has(c.id)), cid="manual";
+    const homoKeys=[...consHomo].filter(k=>k.indexOf(cid+"::")===0).map(k=>k.slice(cid.length+2));
+    const plan=mergePlan(pool,grp,homoKeys);
+    const gal=groupAlleles(grp); const homoOpts=[]; for(const gk in gal) for(const b in gal[gk]) homoOpts.push({gk,b,key:gk+"|"+b});
+    html+=`<div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px">${mergePlanHTML(plan)}`+
+      (plan.ok && !plan.trivial ? `<div style="margin-top:6px;font-size:11.5px"><span class="muted">Make homozygous:</span> `+
+        homoOpts.map(o=>`<label style="margin-right:8px;white-space:nowrap"><input type="checkbox" class="consHomo" data-card="${cid}" data-key="${esc(o.key)}" ${consHomo.has(cid+"::"+o.key)?"checked":""}> ${esc(consAlleleLabel(o.gk,o.b,gal[o.gk][o.b]))}</label>`).join("")+`</div>` : "")+
+      `</div>`;
+  } else if(consSel.size===1){ html+=`<p class="muted" style="font-size:12px">Pick at least one more to plan a merge.</p>`; }
+  html+=`</div></div>`;
+
+  v.innerHTML=html;
+  // wiring
+  const re=()=>renderConsolidate();
+  const t=$("#consInvToggle"); if(t) t.onclick=()=>{ consInvOpen=!consInvOpen; re(); };
+  $$("#view-consolidate .consPlanToggle").forEach(b=>b.onclick=()=>{ const cid=b.dataset.card; if(consOpen.has(cid)) consOpen.delete(cid); else consOpen.add(cid); re(); });
+  $$("#view-consolidate .consHomo").forEach(cb=>cb.onchange=()=>{ const k=cb.dataset.card+"::"+cb.dataset.key; if(cb.checked) consHomo.add(k); else consHomo.delete(k); re(); });
+  $$("#view-consolidate .consPick").forEach(cb=>cb.onchange=()=>{ const id=+cb.dataset.id; if(cb.checked) consSel.add(id); else consSel.delete(id); re(); });
+  const cs=$("#consClearSel"); if(cs) cs.onclick=()=>{ consSel.clear(); re(); };
+}
+
+/* =========================================================================
    TAB: Gene reference
    ========================================================================= */
 function renderGenes(){
@@ -4506,7 +4794,8 @@ if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILIT
   baseK,isMut,mutLevel,withMut,carryMap,carryDominates,findRetirements,retirementRanking,catContribs,coveredBy,coveringSet,
   holdings,holdCovers,holdKeyCovers,holdValue,holdLabel,UNDESIRABLE,
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS,geneFeasible,targetPlan,mutInRange,targetBaseLabel,
-  mutBonus,statTotal,sidelineAdvice,genePairParts,offspringBST,soleAlleleLabels,offspringConsolidatesProb,nichelingAdvice,consolidationAdvice,ADVICE_RANK,holdingsFor,statTargetPlan};
+  mutBonus,statTotal,sidelineAdvice,genePairParts,offspringBST,soleAlleleLabels,offspringConsolidatesProb,nichelingAdvice,consolidationAdvice,ADVICE_RANK,holdingsFor,statTargetPlan,
+  beneficialAlleleInventory,minStudsPlan,mergeGroupFeasible,mergePlan,autoMerges,groupAlleles,consAlleleLabel};
 
 /* ---- boot (only in a real browser) ---- */
 /* =========================================================================
