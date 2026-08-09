@@ -4191,22 +4191,26 @@ function targetPlan(pool, byGene){
   const coverage=cat=>new Set(conds.filter(c=>carries(cat,c)).map(keyOf));
   const all=new Set(conds.map(keyOf));
   let seed=sexed.slice().sort((a,b)=>coverage(b).size-coverage(a).size || a.id-b.id)[0];
-  const line=coverage(seed), used=new Set([seed.id]), steps=[]; let lastSex=seed.sex;
+  const line=coverage(seed), used=new Set([seed.id]), steps=[];
   const seedCovers=line.size;                                 // how many targets the seed carries ON ITS OWN (before gathering)
   let guard=0;
+  // Chain carriers onto one line. Only the FIRST cross needs a mate opposite the seed; after that the kept pup can be
+  // born whichever sex the next cross needs, so ANY unused carrier can come in next — no forced ♀/♂ alternation.
   while([...all].some(k=>!line.has(k)) && guard++<pool.length+2){
-    const want=lastSex==="F"?"M":"F";
+    const firstStep=!steps.length;
     let best=null,bestGain=0,bestAdd=null;
-    sexed.forEach(c=>{ if(used.has(c.id)||c.sex!==want) return; const add=[...coverage(c)].filter(k=>!line.has(k));
+    sexed.forEach(c=>{ if(used.has(c.id) || (firstStep && c.sex===seed.sex)) return;
+      const add=[...coverage(c)].filter(k=>!line.has(k));
       if(add.length>bestGain){ bestGain=add.length; best=c; bestAdd=add; } });
     if(!best) break;
     used.add(best.id); bestAdd.forEach(k=>line.add(k));
-    steps.push({partner:best.name, partnerSex:best.sex, adds:bestAdd.map(k=>targetBaseLabel(uniq[k]))});
-    lastSex=want;
+    steps.push({partner:best.name, partnerSex:best.sex, adds:bestAdd.map(k=>targetBaseLabel(uniq[k])),
+      have:[...line].map(k=>targetBaseLabel(uniq[k]))});   // running total the kept pup should carry after this cross
   }
-  // each intermediate kept pup must be the sex the NEXT cross needs (opposite of that partner's sex)
+  // each kept pup is born the sex the NEXT cross needs (opposite that partner); the final pup can be either sex
   steps.forEach((s,i)=>{ const nx=steps[i+1]; s.keepPupSex = nx ? (nx.partnerSex==="F"?"M":"F") : null; });
   const covered=[...all].every(k=>line.has(k));
+  const uncovered=[...all].filter(k=>!line.has(k)).map(k=>targetBaseLabel(uniq[k]));   // targets no available mate could bring in
   // When a homozygous cross is worth calling out, classified so the advice is worded correctly:
   //   'homo'   — the target explicitly asks for two copies (any allele/gene, dominant or not).
   //   'recabs' — a linear allele SHOWN that is the MOST recessive in its gene: nothing masks-proof but
@@ -4235,7 +4239,7 @@ function targetPlan(pool, byGene){
   const seedShowsAll=conds.every(c=>condSatisfied(GENE_BY_KEY[c.gene], seed.geno[c.gene]||[], c));
   // A ready second parent for the homozygosing cross must itself carry EVERY recessive, so one cross can double them all.
   const readyMate=needTwoConds.length ? sexed.find(c=>c.id!==seed.id && needTwoConds.every(nc=>carries(c,nc))) : null;
-  return {ok:true, steps, covered, seed:{name:seed.name,sex:seed.sex}, seedCovers, homo, all:[...all], line:[...line], impossible,
+  return {ok:true, steps, covered, uncovered, seed:{name:seed.name,sex:seed.sex}, seedCovers, homo, all:[...all], line:[...line], impossible,
     needTwo:needTwoConds.map(targetBaseLabel), showOne:showOneConds.map(targetBaseLabel), seedShowsAll,
     readyMate: readyMate?{name:readyMate.name,sex:readyMate.sex}:null};
 }
@@ -4262,10 +4266,11 @@ function targetPlanHTML(pool, byGene, geneKeys){
   if(!plan.steps.length && plan.seedShowsAll)
     return html+`<p class="muted"><b>${esc(plan.seed.name)}</b> ${sx(plan.seed.sex)} already shows every target — no breeding needed.</p>`;
   const gatherSteps=()=>plan.steps.map((s,i)=>{ const left=i===0?`${esc(plan.seed.name)} ${sx(plan.seed.sex)}`:"the kept pup";
-      return `<div style="margin:0 0 4px"><div style="font-weight:600;font-size:13px">Gen ${i+1}: ${left} × ${esc(s.partner)} ${sx(s.partnerSex)}</div>`+
-        `<div class="muted" style="font-size:12px">keep a pup that also carries ${esc(s.adds.join(", "))}</div></div>`; }).join("");
-  const luck=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Every cross is ♀×♂ and luck-based — a parent passes only one of its two alleles, so keep the pup that got the targets, then breed on.</p>`;
-  const cantChain=`<p class="muted" style="font-size:11.5px;margin:4px 0 0;color:var(--warn)">Couldn't chain every target through opposite-sex carriers — recruit or breed a bridging mate first.</p>`;
+      const keep=s.keepPupSex?` <b>(keep a ${sx(s.keepPupSex)} pup)</b>`:"";
+      return `<div style="margin:0 0 6px"><div style="font-weight:600;font-size:13px">Gen ${i+1}: ${left} × ${esc(s.partner)} ${sx(s.partnerSex)}${keep}</div>`+
+        `<div class="muted" style="font-size:12px">→ that pup should carry all ${s.have.length} so far: <b>${esc(s.have.join(", "))}</b>${s.adds.length?` <span style="opacity:.8">(new this cross: ${esc(s.adds.join(", "))})</span>`:""}</div></div>`; }).join("");
+  const luck=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Every cross is ♀×♂ and luck-based — a parent passes only one of its two alleles, so keep the pup that got the targets (and the sex noted for the next cross), then breed on.</p>`;
+  const cantChain=`<p class="muted" style="font-size:11.5px;margin:4px 0 0;color:var(--warn)">Couldn't bring <b>${esc((plan.uncovered||[]).join(", "))}</b> onto this line — no nicheling in the selected pool carries ${plan.uncovered&&plan.uncovered.length>1?"them":"it"} that can be bred in. Acquire or breed one that carries ${plan.uncovered&&plan.uncovered.length>1?"them":"it"} (or tick Include retired / sideline if it's set aside), then re-run.</p>`;
   if(!plan.needTwo.length){
     // Every target shows from a single copy (dominant 'show' or 'carry') — one gather line yields the finished nicheling.
     if(plan.steps.length){
