@@ -116,10 +116,10 @@
   #view-nichelings .rtbl td.nmc .nmedit{left:3px}
   #view-nichelings .rtbl td.nmc .nmdel{right:3px}
   #view-nichelings .rtbl td.nmc .locbtns{display:flex;gap:3px;justify-content:center;flex-wrap:wrap;margin-top:5px}
-  #view-nichelings .rtbl td.nmc .locbtn{border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:1px 5px;font-size:13px;line-height:1.35;cursor:pointer;opacity:.55;filter:grayscale(.4)}
-  #view-nichelings .rtbl td.nmc .locbtn:hover{opacity:1;filter:none;border-color:var(--brand)}
-  #view-nichelings .rtbl td.nmc .locbtn.on{opacity:1;filter:none;background:var(--brand-soft);border-color:var(--brand)}
-  #view-nichelings .rtbl td.nmc .locbtn[data-loc="rogue"]{color:#b8860b}
+  #view-nichelings .rtbl td.nmc .locbtn{border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:1px 5px;font-size:13px;line-height:1.35;cursor:pointer}
+  #view-nichelings .rtbl td.nmc .locbtn:hover{border-color:var(--brand)}
+  #view-nichelings .rtbl td.nmc .locbtn.on{background:var(--brand-soft);border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+  #view-nichelings .rtbl td.nmc .locbtn .paw{vertical-align:-2px}
   /* inline editor: opens as an expander row right under the nicheling, pinned to the left edge so it stays in view */
   #view-nichelings .rtbl tr.editrow>td{white-space:normal;padding:0;background:var(--bg2)}
   #view-nichelings .rtbl tr.editrow .edwrap{position:sticky;left:0;width:min(940px,94vw);padding:2px}
@@ -3591,6 +3591,9 @@ const LOCATIONS=["Evergreen","Desert","Frost"];   // biomes; nichelings can only
    tribe yet, still breedable) · retired (archived). The location quick-buttons and the editor set it. */
 const BUCKETS=["uncat","Evergreen","Desert","Frost","rogue","retired"];
 const BUCKET_SYM={uncat:"",Evergreen:"🌲",Desert:"☀️",Frost:"❄️",rogue:"🐾",retired:"💤"};
+// a real TAN paw — the 🐾 emoji is drawn by the platform's colour-emoji font and ignores CSS colour, so the
+// Rogue location button uses this inline SVG (fill = tan) instead, to actually get a tan paw on every device.
+const PAW_SVG='<svg class="paw" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><g fill="#c99a52"><ellipse cx="12" cy="16" rx="4.8" ry="3.9"/><ellipse cx="5.7" cy="10.2" rx="2" ry="2.6"/><ellipse cx="9.6" cy="6.8" rx="2" ry="2.8"/><ellipse cx="14.4" cy="6.8" rx="2" ry="2.8"/><ellipse cx="18.3" cy="10.2" rx="2" ry="2.6"/></g></svg>';
 const BUCKET_LABEL={uncat:"Uncategorized",Evergreen:"Evergreen",Desert:"Desert",Frost:"Frost",rogue:"Rogue",retired:"Retired"};
 const BUCKET_DESC={uncat:"not sorted into a location yet",Evergreen:"tribe · Evergreen",Desert:"tribe · Desert",Frost:"tribe · Frost",rogue:"not in the tribe, but breedable",retired:"archived"};
 function catBucket(c){ if((c.status||"active")==="retired") return "retired"; if(c.status==="sideline") return "rogue";
@@ -3757,7 +3760,7 @@ function rosterTableHTML(active, sideline, retired){
   // location quick-buttons — assign/change a nicheling's bucket; the current one is highlighted, clicking it again clears to Uncategorized
   const LOCBTNS=["Evergreen","Desert","Frost","rogue","retired"];
   const locBtns=c=>{ const cur=catBucket(c);
-    return `<div class="locbtns">`+LOCBTNS.map(k=>`<button class="locbtn${cur===k?" on":""}" data-loc="${k}" data-id="${c.id}" title="${esc(BUCKET_LABEL[k])} — ${esc(BUCKET_DESC[k])}${cur===k?" (click to un-set)":""}">${BUCKET_SYM[k]}</button>`).join("")+`</div>`; };
+    return `<div class="locbtns">`+LOCBTNS.map(k=>`<button class="locbtn${cur===k?" on":""}" data-loc="${k}" data-id="${c.id}" title="${esc(BUCKET_LABEL[k])} — ${esc(BUCKET_DESC[k])}${cur===k?" (click to un-set)":""}">${k==="rogue"?PAW_SVG:BUCKET_SYM[k]}</button>`).join("")+`</div>`; };
   const cellsFor=c=>{ const glyph=c.sex==="F"?"♀":c.sex==="M"?"♂":"";
     let row=`<td class="nmc" data-id="${c.id}">`+
       `<button class="nmact nmedit edit" data-id="${c.id}" title="Edit in place">✏️</button>`+
