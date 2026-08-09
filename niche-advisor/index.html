@@ -4262,28 +4262,43 @@ function targetPlanHTML(pool, byGene, geneKeys){
    genes by contribution, and greedily gathers them until the sum reaches the target. Those become
    inherit:'show' allele conditions fed straight into the same multi-gen gather planner the explicit
    targets use — no manual selection required. Returns per-ability reach + the merged gather conditions. */
-function statTargetPlan(pool, minMap, maxMap){
-  minMap=minMap||breedMin; maxMap=maxMap||breedMax;
+function statTargetPlan(pool, minMap, maxMap, allCats){
+  minMap=minMap||breedMin; maxMap=maxMap||breedMax; allCats=allCats||pool;   // allCats = whole roster, so we can spot owned-but-excluded upgrades
   const targets=ABILITIES.filter(a=>minMap[a]!=null);     // gather-toward goals (ceilings handled separately)
-  const perAbility=targets.map(ab=>{
-    const T=minMap[ab];
-    const cands=[];                                        // best owned allele per linear gene granting `ab`
+  // Best owned allele (base effect + highest ✦ present) per linear gene granting `ab`, over a given cat list; records which cats carry it.
+  const bestPerGene=(cats, ab)=>{ const out=[];
     GENES.forEach(g=>{ if(g.mode!=="linear") return;
       let best=null;
       g.alleles.forEach(a=>{ const base=a.eff&&a.eff[ab]; if(!base) return;
-        let owned=-1;                                       // highest ✦ level of this base anywhere in the pool
-        pool.forEach(cat=>(cat.geno[g.key]||[]).forEach(x=>{ if(baseK(x)===a.k) owned=Math.max(owned,mutLevel(x)); }));
-        if(owned<0) return;                                 // pool owns no copy of this allele — can't gather it
+        let owned=-1; const carriers=[];                    // highest ✦ level of this base + who carries it
+        cats.forEach(cat=>(cat.geno[g.key]||[]).forEach(x=>{ if(baseK(x)===a.k){ owned=Math.max(owned,mutLevel(x)); if(!carriers.some(c=>c.id===cat.id)) carriers.push(cat); } }));
+        if(owned<0) return;                                 // this list owns no copy of this allele — can't gather it
         const val=base+owned;
-        if(!best || val>best.val) best={gene:g.key, base:a.k, name:a.name, eff:base, owned, val};
+        if(!best || val>best.val) best={gene:g.key, base:a.k, name:a.name, eff:base, owned, val, carriers};
       });
-      if(best) cands.push(best);
+      if(best) out.push(best);
     });
+    return out;
+  };
+  const perAbility=targets.map(ab=>{
+    const T=minMap[ab];
+    const cands=bestPerGene(pool, ab);
     cands.sort((x,y)=>y.val-x.val || (x.gene<y.gene?-1:1));
     const maxReach=cands.reduce((s,c)=>s+c.val,0);          // most this pool could show for `ab` on one nicheling
     const picked=[]; let sum=0;
     for(const c of cands){ if(sum>=T) break; picked.push(c); sum+=c.val; }
-    return {ability:ab, target:T, picked, sum, maxReach, reached:sum>=T};
+    let poolBest=null;                                       // best single breedable cat already has, for context
+    pool.forEach(cat=>{ const v=abilityTotals(cat.geno)[ab]||0; if(!poolBest||v>poolBest.val) poolBest={name:cat.name,id:cat.id,val:v}; });
+    // Upgrades the user already OWNS but that sit outside the breeding pool (retired/sideline left out): a stronger allele per gene.
+    const poolByGene={}; cands.forEach(c=>poolByGene[c.gene]=c.val);
+    const fullCands=bestPerGene(allCats, ab), fullMax=fullCands.reduce((s,c)=>s+c.val,0);
+    const poolIds=new Set(pool.map(c=>c.id)), upgrades=[];
+    fullCands.forEach(fc=>{ const have=poolByGene[fc.gene]||0; if(fc.val<=have) return;
+      const outside=fc.carriers.filter(c=>!poolIds.has(c.id)); if(!outside.length) return;
+      upgrades.push({gene:fc.gene, name:fc.name, eff:fc.eff, owned:fc.owned, val:fc.val, gain:fc.val-have,
+        cats:outside.map(c=>({name:c.name, id:c.id, status:c.status||"active"}))});
+    });
+    return {ability:ab, target:T, picked, sum, maxReach, reached:sum>=T, poolBest, fullMax, upgrades};
   });
   const conds=[], seen=new Set();                            // merge picks across abilities (dedup by gene+base)
   perAbility.forEach(p=>p.picked.forEach(c=>{ const k=c.gene+"|"+c.base; if(seen.has(k)) return; seen.add(k);
@@ -4292,19 +4307,39 @@ function statTargetPlan(pool, minMap, maxMap){
 }
 
 function statTargetPlanHTML(pool){
-  const plan=statTargetPlan(pool);
+  const plan=statTargetPlan(pool, breedMin, breedMax, (typeof DB!=="undefined"&&DB.cats)||pool);
   if(!plan.perAbility.length) return mutationPlanHTML(pool);   // only ceilings set → nothing to gather toward
+  const stw=s=>s==="retired"?"retired":s==="sideline"?"sideline":"active";
+  const who=cats=>{ const shown=cats.slice(0,3).map(c=>`${esc(c.name)}${c.id!=null?" #"+c.id:""} <span class="muted">(${stw(c.status)})</span>`).join(", ");
+    return shown+(cats.length>3?` <span class="muted">+${cats.length-3} more</span>`:""); };
   let html=`<div style="font-weight:700;margin:2px 0 4px">Toward your stat targets <span class="muted" style="font-weight:400;font-size:12px">— auto-planned from your pool</span></div>`;
   html+=plan.perAbility.map(p=>{ const sh=AB_SHORT[p.ability];
-    if(!p.picked.length) return `<div style="margin:3px 0"><b>${esc(p.ability)} ≥ ${p.target}</b>: your pool has no ${esc(sh)} allele yet — acquire or breed one first.</div>`;
     const parts=p.picked.map(c=>`${esc(c.name)} <span class="muted">(${esc(GENE_BY_KEY[c.gene].label)} ${esc(sh)}+${c.eff}${c.owned>0?` ✦+${c.owned}`:""})</span>`).join(", ");
     if(p.reached) return `<div style="margin:3px 0"><b>${esc(p.ability)} ≥ ${p.target}</b>: gather ${parts} onto one nicheling → <b>${esc(sh)} ${p.sum}</b> ✓</div>`;
-    return `<div style="margin:3px 0"><b>${esc(p.ability)} ≥ ${p.target}</b>: the most your pool can reach is <b>${esc(sh)} ${p.maxReach}</b> (gathering ${parts}) — short of ${p.target}. Acquire a higher-${esc(sh)} allele to close the gap.</div>`;
+    // Unreachable from the breeding pool — be honest about the ceiling instead of implying a pairing solves it.
+    let msg=`<div style="margin:5px 0 2px"><b>${esc(p.ability)} ≥ ${p.target}</b>: `;
+    msg+= p.maxReach>0 ? `your breeding pool tops out at <b>${esc(sh)} ${p.maxReach}</b>${parts?` (gathering ${parts})`:""} — short of ${p.target}.`
+                       : `no nicheling in your breeding pool grants ${esc(sh)} at all — short of ${p.target}.`;
+    if(p.poolBest && p.maxReach>0 && p.poolBest.val>=p.maxReach) msg+=` <b>${esc(p.poolBest.name)}</b> already reaches ${esc(sh)} ${p.poolBest.val}, so breeding within this pool can't push it higher.`;
+    msg+=`</div>`;
+    if(p.upgrades.length){
+      const reachTxt=p.fullMax>=p.target?`enough to reach ${esc(sh)} ${p.target} ✓`:`lifting the ceiling to ${esc(sh)} ${p.fullMax}`;
+      const list=p.upgrades.map(u=>`<li style="margin:1px 0">${esc(u.name)} <span class="muted">(${esc(GENE_BY_KEY[u.gene].label)} ${esc(sh)}+${u.eff}${u.owned>0?` ✦+${u.owned}`:""})</span> — in ${who(u.cats)}</li>`).join("");
+      msg+=`<div class="muted" style="font-size:12px;margin:0 0 2px">But you already own stronger ${esc(sh)} alleles in nichelings left out of the breeding pool — ${reachTxt} if you bring them in (tick <b>Include retired / sideline</b> above, or un-retire them):</div><ul style="margin:0 0 4px;padding-left:18px;font-size:12px">${list}</ul>`;
+    } else {
+      msg+=`<div class="muted" style="font-size:12px;margin:0 0 2px">No stronger ${esc(sh)} allele anywhere in your roster — you'd need to acquire one (a ${esc(sh)}+2 allele such as on a gene you're not already using).</div>`;
+    }
+    return msg;
   }).join("");
   if(plan.maxes.length) html+=`<div class="muted" style="font-size:11.5px;margin:4px 0 0">Ceiling${plan.maxes.length>1?"s":""}: ${plan.maxes.map(a=>`${esc(AB_SHORT[a])} ≤ ${breedMax[a]}`).join(", ")} — no gathering needed; the Real list already drops any pairing whose pup could exceed it.</div>`;
-  if(plan.conds.length){ const byGene={}; plan.conds.forEach(c=>{ (byGene[c.gene]||(byGene[c.gene]=[])).push(c); });
-    html+=`<div style="margin-top:8px">`+targetPlanHTML(pool, byGene, Object.keys(byGene))+`</div>`; }
-  html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">A single high pairing can also reach the target directly — the Real list above keeps any pairing whose best-case pup meets your Min/Max.</p>`;
+  // Render the multi-gen gather plan ONLY for abilities actually reachable from the pool — otherwise it would read as if an unreachable target is solved.
+  const reachedConds=[], seen=new Set();
+  plan.perAbility.filter(p=>p.reached).forEach(p=>p.picked.forEach(c=>{ const k=c.gene+"|"+c.base; if(seen.has(k)) return; seen.add(k);
+    reachedConds.push({gene:c.gene, base:c.base, inherit:"show", mutMin:c.owned>0?c.owned:null, mutMax:null, zyg:"either"}); }));
+  if(reachedConds.length){ const byGene={}; reachedConds.forEach(c=>{ (byGene[c.gene]||(byGene[c.gene]=[])).push(c); });
+    html+=`<div style="margin-top:8px">`+targetPlanHTML(pool, byGene, Object.keys(byGene))+`</div>`;
+    html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">A single high pairing can also reach the target directly — the Real list above keeps any pairing whose best-case pup meets your Min/Max.</p>`;
+  }
   return html;
 }
 
