@@ -3631,6 +3631,15 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const groupCls=g=>g==="body"?"grp-body":g==="color"?"grp-color":"grp-pattern";
 let TAB="nichelings", editId=null, breed={mom:null,dad:null,includeSideline:true,includeRetired:false};
+
+/* Remember the open tab + scroll position so a reload lands you back where you were.
+   Mobile browsers reload a backgrounded tab when you return to it, which otherwise
+   dumps you on the first tab at the very top. Kept in its OWN localStorage key — never
+   the roster — so it can't affect saved data or cross-device sync. */
+const UIKEY="niche-ui-v1";
+function saveUI(){ try{ const rt=document.querySelector("#view-nichelings .rtbl");
+  localStorage.setItem(UIKEY, JSON.stringify({ tab:TAB, y:(window.scrollY||window.pageYOffset||0), rt:(rt?rt.scrollTop:0) })); }catch(_){}}
+function loadUI(){ try{ return JSON.parse(localStorage.getItem(UIKEY))||{}; }catch(_){ return {}; } }
 let rosterSort={key:"name",dir:1}, rosterCollapsed=null, rosterSecCollapsed=null, rosterIgnoreSec=false, rosterAbilityOnly=false, rosterSearch="";   // roster table: sort col/dir + collapsed column-group keys + collapsed status-section keys + ignore-sections (flat list) + master compare mode + free-text search filter
 /* unified breeding finder state — a query builder (persists across re-renders):
    breedConds: [{gene, base, mutMin:num|null, mutMax:num|null, inherit:'carry'|'show', zyg:'either'|'homo'|'hetero'}]
@@ -3656,7 +3665,7 @@ const breedingPool=()=>DB.cats.filter(c=>["active","sideline","retired"].include
 const TABS=[["nichelings","🐾 My nichelings"],["breeding","💞 Breeding"],["consolidate","🧬 Consolidate"],["genes","📖 Gene reference"],["sync","☁︎ Sync"]];
 function renderTabs(){
   $("#tabs").innerHTML=TABS.map(([k,l])=>`<button class="tab ${TAB===k?"on":""}" data-tab="${k}">${l}</button>`).join("");
-  $$("#tabs .tab").forEach(b=>b.onclick=()=>{ TAB=b.dataset.tab; showTab(); });
+  $$("#tabs .tab").forEach(b=>b.onclick=()=>{ TAB=b.dataset.tab; showTab(); saveUI(); });
 }
 function showTab(){
   renderTabs();
@@ -4966,5 +4975,16 @@ function initSync(){
   });
 }
 function renderSync(){ initSync(); }
-if(typeof document!=="undefined" && document.getElementById("tabs")){ initSync(); showTab(); }
+if(typeof document!=="undefined" && document.getElementById("tabs")){
+  const _ui=loadUI();
+  if(_ui.tab && TABS.some(t=>t[0]===_ui.tab)) TAB=_ui.tab;   // restore the open tab BEFORE the first render
+  initSync(); showTab();
+  if(_ui.y||_ui.rt){ const _raf=window.requestAnimationFrame||(f=>setTimeout(f,0));   // restore scroll once the view has laid out (heights exist)
+    _raf(()=>{ try{ if(_ui.y) window.scrollTo(0,_ui.y);
+      const rt=document.querySelector("#view-nichelings .rtbl"); if(rt && _ui.rt && TAB==="nichelings") rt.scrollTop=_ui.rt; }catch(_){} }); }
+  let _uiT=null; const _uiSave=()=>{ if(_uiT) return; _uiT=setTimeout(()=>{ _uiT=null; saveUI(); },250); };   // throttle scroll writes
+  document.addEventListener("scroll", _uiSave, {passive:true, capture:true});   // capture phase catches BOTH the page and the roster pane's inner scroll (scroll doesn't bubble)
+  document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="hidden") saveUI(); });   // the moment a mobile browser suspends/reloads us — capture the exact spot
+  window.addEventListener("pagehide", saveUI);
+}
 </script>
