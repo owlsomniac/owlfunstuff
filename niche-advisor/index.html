@@ -4300,58 +4300,102 @@ function targetPlanHTML(pool, byGene, geneKeys){
   return html+luck;
 }
 
-/* Auto stat-target planner. When only Optimise stat Min/Max are set (no explicit allele targets), the
-   user shouldn't have to hand-pick which alleles raise the stat — this decides it. Stats come from the
-   SHOWN allele of each gene (see abilityTotals), so for every Min-targeted ability it takes the single
-   best allele the pool actually OWNS on each linear gene (base effect + the best ✦ level present), sorts
-   genes by contribution, and greedily gathers them until the sum reaches the target. Those become
-   inherit:'show' allele conditions fed straight into the same multi-gen gather planner the explicit
-   targets use — no manual selection required. Returns per-ability reach + the merged gather conditions. */
+/* Auto stat-target planner — JOINT across the targeted stats. A nicheling shows ONE allele per gene, and stats
+   share genes (Strength and Collecting both draw on Head/Paws/Tail, etc.), so the Mins CANNOT be judged one at a
+   time — each gene must be ASSIGNED to a single stat. This enumerates, per gene, {neutral} ∪ {the best owned
+   allele for each targeted ability}, computes the resulting stat vector for every combination, and finds whether
+   all Mins hold together. Feasible → returns one assignment to build. Infeasible → returns the trade-off (Pareto)
+   frontier + the solo maxima, so the user sees exactly what's jointly achievable and which genes are contested. */
 function statTargetPlan(pool, minMap, maxMap){
   minMap=minMap||breedMin; maxMap=maxMap||breedMax;
-  const targets=ABILITIES.filter(a=>minMap[a]!=null);     // gather-toward goals (ceilings handled separately)
-  const perAbility=targets.map(ab=>{
-    const T=minMap[ab];
-    const cands=[];                                        // best owned allele per linear gene granting `ab`
-    GENES.forEach(g=>{ if(g.mode!=="linear") return;
-      let best=null;
-      g.alleles.forEach(a=>{ const base=a.eff&&a.eff[ab]; if(!base) return;
-        let owned=-1;                                       // highest ✦ level of this base anywhere in the pool
-        pool.forEach(cat=>(cat.geno[g.key]||[]).forEach(x=>{ if(baseK(x)===a.k) owned=Math.max(owned,mutLevel(x)); }));
-        if(owned<0) return;                                 // pool owns no copy of this allele — can't gather it
-        const val=base+owned;
-        if(!best || val>best.val) best={gene:g.key, base:a.k, name:a.name, eff:base, owned, val};
-      });
-      if(best) cands.push(best);
-    });
-    cands.sort((x,y)=>y.val-x.val || (x.gene<y.gene?-1:1));
-    const maxReach=cands.reduce((s,c)=>s+c.val,0);          // most this pool could show for `ab` on one nicheling
-    const picked=[]; let sum=0;                             // reachable → fewest genes to hit T; unreachable → all genes (= the max)
-    for(const c of cands){ if(sum>=T) break; picked.push(c); sum+=c.val; }
-    return {ability:ab, target:T, picked, sum, maxReach, reached:sum>=T};
+  const mins=ABILITIES.filter(a=>minMap[a]!=null).map(a=>({ability:a,target:minMap[a]}));
+  const maxes=ABILITIES.filter(a=>maxMap[a]!=null);
+  if(!mins.length) return {mins:[], maxes, empty:true};
+  const minAbs=mins.map(m=>m.ability);
+  // Per gene: neutral (contributes 0) + the best owned allele for each targeted ability. An allele best for
+  // several abilities appears once with its full contribution vector, so one gene can't double-serve.
+  const geneCands=[], geneServes={};
+  GENES.forEach(g=>{ if(g.mode!=="linear") return;
+    const bestA={};                                          // ability -> {k,name,owned,val}
+    g.alleles.forEach(a=>{ if(!a.eff) return; const grants=minAbs.filter(A=>a.eff[A]); if(!grants.length) return;
+      let owned=-1; pool.forEach(cat=>(cat.geno[g.key]||[]).forEach(x=>{ if(baseK(x)===a.k) owned=Math.max(owned,mutLevel(x)); }));
+      if(owned<0) return;                                    // pool owns no copy → can't use it
+      grants.forEach(A=>{ const val=a.eff[A]+owned; if(!bestA[A]||val>bestA[A].val) bestA[A]={k:a.k,name:a.name,owned,val}; }); });
+    const serves=new Set(Object.keys(bestA)); if(!serves.size) return;
+    const byK={}; Object.keys(bestA).forEach(A=>{ const b=bestA[A]; byK[b.k+"|"+b.owned]={k:b.k,name:b.name,owned:b.owned}; });
+    const cands=[{base:null,name:null,owned:0,contrib:{},gene:g.key,label:g.label}];
+    Object.values(byK).forEach(al=>{ const A=g.alleles.find(x=>x.k===al.k), contrib={};
+      minAbs.forEach(B=>{ if(A.eff&&A.eff[B]) contrib[B]=A.eff[B]+al.owned; });
+      cands.push({base:al.k,name:al.name,owned:al.owned,contrib,gene:g.key,label:g.label}); });
+    geneCands.push({cands}); geneServes[g.key]=serves;
   });
-  const conds=[], seen=new Set();                            // merge picks across abilities (dedup by gene+base)
-  perAbility.forEach(p=>p.picked.forEach(c=>{ const k=c.gene+"|"+c.base; if(seen.has(k)) return; seen.add(k);
-    conds.push({gene:c.gene, base:c.base, inherit:"show", mutMin:c.owned>0?c.owned:null, mutMax:null, zyg:"either"}); }));
-  return {perAbility, conds, maxes:ABILITIES.filter(a=>maxMap[a]!=null)};
+  // Enumerate assignments → distinct stat vectors (keep the pick-set that uses the fewest special alleles).
+  const results=new Map(), combos=geneCands.reduce((n,g)=>n*g.cands.length,1);
+  const record=(sums,picks)=>{ const key=minAbs.map(A=>sums[A]||0).join(","), prev=results.get(key);
+    if(!prev||picks.length<prev.n) results.set(key,{sums:{...sums},picks:picks.slice(),n:picks.length}); };
+  let approx=false;
+  if(combos<=3000000){ const rec=(i,sums,picks)=>{ if(i===geneCands.length){ record(sums,picks); return; }
+      for(const c of geneCands[i].cands){ const ns={...sums}; for(const A in c.contrib) ns[A]=(ns[A]||0)+c.contrib[A];
+        if(c.base) picks.push(c); rec(i+1,ns,picks); if(c.base) picks.pop(); } };
+    rec(0,{},[]); }
+  else { approx=true; const sums={},picks=[]; geneCands.forEach(g=>{ let best=null; g.cands.forEach(c=>{ const t=minAbs.reduce((s,A)=>s+(c.contrib[A]||0),0); if(!best||t>best.t) best={c,t}; }); if(best&&best.c.base){ picks.push(best.c); for(const A in best.c.contrib) sums[A]=(sums[A]||0)+best.c.contrib[A]; } }); record(sums,picks); }
+  const achievable=[...results.values()];
+  const soloMax={}; minAbs.forEach(A=>soloMax[A]=Math.max(0,...achievable.map(r=>r.sums[A]||0)));
+  const meets=r=>mins.every(m=>(r.sums[m.ability]||0)>=m.target), total=r=>minAbs.reduce((s,A)=>s+(r.sums[A]||0),0);
+  const feasibleAll=achievable.filter(meets);
+  const feasible=feasibleAll.length? feasibleAll.slice().sort((a,b)=>a.n-b.n||total(b)-total(a))[0] : null;
+  const dominates=(x,y)=>minAbs.every(A=>(x.sums[A]||0)>=(y.sums[A]||0))&&minAbs.some(A=>(x.sums[A]||0)>(y.sums[A]||0));
+  const frontier=achievable.filter(r=>!achievable.some(o=>dominates(o,r)))
+    .sort((a,b)=>(b.sums[minAbs[0]]||0)-(a.sums[minAbs[0]]||0)||total(b)-total(a));
+  const contested=Object.keys(geneServes).filter(k=>geneServes[k].size>1).map(k=>GENE_BY_KEY[k].label);
+  return {mins, maxes, minAbs, achievable, frontier, feasible, soloMax, contested, approx};
 }
 
 function statTargetPlanHTML(pool){
-  const plan=statTargetPlan(pool);   // judge against the SELECTED pool (retired/sideline count only when their box is ticked)
-  if(!plan.perAbility.length) return mutationPlanHTML(pool);   // only ceilings set → nothing to gather toward
-  // One terse verdict per targeted stat: possible → plan follows; not possible → the max the selected nichelings can reach.
-  let html=plan.perAbility.map(p=>{ const sh=AB_SHORT[p.ability];
-    if(p.reached) return `<div style="margin:2px 0"><b>${esc(p.ability)} ≥ ${p.target}</b> — <b style="color:#2e9e57">possible</b> (reaches ${esc(sh)} ${p.sum}):</div>`;
-    if(!p.maxReach) return `<div style="margin:2px 0"><b>${esc(p.ability)} ≥ ${p.target}</b> — <b style="color:var(--warn)">not possible</b>: none of the selected nichelings grant ${esc(sh)}.</div>`;
-    return `<div style="margin:2px 0"><b>${esc(p.ability)} ≥ ${p.target}</b> — <b style="color:var(--warn)">not possible</b>. Max <b>${esc(sh)} ${p.maxReach}</b> with the selected nichelings, from:</div>`;
-  }).join("");
-  if(plan.maxes.length) html+=`<div class="muted" style="font-size:11.5px;margin:2px 0 0">Ceiling${plan.maxes.length>1?"s":""}: ${plan.maxes.map(a=>`${esc(AB_SHORT[a])} ≤ ${breedMax[a]}`).join(", ")}.</div>`;
-  // One generational plan for the picks: the target subset when reachable, or the full ceiling set (the max, and with which pairs) when not.
-  const conds=[], seen=new Set();
-  plan.perAbility.forEach(p=>p.picked.forEach(c=>{ const k=c.gene+"|"+c.base; if(seen.has(k)) return; seen.add(k);
-    conds.push({gene:c.gene, base:c.base, inherit:"show", mutMin:c.owned>0?c.owned:null, mutMax:null, zyg:"either"}); }));
-  if(conds.length){ const byGene={}; conds.forEach(c=>{ (byGene[c.gene]||(byGene[c.gene]=[])).push(c); });
-    html+=`<div style="margin-top:6px">`+targetPlanHTML(pool, byGene, Object.keys(byGene))+`</div>`; }
+  const plan=statTargetPlan(pool);   // judged JOINTLY against the SELECTED pool (retired/sideline count only when ticked)
+  if(plan.empty || !plan.mins.length) return mutationPlanHTML(pool);   // only ceilings set → nothing to gather toward
+  const AB=a=>esc(AB_SHORT[a]);
+  const vecTxt=r=>plan.minAbs.map(A=>`${AB(A)} ${r.sums[A]||0}`).join(" + ");
+  const goalTxt=plan.mins.map(m=>`<b>${esc(m.ability)} ≥ ${m.target}</b>`).join(" and ");
+  const maxLine=plan.maxes.length?`<div class="muted" style="font-size:11.5px;margin:2px 0 0">Ceiling${plan.maxes.length>1?"s":""}: ${plan.maxes.map(a=>`${esc(AB_SHORT[a])} ≤ ${breedMax[a]}`).join(", ")}.</div>`:"";
+  const comboByAbility=picks=>plan.minAbs.map(A=>{ const gs=picks.filter(p=>p.contrib[A]!=null)
+      .map(p=>`${esc(p.label)} ${esc(p.name)}${p.owned>0?` ✦${p.owned}`:""}`);
+    return `<b>${AB(A)}</b>: ${gs.length?gs.join(", "):"—"}`; }).join(" &nbsp;·&nbsp; ");
+  const planFor=picks=>{ const byGene={}; picks.forEach(p=>{ (byGene[p.gene]||(byGene[p.gene]=[]))
+      .push({gene:p.gene,base:p.base,inherit:"show",mutMin:p.owned>0?p.owned:null,mutMax:null,zyg:"either"}); });
+    return `<div style="margin-top:6px">`+targetPlanHTML(pool, byGene, Object.keys(byGene))+`</div>`; };
+
+  // FEASIBLE — all Mins hold together on one nicheling.
+  if(plan.feasible){
+    const many=plan.minAbs.length>1;
+    let html=`<div style="margin:2px 0">${goalTxt} — <b style="color:#2e9e57">possible${many?" together":""}</b> (reaches ${vecTxt(plan.feasible)}).</div>`;
+    if(many) html+=`<div class="muted" style="font-size:12px;margin:0 0 2px">One nicheling shows — ${comboByAbility(plan.feasible.picks)}.</div>`;
+    return html+maxLine+planFor(plan.feasible.picks);
+  }
+  // INFEASIBLE, single stat — report the max the selected pool can reach, then the plan to build it.
+  if(plan.minAbs.length===1){
+    const A=plan.minAbs[0], m=plan.mins[0], mx=plan.soloMax[A], best=plan.frontier[0];
+    let html= mx>0
+      ? `<div style="margin:2px 0"><b>${esc(A)} ≥ ${m.target}</b> — <b style="color:var(--warn)">not possible</b>. Max <b>${AB(A)} ${mx}</b> with the selected nichelings, from:</div>`
+      : `<div style="margin:2px 0"><b>${esc(A)} ≥ ${m.target}</b> — <b style="color:var(--warn)">not possible</b>: none of the selected nichelings grant ${AB(A)}.</div>`;
+    html+=maxLine;
+    if(best && best.picks.length) html+=planFor(best.picks);
+    return html;
+  }
+  // INFEASIBLE, several stats — they compete for shared genes. Show why, the solo maxima, and the trade-off frontier.
+  let html=`<div style="margin:2px 0">${goalTxt} — <b style="color:var(--warn)">can't be met together</b> on one nicheling.</div>`;
+  if(plan.contested.length) html+=`<div class="muted" style="font-size:12px;margin:0 0 3px">Each gene shows only one allele, and these stats draw on the same gene${plan.contested.length>1?"s":""}: <b>${plan.contested.map(esc).join(", ")}</b> — spending one on a stat means the other can't use it.</div>`;
+  html+=`<div class="muted" style="font-size:12px;margin:0 0 2px">On its own each reaches: ${plan.minAbs.map(A=>`<b>${AB(A)} ${plan.soloMax[A]}</b>`).join(", ")} — but not at the same time.</div>`;
+  const rows=plan.frontier.slice(0,6);
+  html+=`<div style="font-weight:600;font-size:12.5px;margin:6px 0 2px">Best you can get on one nicheling (the real trade-offs):</div>`;
+  html+=`<ul style="margin:0 0 4px;padding-left:16px;font-size:12px">`+rows.map(pt=>`<li style="margin:2px 0"><b>${vecTxt(pt)}</b> — ${comboByAbility(pt.picks)}</li>`).join("")+`</ul>`;
+  if(plan.frontier.length>rows.length) html+=`<div class="muted" style="font-size:11px;margin:0 0 2px">…and other splits in between.</div>`;
+  html+=maxLine;
+  // Suggest the frontier point closest to what they asked (least total shortfall, then highest total).
+  const shortfall=pt=>plan.mins.reduce((s,m)=>s+Math.max(0,m.target-(pt.sums[m.ability]||0)),0);
+  const tot=pt=>plan.minAbs.reduce((s,A)=>s+(pt.sums[A]||0),0);
+  const closest=plan.frontier.slice().sort((a,b)=>shortfall(a)-shortfall(b)||tot(b)-tot(a))[0];
+  html+=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Closest single nicheling to what you asked: <b>${vecTxt(closest)}</b> — set your Mins to those (or lower) and the build plan appears.</p>`;
   return html;
 }
 
