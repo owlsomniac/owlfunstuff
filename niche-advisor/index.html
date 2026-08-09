@@ -85,23 +85,41 @@
   code{background:var(--chip);border:1px solid var(--line);border-radius:5px;padding:0 4px;font-size:12px}
   .foot{color:var(--muted);font-size:12px;text-align:center;margin-top:24px}
   /* ---- roster table (grouped, sortable, collapsible column groups) ---- */
-  #view-nichelings .rtbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin-top:10px}
+  #view-nichelings .rtbl{overflow:auto;max-height:82vh;border:1px solid var(--line);border-radius:12px;margin-top:10px}
   #view-nichelings .rtbl table{border-collapse:separate;border-spacing:0;font-size:12.5px;width:max-content;min-width:100%}
   #view-nichelings .rtbl th,#view-nichelings .rtbl td{border-bottom:1px solid var(--line-soft);border-right:1px solid var(--line-soft);padding:6px 8px;text-align:left;white-space:nowrap;vertical-align:middle}
   #view-nichelings .rtbl tr>*:last-child{border-right:0}
-  #view-nichelings .rtbl thead th{position:sticky;top:0;z-index:2;background:var(--bg2);cursor:pointer;user-select:none;border-bottom:1px solid var(--line)}
+  /* sticky column headers: the group-label row pins to the top of the scroll pane, the sub-header row sits just below it (its offset = the first row's measured height, set on --h1). */
+  #view-nichelings .rtbl thead th{position:sticky;z-index:2;background:var(--bg2);cursor:pointer;user-select:none;border-bottom:1px solid var(--line)}
+  #view-nichelings .rtbl thead tr:first-child th{top:0;z-index:4}
+  #view-nichelings .rtbl thead tr:nth-child(2) th{top:var(--h1,30px);z-index:3}
   #view-nichelings .rtbl thead th:not(.grp):not(.dualh):hover{background:var(--brand-soft)}
   #view-nichelings .rtbl th .arr{color:var(--muted);font-size:10px;margin-left:3px;opacity:.5}
   #view-nichelings .rtbl th[aria-sort="ascending"] .arr,#view-nichelings .rtbl th[aria-sort="descending"] .arr{color:var(--brand-ink);opacity:1}
   #view-nichelings .rtbl th.grp{text-align:center;background:var(--brand-soft);color:var(--brand-ink);font-weight:800;letter-spacing:.2px;border-left:3px solid var(--line)}
   #view-nichelings .rtbl th.grp:hover{background:var(--brand);color:#fff}
-  #view-nichelings .rtbl th.grp.collapsed{writing-mode:vertical-rl;transform:rotate(180deg);padding:8px 3px;font-size:11px;font-weight:700;width:22px;min-width:22px}
+  #view-nichelings .rtbl th.grp.collapsed{writing-mode:vertical-rl;padding:8px 3px;font-size:11px;font-weight:700;width:22px;min-width:22px}
   #view-nichelings .rtbl td.strip{width:22px;min-width:22px;text-align:center;color:var(--muted);cursor:pointer;border-left:3px solid var(--line)}
   #view-nichelings .rtbl td.strip:hover{background:var(--brand);color:#fff}
   #view-nichelings .rtbl .grp-start{border-left:3px solid var(--line)}
   #view-nichelings .rtbl tbody tr:nth-child(even){background:rgba(127,127,127,.06)}
   #view-nichelings .rtbl tbody tr:hover{background:var(--brand-soft)}
-  #view-nichelings .rtbl td.nmc{font-weight:700}
+  /* name cell holds its own actions: pencil top-left, trash top-right, name centered, location quick-buttons under it */
+  #view-nichelings .rtbl td.nmc{font-weight:700;position:relative;vertical-align:top;min-width:158px;padding:22px 8px 7px;text-align:center}
+  #view-nichelings .rtbl td.nmc .nmname{font-weight:700;line-height:1.25}
+  #view-nichelings .rtbl td.nmc .nmact{position:absolute;top:3px;border:0;background:transparent;cursor:pointer;font-size:13px;padding:2px 4px;border-radius:6px;line-height:1}
+  #view-nichelings .rtbl td.nmc .nmact:hover{background:var(--brand-soft)}
+  #view-nichelings .rtbl td.nmc .nmedit{left:3px}
+  #view-nichelings .rtbl td.nmc .nmdel{right:3px}
+  #view-nichelings .rtbl td.nmc .locbtns{display:flex;gap:3px;justify-content:center;flex-wrap:wrap;margin-top:5px}
+  #view-nichelings .rtbl td.nmc .locbtn{border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:1px 5px;font-size:13px;line-height:1.35;cursor:pointer;opacity:.55;filter:grayscale(.4)}
+  #view-nichelings .rtbl td.nmc .locbtn:hover{opacity:1;filter:none;border-color:var(--brand)}
+  #view-nichelings .rtbl td.nmc .locbtn.on{opacity:1;filter:none;background:var(--brand-soft);border-color:var(--brand)}
+  #view-nichelings .rtbl td.nmc .locbtn[data-bucket="rogue"]{color:#b8860b}
+  /* inline editor: opens as an expander row right under the nicheling, pinned to the left edge so it stays in view */
+  #view-nichelings .rtbl tr.editrow>td{white-space:normal;padding:0;background:var(--bg2)}
+  #view-nichelings .rtbl tr.editrow .edwrap{position:sticky;left:0;width:min(940px,94vw);padding:2px}
+  #view-nichelings .rtbl tr.editrow .card{margin:0}
   #view-nichelings .rtbl td.num{text-align:right;font-variant-numeric:tabular-nums}
   #view-nichelings .rtbl th.dualh{text-align:center;cursor:default}
   #view-nichelings .rtbl th.dualh .dhname{font-weight:700}
@@ -3560,10 +3578,27 @@ function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)); if(r&&r.cat
     return r; } }catch(e){} return {cats:[], seq:1}; }
 function save(r){ try{ localStorage.setItem(KEY, JSON.stringify(r)); }catch(e){} try{ if(window.SYNCKIT_API) window.SYNCKIT_API.notifyChange(); }catch(e){} }
 let DB=load();
-const LOCATIONS=["Evergreen","Desert","Frost"];   // nichelings can only breed with others in the SAME location
-const statusWord=c=>c.status==="sideline"?"Sideline":c.status==="retired"?"Retired":"Active";
-const statusText=c=>{ const w=statusWord(c); return c.location?`${w} (${c.location})`:w; };   // plain text, e.g. "Active (Desert)"
-const statusTag=c=>`<span class="stt">${esc(statusText(c))}</span>`;                            // chip form for HTML
+const LOCATIONS=["Evergreen","Desert","Frost"];   // biomes; nichelings can only breed with others in the SAME location
+/* A nicheling's BUCKET unifies status + biome into the single field the roster groups + sorts by:
+   uncat (in your tribe but not sorted into a biome yet — shown at the very top so it's easy to sort) ·
+   Evergreen / Desert / Frost (tribe, living in that biome) · rogue (stored status "sideline" — not in the
+   tribe yet, still breedable) · retired (archived). The location quick-buttons and the editor set it. */
+const BUCKETS=["uncat","Evergreen","Desert","Frost","rogue","retired"];
+const BUCKET_SYM={uncat:"",Evergreen:"🌲",Desert:"☀️",Frost:"❄️",rogue:"🐾",retired:"💤"};
+const BUCKET_LABEL={uncat:"Uncategorized",Evergreen:"Evergreen",Desert:"Desert",Frost:"Frost",rogue:"Rogue",retired:"Retired"};
+const BUCKET_DESC={uncat:"not sorted into a location yet",Evergreen:"tribe · Evergreen",Desert:"tribe · Desert",Frost:"tribe · Frost",rogue:"not in the tribe, but breedable",retired:"archived"};
+function catBucket(c){ if((c.status||"active")==="retired") return "retired"; if(c.status==="sideline") return "rogue";
+  return (c.location && LOCATIONS.includes(c.location)) ? c.location : "uncat"; }
+/* set a nicheling's bucket — maps back onto the stored status + biome location so breeding/advice keep working */
+function setBucket(c, key){
+  if(key==="retired"){ c.status="retired"; c.location=""; }
+  else if(key==="rogue"){ c.status="sideline"; c.location=""; }
+  else if(LOCATIONS.includes(key)){ c.status="active"; c.location=key; }
+  else { c.status="active"; c.location=""; }        // uncat (in tribe, no biome set)
+}
+const statusWord=c=>BUCKET_LABEL[catBucket(c)];
+const statusText=c=>BUCKET_LABEL[catBucket(c)];       // e.g. "Desert", "Rogue", "Retired", "Uncategorized"
+const statusTag=c=>{ const b=catBucket(c), s=BUCKET_SYM[b]; return `<span class="stt">${s?esc(s)+" ":""}${esc(BUCKET_LABEL[b])}</span>`; };
 function newCat(name,status){ return {id:DB.seq++, name:name||("Nicheling "+DB.seq), sex:"?", location:"", geno:defaultGenotype(), status:status||"active"}; }
 
 /* =========================================================================
@@ -3688,7 +3723,7 @@ function rosterTableHTML(active, sideline, retired){
   const valueCell=r=>!r||!r.lossValue?`<span class="muted">free</span>`:(r.uniqueCount>0?`<span class="adv-keep">★${r.uniqueCount}</span>`:`${r.lossValue}`);
   const sortCats=arr=>arr.slice().sort((a,b)=>{ const va=sortVal(a), vb=sortVal(b);
     let cmp=(typeof va==="string")?va.localeCompare(vb):(va-vb); if(!cmp) cmp=(a.name||"").localeCompare(b.name||""); return cmp*rosterSort.dir; });
-  const totalCols = 1 + groups.reduce((s,g)=>s+(rosterCollapsed.has(g.key)?1:g.cols.length),0) + 1;
+  const totalCols = 1 + groups.reduce((s,g)=>s+(rosterCollapsed.has(g.key)?1:g.cols.length),0);   // name + column groups (row actions now live in the name cell)
   const arr=k=>rosterSort.key!==k?`<span class="arr">↕</span>`:`<span class="arr">${rosterSort.dir>0?"↑":"↓"}</span>`;
   const aria=k=>rosterSort.key===k?(rosterSort.dir>0?"ascending":"descending"):"none";
   const chip=(k,label,title)=>`<span class="dsort" data-sortk="${k}" aria-sort="${aria(k)}" title="${esc(title)}">${label} ${arr(k)}</span>`;
@@ -3709,8 +3744,16 @@ function rosterTableHTML(active, sideline, retired){
       } else { h2+=`<th class="num${gs}" data-sortk="${col.sortk}" aria-sort="${aria(col.sortk)}" title="Sort by ${esc(col.title)}">${esc(col.label)} ${arr(col.sortk)}</th>`; }
     });
   });
-  h1+=`<th rowspan="2">Actions</th>`;
-  const cellsFor=c=>{ let row=`<td class="nmc" data-id="${c.id}">${esc(c.name)} <span class="muted" style="font-weight:400">${c.sex==="F"?"♀":c.sex==="M"?"♂":""}</span> ${statusTag(c)}</td>`;
+  // location quick-buttons — assign/change a nicheling's bucket; the current one is highlighted, clicking it again clears to Uncategorized
+  const LOCBTNS=["Evergreen","Desert","Frost","rogue","retired"];
+  const locBtns=c=>{ const cur=catBucket(c);
+    return `<div class="locbtns">`+LOCBTNS.map(k=>`<button class="locbtn${cur===k?" on":""}" data-loc="${k}" data-id="${c.id}" title="${esc(BUCKET_LABEL[k])} — ${esc(BUCKET_DESC[k])}${cur===k?" (click to un-set)":""}">${BUCKET_SYM[k]}</button>`).join("")+`</div>`; };
+  const cellsFor=c=>{ const glyph=c.sex==="F"?"♀":c.sex==="M"?"♂":"";
+    let row=`<td class="nmc" data-id="${c.id}">`+
+      `<button class="nmact nmedit edit" data-id="${c.id}" title="Edit in place">✏️</button>`+
+      `<button class="nmact nmdel del" data-id="${c.id}" title="Delete">🗑</button>`+
+      `<div class="nmname">${esc(c.name)}${glyph?` <span class="muted" style="font-weight:400">${glyph}</span>`:""}</div>`+
+      locBtns(c)+`</td>`;
     groups.forEach(g=>{
       if(rosterCollapsed.has(g.key)){ row+=`<td class="strip" data-grp="${g.key}" title="Expand ${esc(g.label)}">▸</td>`; return; }
       g.cols.forEach((col,ci)=>{ const gs=ci===0?" grp-start":"";
@@ -3719,36 +3762,33 @@ function rosterTableHTML(active, sideline, retired){
         } else if(col.kind==="qv"){ row+=`<td class="qv${gs}">${qvCell(c)}</td>`; }
         else if(col.kind==="advtype"){ const m=ADV_META[(advMap[c.id]||{}).action]||ADV_META.keep; row+=`<td class="advtype${gs}"><span class="${m.cls}">${m.label}</span></td>`; }
         else if(col.kind==="advwhy"){ row+=`<td class="advwhy${gs}">${esc((advMap[c.id]||{}).reason||"")}</td>`; }
-        else if(col.sortk==="value"){ const r=valueMap[c.id]||{}; row+=`<td class="num${gs}" title="${r.uniqueCount?esc(r.uniqueCount+" sole-copy allele(s) — irreplaceable"):""}">${valueCell(r)}</td>`; }
+        else if(col.sortk==="value"){ const r=valueMap[c.id]||{}; row+=`<td class="num${gs}" title="${r.uniqueCount?esc(r.uniqueCount+" sole-copy allele(s) — irreplaceable"):"how much you'd lose if released"}">${valueCell(r)}</td>`; }
         else { const v=rosterSortVal(c, col.sortk); row+=`<td class="num${gs}">${v?esc(String(v)):"·"}</td>`; }
       });
     });
     return row; };
-  const B={ edit:c=>`<button class="btn sm gray edit" data-id="${c.id}" title="Edit">✏️</button>`,
-    clone:c=>`<button class="btn sm gray clone" data-id="${c.id}" title="Duplicate">⧉</button>`,
-    toSide:c=>`<button class="btn sm gray toSide" data-id="${c.id}" title="Move to sidelines">🪑</button>`,
-    retire1:c=>`<button class="btn sm gray retire1" data-id="${c.id}" title="Retire">🗂</button>`,
-    tribe:c=>`<button class="btn sm gray tribe" data-id="${c.id}" title="Add to tribe">➕</button>`,
-    unretire:c=>`<button class="btn sm gray unretire" data-id="${c.id}" title="Bring back">↩︎</button>`,
-    del:c=>`<button class="btn sm gray del" data-id="${c.id}" title="Delete">🗑</button>` };
-  const actFor=(c,status)=>(status==="sideline"?[B.edit,B.tribe,B.del]:status==="retired"?[B.unretire,B.del]:[B.edit,B.clone,B.toSide,B.retire1,B.del]).map(f=>f(c)).join("");
-  const dataRow=(c,status)=>`<tr class="drow" data-status="${status}">${cellsFor(c)}<td class="rowact">${actFor(c,status)}</td></tr>`;
+  // the editor opens IN PLACE — an expander row directly under the nicheling being edited (no scrolling to the top)
+  const editorRowFor=c=> c.id===editId ? `<tr class="editrow"><td colspan="${totalCols}"><div class="edwrap"><div id="editor"></div></div></td></tr>` : "";
+  const dataRow=c=>`<tr class="drow" data-status="${c.status||"active"}" data-bucket="${catBucket(c)}">${cellsFor(c)}</tr>`+editorRowFor(c);
   const secRow=(key,label,n)=>`<tr class="secrow" data-sec="${key}"><td colspan="${totalCols}">${rosterSecCollapsed.has(key)?"▸":"▾"} ${esc(label)} (${n})</td></tr>`;
+  // Group every nicheling by its bucket (Uncategorized first so just-added ones are up top and easy to sort),
+  // one collapsible section each; empty buckets are skipped so a section vanishes when it has no nichelings.
+  const byBucket={}; BUCKETS.forEach(k=>byBucket[k]=[]); allCats.forEach(c=>byBucket[catBucket(c)].push(c));
   let body;
-  if(rosterIgnoreSec){ body=sortCats(allCats).map(c=>dataRow(c,c.status)).join(""); }
+  if(rosterIgnoreSec){ body=sortCats(allCats).map(dataRow).join(""); }
   else {
-    body=sortCats(active).map(c=>dataRow(c,"active")).join("");
-    if(sideline.length){ body+=secRow("sideline","🪑 Sidelines · not in the tribe, but breedable",sideline.length);
-      if(!rosterSecCollapsed.has("sideline")) body+=sortCats(sideline).map(c=>dataRow(c,"sideline")).join(""); }
-    if(retired.length){ body+=secRow("retired","🗂 Retired · archived (kept out of breeding)",retired.length);
-      if(!rosterSecCollapsed.has("retired")) body+=sortCats(retired).map(c=>dataRow(c,"retired")).join(""); }
+    body="";
+    BUCKETS.forEach(k=>{ const grp=byBucket[k]; if(!grp.length) return;
+      const label=`${BUCKET_SYM[k]?BUCKET_SYM[k]+" ":""}${BUCKET_LABEL[k]} · ${BUCKET_DESC[k]}`;
+      body+=secRow(k,label,grp.length);
+      if(!rosterSecCollapsed.has(k)) body+=sortCats(grp).map(dataRow).join(""); });
   }
   const toggle=`<div class="row" style="gap:14px;align-items:center;margin-top:8px;flex-wrap:wrap">`+
     `<label class="row" style="gap:6px;font-size:12px;font-weight:600">Compare on: <select id="rCompare"><option value="all" ${!rosterAbilityOnly?"selected":""}>All genes</option><option value="ability" ${rosterAbilityOnly?"selected":""}>Ability &amp; resistance only</option></select></label>`+
     `<label class="row" style="gap:6px;font-size:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="rIgnoreSec" ${rosterIgnoreSec?"checked":""}> Ignore sections (sort the whole roster as one list)</label>`+
     `</div>`;
   return toggle+`<div class="rtbl"><table><thead><tr>${h1}</tr><tr>${h2}</tr></thead><tbody>${body}</tbody></table></div>`
-    +`<p class="muted" style="font-size:11px;margin:6px 2px 0">Advice: <b>Keep/Retire/Release/Add</b> (sortable) · why · consolidation partners. Click a group header to collapse its columns; click any column/chip to sort. Gene cells stack the dominant allele on top, recessive below (〃 = homozygous).</p>`;
+    +`<p class="muted" style="font-size:11px;margin:6px 2px 0"><b>Advice</b> — Keep / Retire / Release / Add (sortable), each with a one-line reason. <b>Value</b> = how much you'd lose by releasing this nicheling: <b>free</b> means every beneficial allele it carries also lives elsewhere at an equal-or-better ✦ (safe to release); a <b>number</b> is the worth it concentrates (higher = more to lose); <b>★N</b> means it's the <em>only</em> holder of N beneficial alleles — irreplaceable, keep it. Sorted lowest-first, so the safest-to-release rise to the top. · Under each name: ✏️ edit in place · 🗑 delete · the location buttons (🌲 Evergreen · ☀️ Desert · ❄️ Frost · 🐾 Rogue · 💤 Retired) set where it lives. Click a group header to collapse/expand its columns; click any column or chip to sort. Gene cells stack the dominant allele on top, recessive below (〃 = homozygous).</p>`;
 }
 function wireRosterTable(){
   $$("#view-nichelings .rtbl [data-grp]").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const k=el.dataset.grp;
@@ -3761,6 +3801,9 @@ function wireRosterTable(){
     if(rosterSort.key===k) rosterSort.dir=-rosterSort.dir;
     else rosterSort={key:k, dir:(k==="name"||k.slice(0,4)==="dom:"||k.slice(0,4)==="rec:"||k==="advice"||k==="value")?1:-1};   // advice/value default ascending → keepers sink to the bottom
     renderNichelings(); });
+  // measure the group-header row so the second (sub-header) row can stick just beneath it on scroll
+  const rtbl=$("#view-nichelings .rtbl"), thead=rtbl&&rtbl.querySelector("thead");
+  if(thead && thead.rows[0]){ const h=thead.rows[0].offsetHeight; if(h) rtbl.style.setProperty("--h1", h+"px"); }
 }
 function renderNichelings(){
   const v=$("#view-nichelings");
@@ -3771,18 +3814,16 @@ function renderNichelings(){
   let html=`<div class="card"><div class="row" style="justify-content:space-between">
       <h2 style="margin:0"><span class="em">🐾</span> My nichelings <span class="muted" style="font-weight:400;font-size:13px">(${active.length})</span></h2>
       <div class="row">
-        <button class="btn sm" id="addCat">+ Add to tribe</button>
-        <button class="btn sm gray" id="addSideline">+ Add sideline</button>
+        <button class="btn sm" id="addCat">+ Add nicheling</button>
+        <button class="btn sm gray" id="addSideline">+ Add rogue</button>
         <button class="btn sm gray" id="fromCode">⌗ From code</button>
         <button class="btn sm gray" id="exp">⬇︎ Export</button>
         <button class="btn sm gray" id="impBtn">⬆︎ Import</button>
         <input type="file" id="impFile" accept="application/json" class="hide">
       </div></div>`;
-  if(!DB.cats.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings yet. Add one and set its two alleles per gene, then head to <b>Breeding</b> to predict a pairing. Use <b>+ Add sideline</b> for a nicheling you're eyeing but haven't taken into the tribe.</p>`;
-  else if(!active.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings in your tribe yet — add one, bring one back from <b>Retired</b>, or <b>Add to tribe</b> a <b>Sideline</b> one below.</p>`;
+  if(!DB.cats.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings yet. Add one and set its two alleles per gene, then head to <b>Breeding</b> to predict a pairing. A new nicheling starts <b>Uncategorized</b> (top of the list) — use the location buttons under its name (🌲 ☀️ ❄️ 🐾 💤) to sort it. <b>+ Add rogue</b> starts one as a rogue (not in your tribe, but still breedable).</p>`;
   html+=`</div>`;
-  html+=`<div id="editor"></div>`;   // editor sits above the table, so a just-added nicheling's form is right at the top
-  if(DB.cats.length) html+=rosterTableHTML(active, sideline, retired);
+  if(DB.cats.length) html+=rosterTableHTML(active, sideline, retired);   // the editor opens IN PLACE, as a row under the nicheling being edited
   v.innerHTML=html;
   wireRosterTable();
   $("#addCat").onclick=()=>{ const c=newCat(); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); };
@@ -3795,18 +3836,11 @@ function renderNichelings(){
   $("#exp").onclick=exportRoster;
   $("#impBtn").onclick=()=>$("#impFile").click();
   $("#impFile").onchange=importRoster;
-  $$("#view-nichelings .edit").forEach(b=>b.onclick=()=>{ editId=(editId===+b.dataset.id?null:+b.dataset.id); renderNichelings(); });
-  $$("#view-nichelings .clone").forEach(b=>b.onclick=()=>{ const src=DB.cats.find(c=>c.id===+b.dataset.id); if(!src) return;
-    const c=newCat(src.name+" (copy)"); c.sex=src.sex; c.geno=JSON.parse(JSON.stringify(src.geno)); DB.cats.push(c); save(DB); editId=c.id; renderNichelings(); });
-  $$("#view-nichelings .retire1").forEach(b=>b.onclick=()=>{ const c=DB.cats.find(x=>x.id===+b.dataset.id);
-    if(c){ c.status="retired"; if(editId===c.id) editId=null; save(DB); renderNichelings(); } });
-  $$("#view-nichelings .unretire").forEach(b=>b.onclick=()=>{ const c=DB.cats.find(x=>x.id===+b.dataset.id);
-    if(c){ c.status="active"; save(DB); renderNichelings(); } });
-  $$("#view-nichelings .tribe").forEach(b=>b.onclick=()=>{ const c=DB.cats.find(x=>x.id===+b.dataset.id);
-    if(c){ c.status="active"; save(DB); renderNichelings(); } });
-  $$("#view-nichelings .toSide").forEach(b=>b.onclick=()=>{ const c=DB.cats.find(x=>x.id===+b.dataset.id);
-    if(c){ c.status="sideline"; save(DB); renderNichelings(); } });
-  $$("#view-nichelings .del").forEach(b=>b.onclick=()=>{ if(confirm("Delete this nicheling permanently? (To keep it, use Retire 🗂 instead.)")){ DB.cats=DB.cats.filter(c=>c.id!==+b.dataset.id); save(DB); if(editId===+b.dataset.id)editId=null; renderNichelings(); } });
+  $$("#view-nichelings .edit").forEach(b=>b.onclick=e=>{ e.stopPropagation(); editId=(editId===+b.dataset.id?null:+b.dataset.id); renderNichelings(); });
+  // location quick-buttons: set a nicheling's bucket (biome / Rogue / Retired); clicking the current one clears it to Uncategorized
+  $$("#view-nichelings .locbtn").forEach(b=>b.onclick=e=>{ e.stopPropagation(); const c=DB.cats.find(x=>x.id===+b.dataset.id); if(!c) return;
+    const k=b.dataset.loc; setBucket(c, catBucket(c)===k?"uncat":k); save(DB); renderNichelings(); });
+  $$("#view-nichelings .del").forEach(b=>b.onclick=e=>{ e.stopPropagation(); if(confirm("Delete this nicheling permanently? (To keep it, set it to 💤 Retired instead — that just archives it.)")){ DB.cats=DB.cats.filter(c=>c.id!==+b.dataset.id); save(DB); if(editId===+b.dataset.id)editId=null; renderNichelings(); } });
   if(editId!=null) renderEditor();
 }
 
@@ -3819,9 +3853,9 @@ function renderEditor(){
     <div class="row" style="margin:10px 0">
       <label>Name <input type="text" id="edName" value="${esc(c.name)}" style="width:180px"></label>
       <label>Sex <select id="edSex"><option value="?" ${c.sex==="?"?"selected":""}>—</option><option value="F" ${c.sex==="F"?"selected":""}>♀ Female</option><option value="M" ${c.sex==="M"?"selected":""}>♂ Male</option></select></label>
-      <label>Location <select id="edLoc"><option value="" ${!c.location?"selected":""}>—</option>${LOCATIONS.map(l=>`<option value="${l}" ${c.location===l?"selected":""}>${l}</option>`).join("")}</select></label>
+      <label>Location <select id="edLoc">${BUCKETS.map(k=>`<option value="${k}" ${catBucket(c)===k?"selected":""}>${BUCKET_SYM[k]?BUCKET_SYM[k]+" ":""}${BUCKET_LABEL[k]}</option>`).join("")}</select></label>
     </div>
-    <p class="muted" style="font-size:11px;margin:-4px 0 0">Location matters for breeding — two nichelings can only breed while they're in the <b>same</b> location.</p>`;
+    <p class="muted" style="font-size:11px;margin:-4px 0 0">Location matters for breeding — two nichelings can only breed while they're in the <b>same</b> biome. <b>Rogue</b> = not in your tribe (still breedable); <b>Retired</b> = archived. You can also set this with the buttons under each name.</p>`;
   html+=abilityChips(abilityTotals(c.geno));
   html+=`<div class="row" style="margin:12px 0 2px;align-items:flex-end">
       <label style="flex:1;min-width:220px">Gene code <input type="text" id="edCode" value="${genoToCode(c.geno)}" style="width:100%;font-family:ui-monospace,monospace"></label>
@@ -3842,11 +3876,12 @@ function renderEditor(){
     html+=`</div>`;
   });
   html+=`</div>`;
-  $("#editor").innerHTML=html;
+  const edEl=$("#editor"); if(!edEl) return;   // the editor renders inline in the roster; if its row isn't shown (e.g. its section is collapsed), skip
+  edEl.innerHTML=html;
   $("#closeEd").onclick=()=>{ editId=null; renderNichelings(); };
   $("#edName").oninput=e=>{ c.name=e.target.value; save(DB); };
   $("#edSex").onchange=e=>{ c.sex=e.target.value; save(DB); };
-  $("#edLoc").onchange=e=>{ c.location=e.target.value; save(DB); renderNichelings(); };
+  $("#edLoc").onchange=e=>{ setBucket(c, e.target.value); save(DB); renderNichelings(); };
   const refreshTotals=()=>{ const ab=$("#editor .abil"); if(ab) ab.outerHTML=abilityChips(abilityTotals(c.geno));
     const ec=$("#edCode"); if(ec) ec.value=genoToCode(c.geno); };
   $$("#editor select[data-g]").forEach(s=>s.onchange=()=>{
@@ -3882,16 +3917,16 @@ function renderBreeding(){
   if(!DB.cats.length){ v.innerHTML=`<div class="card"><p class="muted">Add at least one nicheling under <b>My nichelings</b> first. You can breed a nicheling with itself or with any other.</p></div>`; return; }
   const retiredCount=DB.cats.filter(c=>c.status==="retired").length;
   const sidelineCount=DB.cats.filter(c=>c.status==="sideline").length;
-  const tag=c=>` · ${statusText(c)}`;   // e.g. " · Active (Desert)"
+  const tag=c=>{ const t=statusText(c); return t?` · ${t}`:""; };   // e.g. " · Desert" / " · Rogue"
   const bar=()=> (sidelineCount||retiredCount)
-    ? `<span class="muted" style="font-size:11.5px">All nichelings included${sidelineCount?` · ${sidelineCount} sideline`:""}${retiredCount?` · ${retiredCount} retired`:""} — un-retire in-game to actually breed</span>`
+    ? `<span class="muted" style="font-size:11.5px">All nichelings included${sidelineCount?` · ${sidelineCount} rogue`:""}${retiredCount?` · ${retiredCount} retired`:""} — same biome to actually breed</span>`
     : "";
   const wireInc=()=>{};
   const pool=breedingPool();
   if(typeof breedWho!=="undefined" && breedWho!=null && breedWho!=="__any" && !pool.some(c=>c.id===breedWho)) breedWho="__any";  // stale Restrict target no longer in pool → back to Any
   if(!pool.length){
     v.innerHTML=`<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0"><span class="em">💞</span> Breeding</h2>${bar()}</div>
-      <p class="muted" style="margin:10px 0 0">No nichelings to breed with. Tick a box above, or add one (tribe or sideline) under <b>My nichelings</b>.</p></div>`;
+      <p class="muted" style="margin:10px 0 0">No nichelings to breed with. Add one under <b>My nichelings</b>.</p></div>`;
     wireInc(); return;
   }
   if(breedGenesSel===null) breedGenesSel=new Set();
@@ -4286,7 +4321,7 @@ function targetPlanHTML(pool, byGene, geneKeys){
       return `<div style="margin:0 0 6px"><div style="font-weight:600;font-size:13px">Gen ${i+1}: ${left} × ${esc(s.partner)} ${sx(s.partnerSex)}${keep}</div>`+
         `<div class="muted" style="font-size:12px">→ that pup should carry all ${s.have.length} so far: <b>${esc(s.have.join(", "))}</b>${s.adds.length?` <span style="opacity:.8">(new this cross: ${esc(s.adds.join(", "))})</span>`:""}</div></div>`; }).join("");
   const luck=`<p class="muted" style="font-size:11.5px;margin:6px 0 0">Every cross is ♀×♂ and luck-based — a parent passes only one of its two alleles, so keep the pup that got the targets (and the sex noted for the next cross), then breed on.</p>`;
-  const cantChain=`<p class="muted" style="font-size:11.5px;margin:4px 0 0;color:var(--warn)">Couldn't bring <b>${esc((plan.uncovered||[]).join(", "))}</b> onto this line — no nicheling in the selected pool carries ${plan.uncovered&&plan.uncovered.length>1?"them":"it"} that can be bred in. Acquire or breed one that carries ${plan.uncovered&&plan.uncovered.length>1?"them":"it"} (or tick Include retired / sideline if it's set aside), then re-run.</p>`;
+  const cantChain=`<p class="muted" style="font-size:11.5px;margin:4px 0 0;color:var(--warn)">Couldn't bring <b>${esc((plan.uncovered||[]).join(", "))}</b> onto this line — no nicheling in the selected pool carries ${plan.uncovered&&plan.uncovered.length>1?"them":"it"} that can be bred in. Acquire or breed one that carries ${plan.uncovered&&plan.uncovered.length>1?"them":"it"}, then re-run.</p>`;
   if(!plan.needTwo.length){
     // Every target shows from a single copy (dominant 'show' or 'carry') — one gather line yields the finished nicheling.
     if(plan.steps.length){
