@@ -117,14 +117,17 @@
   #view-nichelings .rtbl td.nmc .nmedit{left:3px}
   #view-nichelings .rtbl td.nmc .nmdel{right:3px}
   #view-nichelings .rtbl td.nmc .locbtns{display:flex;gap:3px;justify-content:center;flex-wrap:wrap;margin-top:5px}
+  #view-nichelings .rtbl td.nmc .locbtns.locbtns2{margin-top:3px}   /* Rogue + Retired on a second row under the biomes */
+  .sx-f{color:#e86ea0;font-weight:700} .sx-m{color:#4d9be6;font-weight:700}   /* ♀ pink · ♂ blue */
   #view-nichelings .rtbl td.nmc .locbtn{border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:1px 5px;font-size:13px;line-height:1.35;cursor:pointer}
   #view-nichelings .rtbl td.nmc .locbtn:hover{border-color:var(--brand)}
   #view-nichelings .rtbl td.nmc .locbtn.on{background:var(--brand-soft);border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
   #view-nichelings .rtbl td.nmc .locbtn .paw{vertical-align:-2px}
   /* inline editor: opens as an expander row right under the nicheling, pinned to the left edge so it stays in view */
-  #view-nichelings .rtbl tr.editrow>td{white-space:normal;padding:0;background:var(--bg2)}
-  #view-nichelings .rtbl tr.editrow .edwrap{position:sticky;left:0;width:min(940px,94vw);padding:2px}
-  #view-nichelings .rtbl tr.editrow .card{margin:0}
+  /* the nicheling editor opens as a centered pop-up modal (Add / edit both use it) */
+  .modal-overlay{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:20px 12px;overflow-y:auto}
+  .modal-overlay #editor{width:min(920px,96vw);margin:auto}
+  .modal-overlay #editor .card{margin:0;box-shadow:0 18px 50px rgba(0,0,0,.45)}
   #view-nichelings .rtbl td.num{text-align:right;font-variant-numeric:tabular-nums}
   #view-nichelings .rtbl th.dualh{text-align:center;cursor:default}
   #view-nichelings .rtbl th.dualh .dhname{font-weight:700}
@@ -3772,15 +3775,17 @@ function rosterTableHTML(active, sideline, retired){
       } else { h2+=`<th class="num${gs}" data-sortk="${col.sortk}" aria-sort="${aria(col.sortk)}" title="Sort by ${esc(col.title)}">${esc(col.label)} ${arr(col.sortk)}</th>`; }
     });
   });
-  // location quick-buttons — assign/change a nicheling's bucket; the current one is highlighted, clicking it again clears to Uncategorized
-  const LOCBTNS=["Evergreen","Desert","Frost","rogue","retired"];
+  // location quick-buttons — assign/change a nicheling's bucket; the current one is highlighted, clicking it again clears to
+  // Uncategorized. Biomes sit on the first row; Rogue + Retired drop to a second row beneath them.
+  const locBtn=(c,cur,k)=>`<button class="locbtn${cur===k?" on":""}" data-loc="${k}" data-id="${c.id}" title="${esc(BUCKET_LABEL[k])} — ${esc(BUCKET_DESC[k])}${cur===k?" (click to un-set)":""}">${k==="rogue"?PAW_SVG:BUCKET_SYM[k]}</button>`;
   const locBtns=c=>{ const cur=catBucket(c);
-    return `<div class="locbtns">`+LOCBTNS.map(k=>`<button class="locbtn${cur===k?" on":""}" data-loc="${k}" data-id="${c.id}" title="${esc(BUCKET_LABEL[k])} — ${esc(BUCKET_DESC[k])}${cur===k?" (click to un-set)":""}">${k==="rogue"?PAW_SVG:BUCKET_SYM[k]}</button>`).join("")+`</div>`; };
-  const cellsFor=c=>{ const glyph=c.sex==="F"?"♀":c.sex==="M"?"♂":"";
+    return `<div class="locbtns">`+["Evergreen","Desert","Frost"].map(k=>locBtn(c,cur,k)).join("")+`</div>`+
+      `<div class="locbtns locbtns2">`+["rogue","retired"].map(k=>locBtn(c,cur,k)).join("")+`</div>`; };
+  const cellsFor=c=>{ const glyph=c.sex==="F"?`<span class="sx-f">♀</span>`:c.sex==="M"?`<span class="sx-m">♂</span>`:"";
     let row=`<td class="nmc" data-id="${c.id}">`+
       `<button class="nmact nmedit edit" data-id="${c.id}" title="Edit in place">✏️</button>`+
       `<button class="nmact nmdel del" data-id="${c.id}" title="Delete">🗑</button>`+
-      `<div class="nmname">${esc(c.name)}${glyph?` <span class="muted" style="font-weight:400">${glyph}</span>`:""}</div>`+
+      `<div class="nmname">${esc(c.name)}${glyph?` ${glyph}`:""}</div>`+
       locBtns(c)+`</td>`;
     groups.forEach(g=>{
       if(rosterCollapsed.has(g.key)){ row+=`<td class="strip" data-grp="${g.key}" title="Expand ${esc(g.label)}">▸</td>`; return; }
@@ -3796,9 +3801,8 @@ function rosterTableHTML(active, sideline, retired){
     });
     return row; };
   // the editor opens IN PLACE — an expander row directly under the nicheling being edited (no scrolling to the top)
-  const editorRowFor=c=> c.id===editId ? `<tr class="editrow"><td colspan="${totalCols}"><div class="edwrap"><div id="editor"></div></div></td></tr>` : "";
-  let stripeIx=0;   // zebra-stripe DATA rows only (by class), so the editor/section rows don't shift the alternation
-  const dataRow=c=>`<tr class="drow${(stripeIx++%2)?" alt":""}" data-status="${c.status||"active"}" data-bucket="${catBucket(c)}">${cellsFor(c)}</tr>`+editorRowFor(c);
+  let stripeIx=0;   // zebra-stripe DATA rows only (by class), so the section rows don't shift the alternation
+  const dataRow=c=>`<tr class="drow${(stripeIx++%2)?" alt":""}" data-status="${c.status||"active"}" data-bucket="${catBucket(c)}">${cellsFor(c)}</tr>`;   // the editor is a pop-up modal now, not an inline row
   const secRow=(key,label,n)=>`<tr class="secrow" data-sec="${key}"><td colspan="${totalCols}">${rosterSecCollapsed.has(key)?"▸":"▾"} ${esc(label)} (${n})</td></tr>`;
   // Group every nicheling by its bucket (Uncategorized first so just-added ones are up top and easy to sort),
   // one collapsible section each; empty buckets are skipped so a section vanishes when it has no nichelings.
@@ -3807,8 +3811,6 @@ function rosterTableHTML(active, sideline, retired){
   const matchCat=c=> !terms.length || (()=>{ const hay=catSearchText(c,(advMap[c.id]||{}).action); return terms.every(t=>hay.includes(t)); })();
   const shown=allCats.filter(matchCat);
   const byBucket={}; BUCKETS.forEach(k=>byBucket[k]=[]); shown.forEach(c=>byBucket[catBucket(c)].push(c));
-  // keep the edited nicheling's section open so its in-place editor is never orphaned (e.g. after a location change moves it)
-  if(editId!=null){ const ec=shown.find(c=>c.id===editId); if(ec) rosterSecCollapsed.delete(catBucket(ec)); }
   let body;
   if(rosterIgnoreSec){ body=sortCats(shown).map(dataRow).join(""); }
   else {
@@ -3834,10 +3836,7 @@ function wireRosterTable(){
   $$("#view-nichelings .rtbl [data-grp]").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const k=el.dataset.grp;
     if(rosterCollapsed.has(k)) rosterCollapsed.delete(k); else rosterCollapsed.add(k); renderNichelings(); });
   $$("#view-nichelings .rtbl [data-sec]").forEach(el=>el.onclick=e=>{ e.stopPropagation(); const k=el.dataset.sec;
-    if(rosterSecCollapsed.has(k)) rosterSecCollapsed.delete(k);
-    else { if(editId!=null){ const ec=DB.cats.find(c=>c.id===editId); if(ec && catBucket(ec)===k) editId=null; }   // collapsing the edited cat's section → close its editor cleanly (no orphan)
-      rosterSecCollapsed.add(k); }
-    renderNichelings(); });
+    if(rosterSecCollapsed.has(k)) rosterSecCollapsed.delete(k); else rosterSecCollapsed.add(k); renderNichelings(); });
   { const ig=$("#view-nichelings #rIgnoreSec"); if(ig) ig.onchange=e=>{ rosterIgnoreSec=e.target.checked; renderNichelings(); }; }
   { const cm=$("#view-nichelings #rCompare"); if(cm) cm.onchange=e=>{ rosterAbilityOnly=e.target.value==="ability"; renderNichelings(); }; }
   // free-text search — re-render on each keystroke, then restore focus + caret to the (recreated) input
@@ -3870,15 +3869,17 @@ function renderNichelings(){
       </div></div>`;
   if(!DB.cats.length) html+=`<p class="muted" style="margin:12px 0 0">No nichelings yet. Add one and set its two alleles per gene, then head to <b>Breeding</b> to predict a pairing. A new nicheling starts <b>Uncategorized</b> (top of the list) — use the location buttons under its name (🌲 ☀️ ❄️ 🐾 💤) to sort it. <b>+ Add rogue</b> starts one as a rogue (not in your tribe, but still breedable).</p>`;
   html+=`</div>`;
-  if(DB.cats.length) html+=rosterTableHTML(active, sideline, retired);   // the editor opens IN PLACE, as a row under the nicheling being edited
+  if(DB.cats.length) html+=rosterTableHTML(active, sideline, retired);
+  if(editId!=null && DB.cats.some(c=>c.id===editId)) html+=`<div class="modal-overlay" id="edOverlay"><div id="editor"></div></div>`;   // the editor is a centered pop-up modal
   const prevScroll=(($("#view-nichelings .rtbl"))||{}).scrollTop||0;     // keep the scroll pane's position across re-renders (so editing/sorting doesn't jump to the top)
   v.innerHTML=html;
   { const rt=$("#view-nichelings .rtbl"); if(rt && prevScroll) rt.scrollTop=prevScroll; }
   wireRosterTable();
-  // open a just-added nicheling's editor and bring it into view (clear any active search so the new one isn't filtered out,
-  // and scroll to the editor since the scroll pane otherwise stays where it was)
-  const addAndEdit=c=>{ DB.cats.push(c); rosterSearch=""; save(DB); editId=c.id; renderNichelings();
-    const ed=$("#view-nichelings #editor"); if(ed && ed.scrollIntoView) ed.scrollIntoView({block:"center"}); };
+  // modal close: click the backdrop (outside the card), or Escape
+  { const ov=$("#view-nichelings #edOverlay"); if(ov) ov.onclick=e=>{ if(e.target===ov){ editId=null; renderNichelings(); } };
+    document.onkeydown = (editId!=null) ? (e=>{ if(e.key==="Escape"){ editId=null; renderNichelings(); } }) : null; }
+  // add a nicheling → open its editor modal (clear any active search so it's visible in the roster once the modal closes)
+  const addAndEdit=c=>{ DB.cats.push(c); rosterSearch=""; save(DB); editId=c.id; renderNichelings(); };
   $("#addCat").onclick=()=>addAndEdit(newCat());
   $("#addSideline").onclick=()=>addAndEdit(newCat(null,"sideline"));
   $("#fromCode").onclick=()=>{
