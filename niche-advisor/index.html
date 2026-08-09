@@ -3308,7 +3308,7 @@ function coveringSet(Acontribs, others){
    valuable even when each allele also exists spread across the roster — re-combining them into one body is
    the whole breeding project. Undesirable "absence" alleles (No Horns, Blind Eyes, No Tail, Deformed Paw)
    are worth nothing: they never count as value and never need covering. */
-const UNDESIRABLE = {"No Horns":1,"Blind Eyes":1,"No Tail":1,"Deformed Paw":1};
+const UNDESIRABLE = {"No Horns":1,"Blind Eyes":1,"No Tail":1};   // no-bonus "absence" alleles; Deformed Paw & Long Tail grant Collecting +1 → they count as value
 /* holdings(geno) -> { "geneKey|baseAllele": [levels, desc — one entry per copy] }, dropping undesirable
    alleles. Ability-only mode keeps only alleles that grant an ability; all-genes mode also keeps every
    cosmetic allele by identity (so a unique colour still counts). */
@@ -3324,9 +3324,12 @@ function holdings(geno, keys, all){
   for(const key in h) h[key].sort((a,b)=>b-a);
   return h;
 }
-/* does a held level-list cover a required one? (≥ copies, and each copy ≥ the matching required level) */
-function holdKeyCovers(have, need){ if(!have || have.length<need.length) return false;
-  for(let i=0;i<need.length;i++){ if(have[i]<need[i]) return false; } return true; }
+/* Does a held level-list cover a required one? ✦ DOMINATES copy count: a higher top-✦ copy (any number of
+   copies) covers a lower-✦ holding — e.g. Nimble ✦3 ×1 covers Nimble ✦1 ×2. Copy count is only a tiebreaker
+   at EQUAL top ✦ (so a homozygous ✦N needs a homozygous ✦N to cover it). have/need are sorted desc. */
+function holdKeyCovers(have, need){ if(!need || !need.length) return true; if(!have || !have.length) return false;
+  const hLv=have[0], nLv=need[0]; if(hLv!==nLv) return hLv>nLv;
+  return have.filter(x=>x===hLv).length >= need.filter(x=>x===nLv).length; }   // equal top ✦ → need ≥ copies at that ✦
 /* does B's whole holdings cover A's? (a single nicheling carrying everything A does, ≥ level & copies) */
 function holdCovers(B, A){ return Object.keys(A).every(k=>holdKeyCovers(B[k], A[k])); }
 /* intrinsic worth = Σ (1+level) over every non-undesirable allele copy — rewards concentration + mutation */
@@ -3418,11 +3421,11 @@ function genePairParts(g, pair){
 const offspringBST=(momGeno,dadGeno)=>{ const o=offspringAbilityOutlook(momGeno,dadGeno); return ABILITIES.reduce((s,a)=>s+o.exp[a],0); };
 /* holdings under the roster's compare mode: abilityOnly → ability/resistance genes only; else all genes (cosmetics count) */
 const holdingsFor=(geno, abilityOnly)=>holdings(geno, abilityOnly?ABILITY_GENE_KEYS:GENES.map(g=>g.key), !abilityOnly);
-/* the valuable base alleles a nicheling holds that NO OTHER nicheling in the roster carries (its ★ sole copies) */
+/* the valuable alleles a nicheling holds that NO OTHER nicheling carries at ≥ its ✦ level (its ★ sole copies).
+   ✦-aware & sex-agnostic: a lower-✦ copy elsewhere does NOT make yours non-sole (yours is the better version). */
 function soleAlleleLabels(cat, allCats, abilityOnly){
-  const mine=holdingsFor(cat.geno, abilityOnly), others=allCats.filter(c=>c.id!==cat.id), out=[];
-  for(const k in mine){ const i=k.indexOf("|"), gk=k.slice(0,i), b=k.slice(i+1);
-    if(!others.some(o=>(o.geno[gk]||[]).some(a=>baseK(a)===b))) out.push(holdLabel(k, mine[k])); }
+  const mine=holdingsFor(cat.geno, abilityOnly), others=allCats.filter(c=>c.id!==cat.id).map(c=>holdingsFor(c.geno, abilityOnly)), out=[];
+  for(const k in mine){ if(!others.some(h=>holdKeyCovers(h[k], mine[k]))) out.push(holdLabel(k, mine[k])); }
   return out;
 }
 /* P(one offspring of X×Y carries EVERYTHING both parents hold that's valuable — every allele of each, at ≥
@@ -3452,31 +3455,34 @@ function offspringConsolidatesProb(X, Y, abilityOnly){
    for active cats it reads a precomputed retirementRanking map (rrMap) to inherit lone-survivor + mutual-
    duplicate handling. */
 const ADVICE_RANK={release:0, retire:1, add:2, keep:3, setsex:4};
-function nichelingAdvice(cat, allCats, rrMap, abilityOnly){
-  const sx=cat.sex; if(sx!=="F"&&sx!=="M") return {action:"setsex", reason:"Set its sex (♀/♂) for a recommendation."};
-  const mine=holdingsFor(cat.geno, abilityOnly), sg=sx==="F"?"♀":"♂";
-  const activePeers=allCats.filter(c=>c.id!==cat.id && c.status==="active" && c.sex===sx).map(p=>({p,h:holdingsFor(p.geno, abilityOnly)}));
-  if(cat.status==="active"){
-    const r=rrMap&&rrMap[cat.id];
-    if(r && r.lossValue===0 && r.kept>=1){ const who=(r.keepNames||[]).slice(0,2).join(" + ")||("another "+sg);
-      return {action:"retire", reason:`${who} already carries everything it has (≥ ✦ & copies) — redundant in the tribe.`}; }
-    if(!holdValue(mine)) return {action:"keep", reason:`Your only ${sg} — only absence/undesirable alleles; keep it until you breed a better replacement.`};   // lone-of-sex, nothing of value
-    const sole=soleAlleleLabels(cat, allCats, abilityOnly);
-    if(sole.length) return {action:"keep", reason:`Sole copy of ${sole.slice(0,3).join(", ")}${sole.length>3?", …":""} in your roster.`};
-    // kept but not sole: is a same-sex peer actually a duplicate (mutual copies, kept as the earlier one)?
-    return {action:"keep", reason: activePeers.some(x=>holdCovers(x.h, mine))?`Kept as the first of identical ${sg} copies — its duplicate is the retire candidate.`:`Holds valued alleles no single ${sg} fully covers.`};
+function nichelingAdvice(cat, allCats /*, rrMap, abilityOnly (ignored: advice is always ability-only + sex-agnostic) */){
+  const mine=holdingsFor(cat.geno, true);                       // ability-only: beneficial alleles only (appearance ignored)
+  const status=cat.status||"active";
+  const keepAct = status==="sideline" ? "add" : "keep";        // valuable sideline → promote to tribe; else keep
+  const goneAct = status==="active" ? "retire" : "release";    // redundant active → retire; sideline/retired → release
+  if(!holdValue(mine)) return {action:goneAct, reason:"No beneficial alleles (only no-bonus/absence) — nothing to lose."};
+  const others=allCats.filter(c=>c.id!==cat.id).map(c=>({c, h:holdingsFor(c.geno, true)}));
+  // ⚠ note when releasing a nicheling that is homozygous at TOP ✦ for something (losing the best doubled copy)
+  const homoNote=()=>{ const hs=Object.keys(mine).filter(k=>{ const l=mine[k];
+      return l.length>=2 && l[0]===l[1] && l[0]>=1 && !others.some(o=>((o.h[k]||[])[0]||-1)>l[0]); })   // mutated (✦≥1) homozygous at top ✦ only — skip trivial ✦0 defaults
+      .map(k=>holdLabel(k, mine[k])); return hs.length?` ⚠ homozygous ${hs.slice(0,3).join(", ")}${hs.length>3?", …":""} — double-check before deleting`:""; };
+  // (1) sole holder of a beneficial allele (at ≥ its ✦) → keep
+  const sole=Object.keys(mine).filter(k=>!others.some(o=>holdKeyCovers(o.h[k], mine[k]))).map(k=>holdLabel(k, mine[k]));
+  if(sole.length) return {action:keepAct, reason:`Only holder of ${sole.slice(0,3).join(", ")}${sole.length>3?", …":""}${status==="sideline"?" — add it":""}.`};
+  // every beneficial allele exists elsewhere at ≥ ✦. (2) does a SINGLE other nicheling cover all of it?
+  const coverers=others.filter(o=>holdCovers(o.h, mine));
+  if(coverers.length){
+    const superset=coverers.find(o=>!holdCovers(mine, o.h));    // that one has everything it does + MORE
+    if(superset) return {action:goneAct, reason:`${superset.c.name} has everything it does and more.${homoNote()}`};
+    // else: mutual exact duplicates (equal beneficial alleles, ✦-for-✦). Keep the earliest; release the rest.
+    const dupGroup=coverers, ids=[cat.id, ...dupGroup.map(o=>o.c.id)], keepId=Math.min(...ids);
+    const keeper=dupGroup.find(o=>o.c.id===keepId), names=dupGroup.map(o=>o.c.name);
+    if(cat.id===keepId) return {action:keepAct, reason:`Exact duplicate of ${names.slice(0,2).join(", ")}${names.length>2?", …":""} — keep this one, release the other${names.length>1?"s":""}.`};
+    return {action:goneAct, reason:`Exact duplicate of ${keeper.c.name} — release this, keep ${keeper.c.name}.${homoNote()}`};
   }
-  if(!holdValue(mine)) return {action:"release", reason:"Only absence/undesirable alleles — nothing of value to lose."};
-  const coverer=activePeers.find(x=>holdCovers(x.h, mine));
-  if(cat.status==="sideline"){
-    if(coverer) return {action:"release", reason:`${coverer.p.name} already carries everything it has — brings nothing new.`};
-    if(!activePeers.length) return {action:"add", reason:`No ${sg} in your tribe yet — adds that line.`};
-    const brings=[]; for(const k in mine){ if(!activePeers.some(x=>holdKeyCovers(x.h[k], mine[k]))) brings.push(holdLabel(k, mine[k])); }
-    return {action:"add", reason: brings.length?`Brings ${brings.slice(0,3).join(", ")}${brings.length>3?", …":""} the tribe lacks.`:`Concentrates scattered tribe alleles into one ${sg}.`};
-  }
-  // retired
-  if(coverer) return {action:"release", reason:`${coverer.p.name} covers it — safe to delete permanently.`};
-  return {action:"keep", reason:`Holds alleles no tribe ${sg} has — keep (bring it back to use).`};
+  // (3) no single nicheling covers it, but each allele exists elsewhere → sole holder of the COMBINATION (concentration) → keep
+  const combo=Object.keys(mine).map(k=>holdLabel(k, mine[k]));
+  return {action:keepAct, reason:`Only nicheling holding this combination: ${combo.slice(0,4).join(", ")}${combo.length>4?", …":""}${status==="sideline"?" — add it":""}.`};
 }
 /* Consolidation guidance for the Advice column: the top-3 opposite-sex partners whose offspring can carry
    EVERYTHING both parents hold on ONE individual (copy-aware) — so all the scattered valuable alleles end up
@@ -3553,7 +3559,11 @@ function load(){ try{ const r=JSON.parse(localStorage.getItem(KEY)); if(r&&r.cat
     return r; } }catch(e){} return {cats:[], seq:1}; }
 function save(r){ try{ localStorage.setItem(KEY, JSON.stringify(r)); }catch(e){} try{ if(window.SYNCKIT_API) window.SYNCKIT_API.notifyChange(); }catch(e){} }
 let DB=load();
-function newCat(name,status){ return {id:DB.seq++, name:name||("Nicheling "+DB.seq), sex:"?", geno:defaultGenotype(), status:status||"active"}; }
+const LOCATIONS=["Evergreen","Desert","Frost"];   // nichelings can only breed with others in the SAME location
+const statusWord=c=>c.status==="sideline"?"Sideline":c.status==="retired"?"Retired":"Active";
+const statusText=c=>{ const w=statusWord(c); return c.location?`${w} (${c.location})`:w; };   // plain text, e.g. "Active (Desert)"
+const statusTag=c=>`<span class="stt">${esc(statusText(c))}</span>`;                            // chip form for HTML
+function newCat(name,status){ return {id:DB.seq++, name:name||("Nicheling "+DB.seq), sex:"?", location:"", geno:defaultGenotype(), status:status||"active"}; }
 
 /* =========================================================================
    UI
@@ -3578,9 +3588,7 @@ const amode=gk=>breedAlleleModeByGene[gk]||"all";   // breedMutMode: 'shown'|'ca
    bench — available for breeding), or "retired" (archived — can be brought back). Active is always in
    the breeding pool; sideline is in by default (toggle on) and retired is out by default (toggle off). */
 const activeCats=()=>DB.cats.filter(c=>c.status==="active");
-const breedingPool=()=>DB.cats.filter(c=> c.status==="active"
-  || (breed.includeSideline && c.status==="sideline")
-  || (breed.includeRetired  && c.status==="retired"));
+const breedingPool=()=>DB.cats.filter(c=>["active","sideline","retired"].includes(c.status||"active"));   // always include everyone; status + location tags show real breedability
 
 const TABS=[["nichelings","🐾 My nichelings"],["breeding","💞 Breeding"],["genes","📖 Gene reference"],["sync","☁︎ Sync"]];
 function renderTabs(){
@@ -3622,7 +3630,8 @@ function phenoSummary(geno){
    Appearance (cosmetic genes). Column groups collapse to a strip; every stat/gene column sorts. */
 function qvCell(c){ const t=abilityTotals(c.geno), tot=statTotal(c.geno), mb=mutBonus(c.geno);
   const top=ABILITIES.filter(a=>t[a]).sort((x,y)=>t[y]-t[x]).map(a=>`${AB_SHORT[a]} +${t[a]}`).join(" · ")||"no ability bonuses";
-  return `${esc(top)} <span class="muted">· Σ${tot} · ✦+${mb} mut</span>`; }
+  const loc=c.location?` <span class="stt">📍 ${esc(c.location)}</span>`:"";
+  return `${esc(top)} <span class="muted">· Σ${tot} · ✦+${mb} mut</span>${loc}`; }
 function rosterSortVal(c, key){
   if(key==="name") return (c.name||"").toLowerCase();
   if(key==="total") return statTotal(c.geno);
@@ -3635,7 +3644,7 @@ function rosterSortVal(c, key){
 function rosterGroups(){
   const stat=GENES.filter(g=>ABILITY_GENE_KEYS.indexOf(g.key)>=0), appr=GENES.filter(g=>ABILITY_GENE_KEYS.indexOf(g.key)<0);
   return [
-    {key:"advice", label:"Advice", cols:[{kind:"advtype", label:"Do", sortk:"advice"},{kind:"num", label:"Value", sortk:"value", title:"How much you'd lose (0 = safely releasable · higher = irreplaceable keeper)"},{kind:"advwhy", label:"Why"},{kind:"advcons", label:"Consolidate / spread"}]},
+    {key:"advice", label:"Advice", cols:[{kind:"advtype", label:"Do", sortk:"advice"},{kind:"num", label:"Value", sortk:"value", title:"How much you'd lose (0 = safely releasable · higher = irreplaceable keeper)"},{kind:"advwhy", label:"Why"}]},
     {key:"quick", label:"Quick view", cols:[{kind:"qv", label:"At a glance"}]},
     {key:"stats", label:"Stats", cols:
       ABILITIES.map(a=>({kind:"num", label:AB_SHORT[a], sortk:"ab:"+a, title:a}))
@@ -3666,7 +3675,7 @@ function rosterTableHTML(active, sideline, retired){
   const allCats=active.concat(sideline, retired);
   const rrMap={}; retirementRanking(active,{abilityOnly}).forEach(r=>rrMap[r.id]=r);                 // active-tribe verdict (retire vs keep)
   const valueMap={}; retirementRanking(allCats,{abilityOnly}).forEach(r=>valueMap[r.id]=r);          // whole-roster "how much you'd lose" (0 = releasable)
-  const advMap={}, consMap={}; allCats.forEach(c=>{ advMap[c.id]=nichelingAdvice(c, allCats, rrMap, abilityOnly); consMap[c.id]=consolidationAdvice(c, allCats, abilityOnly); });
+  const advMap={}; allCats.forEach(c=>{ advMap[c.id]=nichelingAdvice(c, allCats); });   // sex-agnostic, always ability-only
   const sortVal=(c)=> rosterSort.key==="advice" ? (ADVICE_RANK[(advMap[c.id]||{}).action] ?? 9)
     : rosterSort.key==="value" ? ((valueMap[c.id]||{}).lossValue ?? 0)
     : rosterSortVal(c, rosterSort.key);
@@ -3695,8 +3704,7 @@ function rosterTableHTML(active, sideline, retired){
     });
   });
   h1+=`<th rowspan="2">Actions</th>`;
-  const stt=c=>c.status==="sideline"?` <span class="stt">· sideline</span>`:c.status==="retired"?` <span class="stt">· retired</span>`:"";
-  const cellsFor=c=>{ let row=`<td class="nmc" data-id="${c.id}">${esc(c.name)} <span class="muted" style="font-weight:400">${c.sex==="F"?"♀":c.sex==="M"?"♂":""}</span>${stt(c)}</td>`;
+  const cellsFor=c=>{ let row=`<td class="nmc" data-id="${c.id}">${esc(c.name)} <span class="muted" style="font-weight:400">${c.sex==="F"?"♀":c.sex==="M"?"♂":""}</span> ${statusTag(c)}</td>`;
     groups.forEach(g=>{
       if(rosterCollapsed.has(g.key)){ row+=`<td class="strip" data-grp="${g.key}" title="Expand ${esc(g.label)}">▸</td>`; return; }
       g.cols.forEach((col,ci)=>{ const gs=ci===0?" grp-start":"";
@@ -3705,7 +3713,6 @@ function rosterTableHTML(active, sideline, retired){
         } else if(col.kind==="qv"){ row+=`<td class="qv${gs}">${qvCell(c)}</td>`; }
         else if(col.kind==="advtype"){ const m=ADV_META[(advMap[c.id]||{}).action]||ADV_META.keep; row+=`<td class="advtype${gs}"><span class="${m.cls}">${m.label}</span></td>`; }
         else if(col.kind==="advwhy"){ row+=`<td class="advwhy${gs}">${esc((advMap[c.id]||{}).reason||"")}</td>`; }
-        else if(col.kind==="advcons"){ row+=`<td class="advcons${gs}">${consCellHTML(consMap[c.id])}</td>`; }
         else if(col.sortk==="value"){ const r=valueMap[c.id]||{}; row+=`<td class="num${gs}" title="${r.uniqueCount?esc(r.uniqueCount+" sole-copy allele(s) — irreplaceable"):""}">${valueCell(r)}</td>`; }
         else { const v=rosterSortVal(c, col.sortk); row+=`<td class="num${gs}">${v?esc(String(v)):"·"}</td>`; }
       });
@@ -3806,7 +3813,9 @@ function renderEditor(){
     <div class="row" style="margin:10px 0">
       <label>Name <input type="text" id="edName" value="${esc(c.name)}" style="width:180px"></label>
       <label>Sex <select id="edSex"><option value="?" ${c.sex==="?"?"selected":""}>—</option><option value="F" ${c.sex==="F"?"selected":""}>♀ Female</option><option value="M" ${c.sex==="M"?"selected":""}>♂ Male</option></select></label>
-    </div>`;
+      <label>Location <select id="edLoc"><option value="" ${!c.location?"selected":""}>—</option>${LOCATIONS.map(l=>`<option value="${l}" ${c.location===l?"selected":""}>${l}</option>`).join("")}</select></label>
+    </div>
+    <p class="muted" style="font-size:11px;margin:-4px 0 0">Location matters for breeding — two nichelings can only breed while they're in the <b>same</b> location.</p>`;
   html+=abilityChips(abilityTotals(c.geno));
   html+=`<div class="row" style="margin:12px 0 2px;align-items:flex-end">
       <label style="flex:1;min-width:220px">Gene code <input type="text" id="edCode" value="${genoToCode(c.geno)}" style="width:100%;font-family:ui-monospace,monospace"></label>
@@ -3831,6 +3840,7 @@ function renderEditor(){
   $("#closeEd").onclick=()=>{ editId=null; renderNichelings(); };
   $("#edName").oninput=e=>{ c.name=e.target.value; save(DB); };
   $("#edSex").onchange=e=>{ c.sex=e.target.value; save(DB); };
+  $("#edLoc").onchange=e=>{ c.location=e.target.value; save(DB); renderNichelings(); };
   const refreshTotals=()=>{ const ab=$("#editor .abil"); if(ab) ab.outerHTML=abilityChips(abilityTotals(c.geno));
     const ec=$("#edCode"); if(ec) ec.value=genoToCode(c.geno); };
   $$("#editor select[data-g]").forEach(s=>s.onchange=()=>{
@@ -3866,13 +3876,11 @@ function renderBreeding(){
   if(!DB.cats.length){ v.innerHTML=`<div class="card"><p class="muted">Add at least one nicheling under <b>My nichelings</b> first. You can breed a nicheling with itself or with any other.</p></div>`; return; }
   const retiredCount=DB.cats.filter(c=>c.status==="retired").length;
   const sidelineCount=DB.cats.filter(c=>c.status==="sideline").length;
-  const tag=c=>c.status==="sideline"?" · sideline":c.status==="retired"?" · retired":"";
-  const bar=()=>{ const parts=[];
-    if(sidelineCount) parts.push(`<label class="row" style="gap:5px;font-weight:600;font-size:12px"><input type="checkbox" class="incSideline" ${breed.includeSideline?"checked":""}> sideline (${sidelineCount})</label>`);
-    if(retiredCount)  parts.push(`<label class="row" style="gap:5px;font-weight:600;font-size:12px"><input type="checkbox" class="incRetired" ${breed.includeRetired?"checked":""}> retired (${retiredCount})</label>`);
-    return parts.length?`<div class="row" style="gap:10px;align-items:center"><span class="muted" style="font-size:11.5px">Include:</span>${parts.join("")}</div>`:""; };
-  const wireInc=()=>{ $$("#view-breeding .incSideline").forEach(cb=>cb.onchange=e=>{ breed.includeSideline=e.target.checked; renderBreeding(); });
-    $$("#view-breeding .incRetired").forEach(cb=>cb.onchange=e=>{ breed.includeRetired=e.target.checked; renderBreeding(); }); };
+  const tag=c=>` · ${statusText(c)}`;   // e.g. " · Active (Desert)"
+  const bar=()=> (sidelineCount||retiredCount)
+    ? `<span class="muted" style="font-size:11.5px">All nichelings included${sidelineCount?` · ${sidelineCount} sideline`:""}${retiredCount?` · ${retiredCount} retired`:""} — un-retire in-game to actually breed</span>`
+    : "";
+  const wireInc=()=>{};
   const pool=breedingPool();
   if(typeof breedWho!=="undefined" && breedWho!=null && breedWho!=="__any" && !pool.some(c=>c.id===breedWho)) breedWho="__any";  // stale Restrict target no longer in pool → back to Any
   if(!pool.length){
@@ -4112,7 +4120,8 @@ function runBreedSearch(){
     let score=ABILITIES.reduce((s,ab)=>opt.has(ab)?s+o.exp[ab]:s,0)+(opt.has("__mut")?eMut:0);
     const topStats=ABILITIES.filter(ab=>o.exp[ab]>0.05).sort((x,y)=>o.exp[y]-o.exp[x]).slice(0,4).map(ab=>`${AB_SHORT[ab]} ~+${o.exp[ab].toFixed(1)}`).join(" · ");
     const F=a.sex==="F"?a:b, M=a.sex==="F"?b:a;
-    return {F:F.name,M:M.name,Fid:F.id,Mid:M.id,score,joint,topStats};
+    const diffLoc = F.location && M.location && F.location!==M.location;   // can't breed unless moved to the same location
+    return {F:F.name,M:M.name,Fid:F.id,Mid:M.id,Fc:F,Mc:M,diffLoc,score,joint,topStats};
   }).filter(Boolean);
   // with explicit gene/allele targets, rank by how likely a pairing HITS them (stats tiebreak);
   // with no targets, rank by the Optimise score.
@@ -4126,8 +4135,9 @@ function runBreedSearch(){
       html+=`<p class="muted">No ♀×♂ pairing meets these targets/limits in one pairing.${geneKeys.length?" Try <b>Multi-gen plans</b> below — a recessive/homozygous outcome often needs two generations.":""}${hasLimits?" <br><span style=\"font-size:11px\">Min/Max apply to each pup's <b>expected (average)</b> value — rare traits &amp; ✦ mutations average well below 1, so a whole-number bound like “≥1” can exclude everything. Lower the bound to see chances.</span>":""}</p>`; }
     else { const byJoint=geneKeys.length>0, max=(byJoint?top[0].joint:top[0].score)||1;
       html+=top.map(r=>{ const metric=byJoint?r.joint:r.score, w=Math.max(2,Math.round(100*(max?metric/max:0))), tinfo=geneKeys.length?` <span class="muted" style="font-size:11px">🎯 ${r.joint*100>=0.5?Math.round(r.joint*100)+"%":"<1%"}</span>`:"";
+        const locFlag = r.diffLoc?` <span class="stt" style="color:var(--warn)">⚠ different location — move one to breed</span>`:"";
         return `<div class="prob bpair" data-f="${r.Fid}" data-m="${r.Mid}" style="margin-bottom:0;cursor:pointer" title="Load in the preview below"><span class="nm2">${esc(r.F)} ♀ × ${esc(r.M)} ♂${tinfo}</span><span class="bar"><span style="width:${w}%"></span></span><span class="pv">~${r.score.toFixed(1)}</span></div>`+
-          `<div class="muted" style="font-size:11.5px;margin:0 0 7px 150px">${esc(r.topStats)}</div>`; }).join(""); }
+          `<div class="muted" style="font-size:11.5px;margin:0 0 7px 150px">${statusTag(r.Fc)} × ${statusTag(r.Mc)}${locFlag} · ${esc(r.topStats)}</div>`; }).join(""); }
   }
   if(breedMode==="plan"||breedMode==="both"){
     if(breedMode==="both") html+=`<div style="height:8px"></div>`;
