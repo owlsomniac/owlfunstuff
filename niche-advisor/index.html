@@ -4543,28 +4543,31 @@ function mergeGroupFeasible(cats, worthy){ const u=groupAlleles(cats, worthy), o
   for(const gk in u){ const bases=Object.keys(u[gk]); if(bases.length>2) overflow.push({gene:GENE_BY_KEY[gk], bases}); }
   return {ok:overflow.length===0, overflow, union:u}; }
 /* A bridge cross needs an opposite-sex mate, but that mate is NOT genetically neutral — the kept pup inherits half
-   its genes from it too. So pick the best available mate you already own to MAXIMISE the odds the kept pup carries the
-   seed's NOTABLE alleles (its non-default worthy alleles — the scarce ones being consolidated; the gene's default
-   allele is ignored so the universal baseline doesn't count). It's PROBABILITY-weighted, not just "carries it or not":
-   each parent passes one of its two copies, so for a target at ✦L the pup carries it with 1−(1−cS/2)(1−cM/2) where
-   cS/cM = copies at ≥L on seed/mate. A HOMOZYGOUS carrier (cM=2 → passes 100%) therefore beats a HETEROZYGOUS one
-   (cM=1 → 50%) beats a non-carrier. Ranks by that summed probability, then # targets helped, then same-biome, then id
-   (deterministic). Returns null when nobody carries a notable allele → "any ♂". */
+   its genes from it too. So pick the best available mate you already own to MINIMISE the expected FOOD cost of getting a
+   pup that carries the seed's NOTABLE alleles (its worthy non-baseline alleles — the scarce ones being consolidated; a
+   gene's default allele at ✦0 is ignored, but a MUTATED default like Medium Body ✦2 still counts). Cost = expected
+   re-breeds × FP per breeding: each parent passes one of its two copies, so a target at ✦L passes with 1−(1−cS/2)(1−cM/2)
+   (cS/cM = copies at ≥L on seed/mate) → the joint carry-chance sets the re-breeds, and each breeding costs 70 + 3×(seed
+   level + MATE level). So a HOMOZYGOUS carrier (passes 100%) beats a heterozygous one, AND among equal passers the
+   LOWER-LEVEL (fewer stray ✦, cheaper + less junk into the line) mate wins. Ranks by that expected FP, then pass-down,
+   then same-biome, then id. Returns null when nobody carries a notable allele → "any ♂". */
 function bestBridgeMate(pool, seed, group, worthy){
   worthy=worthy||preserveWorthy(pool);
   const sw=groupAlleles([seed], worthy), notable=[];
-  for(const gk in sw) for(const b in sw[gk]) if(GENE_BY_KEY[gk].alleles[0].k!==b) notable.push({gk, b, L:sw[gk][b]});   // target base + the seed's ✦ level; drop each gene's default allele
-  if(!notable.length) return null;                                        // seed carries only baseline defaults → any mate is equally fine
-  const grpIds=new Set(group.map(c=>c.id)), oppSex=seed.sex==="F"?"M":"F", seedLoc=effLoc(seed);
+  for(const gk in sw) for(const b in sw[gk]) if(GENE_BY_KEY[gk].alleles[0].k!==b || sw[gk][b]>0) notable.push({gk, b, L:sw[gk][b]});   // non-default base OR a mutated default (✦>0)
+  if(!notable.length) return null;                                        // seed carries only ✦0 baseline defaults → any mate is equally fine
+  const grpIds=new Set(group.map(c=>c.id)), oppSex=seed.sex==="F"?"M":"F", seedLoc=effLoc(seed), seedLvl=nichelingLevel(seed.geno);
   const copies=(pair,b,L)=>(pair||[]).filter(a=>baseK(a)===b && mutLevel(a)>=L).length;   // copies of a base at ≥ the target ✦
   const cand=pool.filter(c=>c.sex===oppSex && !grpIds.has(c.id)).map(c=>{
-    let score=0; const sharedKeys=[], homoAt=new Set();
+    let score=0, pJoint=1; const sharedKeys=[], homoAt=new Set();
     notable.forEach(t=>{ const cM=copies(c.geno[t.gk],t.b,t.L), pS=copies(seed.geno[t.gk],t.b,t.L)/2, pM=cM/2;
-      score += 1-(1-pS)*(1-pM);                                           // P(kept pup carries this target at ≥✦)
+      const pk=1-(1-pS)*(1-pM); score+=pk; pJoint*=(pk>0?pk:1e-4);        // per-target carry chance; joint = all of them in one pup
       if(cM>0){ const key=t.gk+"|"+t.b; sharedKeys.push(key); if(cM>=2) homoAt.add(key); } });   // ×2 = homozygous → passes 100%
-    return {c, score, shared:sharedKeys.length, sharedKeys, homoAt, sameBiome:!!(seedLoc && effLoc(c)===seedLoc), id:c.id}; });
-  cand.sort((a,b)=> b.score-a.score || b.shared-a.shared || (b.sameBiome?1:0)-(a.sameBiome?1:0) || a.id-b.id);
-  return (cand[0] && cand[0].shared>0) ? cand[0] : null;                  // nobody carries a notable allele → fall back to "any ♂"
+    const cost=(1/pJoint)*breedFP(seedLvl, nichelingLevel(c.geno));       // expected FOOD to land the seed's alleles via this mate
+    return {c, score, cost, shared:sharedKeys.length, sharedKeys, homoAt, sameBiome:!!(seedLoc && effLoc(c)===seedLoc), id:c.id}; });
+  cand.sort((a,b)=> a.cost-b.cost || b.score-a.score || (b.sameBiome?1:0)-(a.sameBiome?1:0) || a.id-b.id);   // cheapest expected FP first
+  const carriers=cand.filter(x=>x.shared>0);
+  return carriers.length ? carriers[0] : null;                           // nobody carries a notable allele → fall back to "any ♂"
 }
 /* SECTION 3 — concrete plan to fuse a group's lines onto ONE nicheling (then release the group).
    Sex-agnostic: chains carriers, bridging a same-sex seed through a neutral mate when the group is all
@@ -4647,21 +4650,30 @@ function mergePlan(pool, group, homoKeys, worthyArg){
   // their full level; an intermediate kept pup is estimated as the ✦ it has gathered so far (retained targets, het).
   const cpy=(cat,gk,b,L)=> cat ? (cat.geno[gk]||[]).filter(a=>baseK(a)===b && mutLevel(a)>=L).length : 0;
   const lvlOf=cat=> cat ? nichelingLevel(cat.geno) : 0;
+  const targetGenes=new Set(Object.keys(u));
+  const mutOnTargets=cat=>{ let s=0; if(cat) targetGenes.forEach(gk=>{ (cat.geno[gk]||[]).forEach(a=>s+=mutLevel(a)); }); return s; };   // a parent's ✦ that sits on the plan's target genes
+  const forcedOf=keys=>{ let s=0; keys.forEach(k=>{ const i=k.indexOf("|"),gk=k.slice(0,i),b=k.slice(i+1); s+=u[gk][b]; }); return s; };
+  let lineLevel=0;   // expected TOTAL level of the running kept pup (its gathered target ✦ + inherited junk), for later crosses' FP
   crosses.forEach(cx=>{
-    const leftCat = cx.kind==="bridge" ? cx.leftCat : (cx.leftSeedCat||null);   // null → a heterozygous kept pup
-    const rightCat = cx.rightCat||null, bset=new Set(cx.bringsKeys); let p=1, pupLvl=0;
+    const leftCat = cx.kind==="bridge" ? cx.leftCat : (cx.leftSeedCat||null);   // null → the running kept pup
+    const rightCat = cx.rightCat||null, bset=new Set(cx.bringsKeys); let p=1;
     cx.haveKeys.forEach(k=>{ const i=k.indexOf("|"), gk=k.slice(0,i), b=k.slice(i+1), L=u[gk][b];
       const cL = leftCat ? cpy(leftCat,gk,b,L) : (bset.has(k)?0:1);   // het pup: retains a gathered allele (1 copy); a brand-new one isn't in it yet
       const cR = cpy(rightCat,gk,b,L);
-      const pk = 1-(1-cL/2)*(1-cR/2); p *= (pk>0?pk:1e-4);
-      if(!bset.has(k)) pupLvl += L; });   // ✦ the kept-pup line-holder already carries (for its level)
+      const pk = 1-(1-cL/2)*(1-cR/2); p *= (pk>0?pk:1e-4); });
     cx.p=p; cx.expBreed = p>0 ? 1/p : 999;
-    cx.fpPer = breedFP(leftCat?lvlOf(leftCat):pupLvl, lvlOf(rightCat));   // rightCat null (any ♂) → level 0
-    cx.expFP = cx.expBreed * cx.fpPer; });
+    const leftLevel = leftCat ? lvlOf(leftCat) : lineLevel;   // real cat → its full level (all ✦); kept pup → running estimate
+    cx.fpPer = breedFP(leftLevel, lvlOf(rightCat));           // rightCat null (any ♂) → level 0
+    cx.expFP = cx.expBreed * cx.fpPer;
+    // Running pup expected level for the NEXT cross: target ✦ it now carries + HALF of each parent's NON-target (junk)
+    // mutation (each parent passes ~half its genes). So a junk-heavy partner makes every later cross costlier too.
+    const junkLeft  = leftCat ? Math.max(0, lvlOf(leftCat)-mutOnTargets(leftCat)) : Math.max(0, lineLevel-forcedOf(cx.haveKeys.filter(k=>!bset.has(k))));
+    const junkRight = rightCat ? Math.max(0, lvlOf(rightCat)-mutOnTargets(rightCat)) : 0;
+    lineLevel = forcedOf(cx.haveKeys) + 0.5*(junkLeft+junkRight); });
   let expBreedings = crosses.reduce((s,c)=>s+c.expBreed,0);
   let expFP = crosses.reduce((s,c)=>s+c.expFP,0);
-  if(homoLabels.length){ let ph=1, pupLvl=0; allKeys.forEach(k=>{ if(homo.has(k)) ph*=0.25;
-      const i=k.indexOf("|"),gk=k.slice(0,i),b=k.slice(i+1); pupLvl+=u[gk][b]; });   // double-up: two carrier pups, each carries all gathered ✦
+  if(homoLabels.length){ let ph=1; allKeys.forEach(k=>{ if(homo.has(k)) ph*=0.25; });
+    const pupLvl=forcedOf(allKeys);   // double-up: two carrier pups, each carries all gathered ✦
     expBreedings += 1/ph; expFP += (1/ph)*breedFP(pupLvl,pupLvl); }
   return {ok:true, bridge, bridgeMate, crosses, covered, allLabels:allKeys.map(labelKey),
     seed:{name:seed.name, sex:seed.sex}, redundant:redundant.map(c=>c.name),
