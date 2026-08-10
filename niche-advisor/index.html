@@ -4565,9 +4565,9 @@ function bestBridgeMate(pool, seed, group, worthy){
    Sex-agnostic: chains carriers, bridging a same-sex seed through a neutral mate when the group is all
    one sex. Optional homoKeys ("geneKey|base") upgrade the final stud to homozygous (2 copies) for those
    alleles — one extra cross of two carriers. Returns a structured plan the renderer turns into steps. */
-function mergePlan(pool, group, homoKeys){
+function mergePlan(pool, group, homoKeys, worthyArg){
   const homo=new Set(homoKeys||[]);
-  const worthy=preserveWorthy(pool);
+  const worthy=worthyArg||preserveWorthy(pool);
   const u=groupAlleles(group, worthy);   // only preserve the best of each same-gene/same-skill allele
   const labelKey=k=>{ const i=k.indexOf("|"); return consAlleleLabel(k.slice(0,i), k.slice(i+1), u[k.slice(0,i)][k.slice(i+1)]); };
   const allKeys=[]; for(const gk in u) for(const b in u[gk]) allKeys.push(gk+"|"+b);
@@ -4614,7 +4614,7 @@ function mergePlan(pool, group, homoKeys){
     const rightLabel = mate ? `${mate.c.name} ${oppSym} (best match)` : `any ${oppSym}${loc}`;
     if(mate) bridgeMate={ name:mate.c.name, sex:mate.c.sex, sameBiome:mate.sameBiome, loc:locOf(seed), shared:mate.sharedKeys.map(k=>labelKey(k)+(mate.homoAt.has(k)?" ×2":"")) };   // ×2 = mate is homozygous → passes that allele down 100%
     crosses.push({gen:1, kind:"bridge", leftCat:seed, leftLabel:`${seed.name}`, leftSex:seed.sex, rightLabel, rightCat:mate?mate.c:null, keepSex:opp(seed.sex),
-      brings:seedBring.map(labelKey), have:[...seen].map(labelKey)});
+      brings:seedBring.map(labelKey), have:[...seen].map(labelKey), bringsKeys:seedBring.slice(), haveKeys:[...seen]});
   }
   const lineSex0 = bridge ? opp(seed.sex) : seed.sex;   // sex of the line-holder going into the first member cross
   let lineSex=lineSex0;
@@ -4626,7 +4626,7 @@ function mergePlan(pool, group, homoKeys){
     const nextMember = members[idx+1];
     const keepSex = isLast ? null : opp(nextMember.sex);   // pup born opposite the NEXT member so its cross is valid
     crosses.push({gen, kind:"cross", leftLabel: (bridge||idx>0)?"the kept pup":`${seed.name}`, leftIsSeed: !bridge && idx===0, leftSeedCat: (!bridge&&idx===0)?seed:null, leftSex:lineSex,
-      rightCat:m, rightLabel:m.name, rightSex:m.sex, keepSex, brings:brings.map(labelKey), have:[...seen].map(labelKey)});
+      rightCat:m, rightLabel:m.name, rightSex:m.sex, keepSex, brings:brings.map(labelKey), have:[...seen].map(labelKey), bringsKeys:brings.slice(), haveKeys:[...seen]});
     lineSex = keepSex || lineSex; gen++; });
   const covered = seen.size===allKeys.length;
   // Location: every cross must be same-location; flag if the group spans locations.
@@ -4634,16 +4634,36 @@ function mergePlan(pool, group, homoKeys){
   // Homozygous upgrade (Step C): the carry pup holds the homo targets heterozygous; keep two carrier pups
   // (♀+♂) and cross to double them all at once.
   const homoLabels=allKeys.filter(k=>homo.has(k)).map(labelKey);
+  // COST — expected breedings (each litter costs food). At every cross you re-breed until a pup carries everything
+  // gathered so far; for a target at ✦L the pup gets it with 1−(1−cL/2)(1−cR/2) (copies at ≥L in each parent). The
+  // running line-holder pup carries each already-gathered allele heterozygous (one copy → 50%); a homozygous parent
+  // passes it 100%. Expected litters at a cross = 1/p; the plan's total = Σ over crosses (+ a homozygous double-up).
+  const cpy=(cat,gk,b,L)=> cat ? (cat.geno[gk]||[]).filter(a=>baseK(a)===b && mutLevel(a)>=L).length : 0;
+  crosses.forEach(cx=>{
+    const leftCat = cx.kind==="bridge" ? cx.leftCat : (cx.leftSeedCat||null);   // null → a heterozygous kept pup
+    const rightCat = cx.rightCat||null, bset=new Set(cx.bringsKeys); let p=1;
+    cx.haveKeys.forEach(k=>{ const i=k.indexOf("|"), gk=k.slice(0,i), b=k.slice(i+1), L=u[gk][b];
+      const cL = leftCat ? cpy(leftCat,gk,b,L) : (bset.has(k)?0:1);   // het pup: retains a gathered allele (1 copy); a brand-new one isn't in it yet
+      const cR = cpy(rightCat,gk,b,L);
+      const pk = 1-(1-cL/2)*(1-cR/2); p *= (pk>0?pk:1e-4); });
+    cx.p=p; cx.expBreed = p>0 ? 1/p : 999; });
+  let expBreedings = crosses.reduce((s,c)=>s+c.expBreed,0);
+  if(homoLabels.length){ let ph=1; allKeys.forEach(k=>{ if(homo.has(k)) ph*=0.25; }); expBreedings += 1/ph; }   // double-up cross: two het carriers → ~25% homozygous per target
   return {ok:true, bridge, bridgeMate, crosses, covered, allLabels:allKeys.map(labelKey),
     seed:{name:seed.name, sex:seed.sex}, redundant:redundant.map(c=>c.name),
-    freed:group.map(c=>c.name), homoLabels, crossLoc: locs.length>1, locs,
+    freed:group.map(c=>c.name), homoLabels, crossLoc: locs.length>1, locs, expBreedings,
     lastGen: crosses.length?crosses[crosses.length-1].gen:0};
 }
 /* Auto-merge finder: fusible PAIRS — each brings a WORTH-PRESERVING allele the other lacks (not a subset), and
    their combined worthy alleles fit one body (≤2 distinct/gene). Only preserve-worthy alleles count (a same-
-   gene/same-skill inferior like Deformed Paw is ignored). Ranked EASIEST-first — the most alleles already IN
-   COMMON and the fewest that DIFFER — with a deterministic id tiebreak so the order is STABLE (see the sort). */
+   gene/same-skill inferior like Deformed Paw is ignored). Ranked CHEAPEST-first by expected breedings (FP cost),
+   which folds in overlap + pass-down odds; deterministic id tiebreak keeps the order STABLE (see the sort). */
+let _amSig=null, _amRes=null;
 function autoMerges(pool){
+  // Memoize by a roster signature — pricing every pair builds a plan (O(n²)); consolidate re-renders (toggles,
+  // ticks, picks) don't change the roster, so recompute only when a nicheling's genotype/sex/location actually changes.
+  const sig=pool.map(c=>c.id+":"+c.sex+":"+(c.location||"")+":"+(c.status||"")+":"+genoToCode(c.geno)).join("|");
+  if(sig===_amSig) return _amRes;
   const worthy=preserveWorthy(pool);
   const wa=c=>groupAlleles([c], worthy);                                 // one cat's worthy alleles → {gk:{base:lvl}}
   const wkeys=w=>{ const s=[]; for(const gk in w) for(const b in w[gk]) s.push(gk+"|"+b); return s; };
@@ -4660,15 +4680,16 @@ function autoMerges(pool){
     const crossLoc=!!(effLoc(A.c) && effLoc(B.c) && effLoc(A.c)!==effLoc(B.c));
     const sameSex=A.c.sex===B.c.sex;                                     // same sex → the plan bridges through a neutral mate (an extra cross)
     const setup=(sameSex?1:0)+(crossLoc?1:0);                            // 0 = you can breed them right now (opposite sex, same place)
-    res.push({group:[A.c,B.c], distinct, val, shared, diff, crossLoc, sameSex, setup,
+    const plan=mergePlan(pool,[A.c,B.c],[],worthy);                      // build the actual plan to price it (reuses worthy — no recompute)
+    const expBreed=plan.ok ? plan.expBreedings : Infinity;              // expected breedings = FP cost proxy
+    res.push({group:[A.c,B.c], distinct, val, shared, diff, crossLoc, sameSex, setup, expBreed,
       lo:Math.min(A.c.id,B.c.id), hi:Math.max(A.c.id,B.c.id)}); }
-  // EASIEST / fastest-to-release first (the whole point of a merge is to fuse two lines and release BOTH):
-  //   1. net overlap (shared − differing): most in common AND fewest to chase — the shared set passes for free;
-  //   2. more in common on ties;  3. fewer differences;  4. breedable now (opposite sex + same location);
-  //   5. higher ✦ value.  A final id tiebreak makes the order fully DETERMINISTIC, so adding an unrelated
-  //   nicheling never reshuffles which pair is suggested first — a suggestion stays put until you act on it.
-  res.sort((a,b)=> (b.shared-b.diff)-(a.shared-a.diff) || b.shared-a.shared || a.diff-b.diff || a.setup-b.setup || b.val-a.val || a.lo-b.lo || a.hi-b.hi);
-  return res;
+  // CHEAPEST first — fewest expected breedings (each litter costs food). Expected breedings already folds in BOTH
+  // considerations: more alleles in common + higher pass-down (homozygous carriers) ⇒ higher per-cross odds ⇒ fewer
+  // re-breeds; fewer distinct alleles ⇒ fewer crosses. Tiebreak by net overlap, then in-common, then fewer
+  // differences, then breedable-now, then ✦ value, then id — so the order stays DETERMINISTIC/stable.
+  res.sort((a,b)=> a.expBreed-b.expBreed || (b.shared-b.diff)-(a.shared-a.diff) || b.shared-a.shared || a.diff-b.diff || a.setup-b.setup || b.val-a.val || a.lo-b.lo || a.hi-b.hi);
+  _amSig=sig; _amRes=res; return res;
 }
 
 /* Auto stat MAXIMISER — JOINT across the chosen stats. Driven by which stats are ranked (Optimise ticked); a Min
@@ -4826,6 +4847,8 @@ function renderBreedOut(){
 /* ♀/♂ glyph — used by the breeding multi-gen plans. (The ranked Retire/Release tabs were removed; their
    per-nicheling verdict + safest-first Value ranking now live in the My-nichelings roster Advice column.) */
 const sx=s=>s==="F"?"♀":"♂";
+/* format an expected-breedings count (FP cost proxy) for display */
+const fmtBreedings=n=>!isFinite(n)?"many":("~"+Math.max(1,Math.round(n))+" breeding"+(Math.round(n)===1?"":"s"));
 
 /* =========================================================================
    TAB: Consolidate — concentrate scattered beneficial alleles onto the
@@ -4850,6 +4873,7 @@ function mergePlanHTML(plan){
   if(plan.trivial)
     return `<p class="muted"><b>${esc(plan.keeper.name)}</b> already carries everything the other${plan.freed.length>1?"s do":" does"} — no breeding needed, just release <b>${esc(plan.freed.join(", "))}</b>.</p>`;
   let h=`<div class="muted" style="font-size:12px;margin-bottom:5px">One line, one pup: keep the pup that inherits the noted alleles at each cross (born the sex marked for the next cross), then release the parents.</div>`;
+  if(plan.expBreedings!=null) h+=`<div style="font-size:12px;margin-bottom:5px">💰 Est. cost: <b>${fmtBreedings(plan.expBreedings)}</b> to reach the pup <span class="muted">(each litter costs food; assumes you keep the best pup each cross and re-breed until it hits)</span>.</div>`;
   if(plan.bridge){
     h+=`<div class="muted" style="font-size:11.5px;margin-bottom:5px">Every picked nicheling is the same sex, so the first cross uses a <b>bridge</b> mate — to move <b>${esc(plan.seed.name)}</b>'s alleles into an opposite-sex pup so the rest can chain in.`;
     if(plan.bridgeMate) h+=` The mate isn't neutral (its pup keeps half its genes), so use one that already shares ${esc(plan.seed.name)}'s alleles — the kept pup is then far likelier to carry them. Best you own: <b>${esc(plan.bridgeMate.name)}</b> ${sx(plan.bridgeMate.sex)}${plan.bridgeMate.shared&&plan.bridgeMate.shared.length?` (also carries <b>${esc(plan.bridgeMate.shared.join(", "))}</b>)`:""}${(!plan.bridgeMate.sameBiome&&plan.bridgeMate.loc)?` — bring it to ${esc(plan.bridgeMate.loc)} first`:""}.`;
@@ -4927,14 +4951,14 @@ function renderConsolidate(){
   if(!autos.length){
     html+=`<p class="muted" style="font-size:12.5px">No two nichelings both add something and still fit on one body — your good alleles are already either duplicated (see roster Advice to release the copies) or spread across genes that need separate studs (above).</p>`;
   } else {
-    html+=`<div class="muted" style="font-size:12px;margin:2px 0 5px">Easiest first — the pair with the <b>most alleles in common</b> and the <b>fewest differences</b> to breed across. The shared alleles pass to the pup almost for free, so you only chase the few that differ, fuse the two lines, and release both. (The order is stable — adding nichelings won't reshuffle it.)</div>`;
+    html+=`<div class="muted" style="font-size:12px;margin:2px 0 5px">Cheapest first — ranked by <b>💰 expected breedings</b> (each litter costs food). That already folds in the two things that matter: the <b>most alleles in common</b> and the <b>highest pass-down odds</b> (a homozygous carrier passes 100%) mean fewer re-breeds, and <b>fewer differences</b> mean fewer crosses. The order is stable — adding nichelings won't reshuffle it.</div>`;
     autos.slice(0,AUTO_MAX).forEach(m=>{
       const [A,B]=m.group, cid="a"+Math.min(A.id,B.id)+"_"+Math.max(A.id,B.id), open=consOpen.has(cid);
       const homoKeys=[...consHomo].filter(k=>k.indexOf(cid+"::")===0).map(k=>k.slice(cid.length+2));
       const plan=open?mergePlan(pool,[A,B],homoKeys):null;
       html+=`<div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin:0 0 6px">`+
         `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`+
-        `<div style="font-size:12.5px"><b>${esc(A.name)}</b> ${sx(A.sex)} <span class="muted">+</span> <b>${esc(B.name)}</b> ${sx(B.sex)} <span class="muted">— ${m.shared} in common · ${m.diff} to breed across → ${m.distinct} on one pup</span>${m.sameSex?` <span class="stt muted" title="Same sex — the plan bridges through a neutral mate">bridge</span>`:""}${m.crossLoc?` <span class="stt" style="color:var(--warn)">⚠ diff. location</span>`:""}</div>`+
+        `<div style="font-size:12.5px"><b>${esc(A.name)}</b> ${sx(A.sex)} <span class="muted">+</span> <b>${esc(B.name)}</b> ${sx(B.sex)} <span class="muted">— ${m.shared} in common · ${m.diff} to breed across · 💰 ${fmtBreedings(m.expBreed)}</span>${m.sameSex?` <span class="stt muted" title="Same sex — the plan bridges through a neutral mate">bridge</span>`:""}${m.crossLoc?` <span class="stt" style="color:var(--warn)">⚠ diff. location</span>`:""}</div>`+
         `<button class="btn sm gray consPlanToggle" data-card="${cid}">${open?"Hide plan":"Show plan"}</button></div>`;
       if(open){
         const gal=groupAlleles([A,B],worthy); const homoOpts=[]; for(const gk in gal) for(const b in gal[gk]) homoOpts.push({gk,b,key:gk+"|"+b});
@@ -4962,7 +4986,7 @@ function renderConsolidate(){
     const partners=autos.filter(m=>m.group.some(c=>c.id===S.id)).map(m=>({other:m.group.find(c=>c.id!==S.id), m}));
     if(partners.length){
       const best=partners[0];
-      const intro=`<div class="muted" style="font-size:12px;margin:2px 0 5px">Best partner for <b>${esc(S.name)}</b>: <b>${esc(best.other.name)}</b> ${sx(best.other.sex)} <span style="opacity:.85">— ${best.m.shared} in common · ${best.m.diff} to breed across</span>. Tick a second nicheling to force a different pairing.</div>`;
+      const intro=`<div class="muted" style="font-size:12px;margin:2px 0 5px">Best partner for <b>${esc(S.name)}</b>: <b>${esc(best.other.name)}</b> ${sx(best.other.sex)} <span style="opacity:.85">— ${best.m.shared} in common · ${best.m.diff} to breed across · 💰 ${fmtBreedings(best.m.expBreed)}</span>. Tick a second nicheling to force a different pairing.</div>`;
       html+=manualCard([S,best.other],intro);
       if(partners.length>1){
         const alts=partners.slice(1,6).map(p=>`<button class="btn sm gray consAddPartner" data-id="${p.other.id}">${esc(p.other.name)} ${sx(p.other.sex)} <span class="muted">(${p.m.shared}·${p.m.diff})</span></button>`).join(" ");
