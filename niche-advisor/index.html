@@ -4538,23 +4538,28 @@ function mergeGroupFeasible(cats, worthy){ const u=groupAlleles(cats, worthy), o
   for(const gk in u){ const bases=Object.keys(u[gk]); if(bases.length>2) overflow.push({gene:GENE_BY_KEY[gk], bases}); }
   return {ok:overflow.length===0, overflow, union:u}; }
 /* A bridge cross needs an opposite-sex mate, but that mate is NOT genetically neutral — the kept pup inherits half
-   its genes from it too. So pick the best available mate you already own: the opposite-sex nicheling (not one being
-   released with this group) that shares the MOST of the seed's NOTABLE alleles (its non-default worthy alleles — the
-   scarce ones being consolidated, ignoring the universal baseline everyone has). A matching mate makes the kept pup
-   far more likely to carry the seed's alleles (two sources → higher odds, maybe homozygous). Prefer one in the seed's
-   biome (breedable now); id tiebreak keeps it deterministic. Returns null when nobody shares a notable allele → "any ♂". */
+   its genes from it too. So pick the best available mate you already own to MAXIMISE the odds the kept pup carries the
+   seed's NOTABLE alleles (its non-default worthy alleles — the scarce ones being consolidated; the gene's default
+   allele is ignored so the universal baseline doesn't count). It's PROBABILITY-weighted, not just "carries it or not":
+   each parent passes one of its two copies, so for a target at ✦L the pup carries it with 1−(1−cS/2)(1−cM/2) where
+   cS/cM = copies at ≥L on seed/mate. A HOMOZYGOUS carrier (cM=2 → passes 100%) therefore beats a HETEROZYGOUS one
+   (cM=1 → 50%) beats a non-carrier. Ranks by that summed probability, then # targets helped, then same-biome, then id
+   (deterministic). Returns null when nobody carries a notable allele → "any ♂". */
 function bestBridgeMate(pool, seed, group, worthy){
   worthy=worthy||preserveWorthy(pool);
   const sw=groupAlleles([seed], worthy), notable=[];
-  for(const gk in sw) for(const b in sw[gk]) if(GENE_BY_KEY[gk].alleles[0].k!==b) notable.push(gk+"|"+b);   // drop the default (most-dominant) allele of each gene
+  for(const gk in sw) for(const b in sw[gk]) if(GENE_BY_KEY[gk].alleles[0].k!==b) notable.push({gk, b, L:sw[gk][b]});   // target base + the seed's ✦ level; drop each gene's default allele
   if(!notable.length) return null;                                        // seed carries only baseline defaults → any mate is equally fine
   const grpIds=new Set(group.map(c=>c.id)), oppSex=seed.sex==="F"?"M":"F", seedLoc=effLoc(seed);
+  const copies=(pair,b,L)=>(pair||[]).filter(a=>baseK(a)===b && mutLevel(a)>=L).length;   // copies of a base at ≥ the target ✦
   const cand=pool.filter(c=>c.sex===oppSex && !grpIds.has(c.id)).map(c=>{
-    const cw=groupAlleles([c], worthy);
-    const sharedKeys=notable.filter(k=>{ const i=k.indexOf("|"), gk=k.slice(0,i), b=k.slice(i+1); return cw[gk] && cw[gk][b]!=null; });
-    return {c, shared:sharedKeys.length, sharedKeys, sameBiome:!!(seedLoc && effLoc(c)===seedLoc), id:c.id}; });
-  cand.sort((a,b)=> b.shared-a.shared || (b.sameBiome?1:0)-(a.sameBiome?1:0) || a.id-b.id);
-  return (cand[0] && cand[0].shared>0) ? cand[0] : null;                  // nobody shares a notable allele → fall back to "any ♂"
+    let score=0; const sharedKeys=[], homoAt=new Set();
+    notable.forEach(t=>{ const cM=copies(c.geno[t.gk],t.b,t.L), pS=copies(seed.geno[t.gk],t.b,t.L)/2, pM=cM/2;
+      score += 1-(1-pS)*(1-pM);                                           // P(kept pup carries this target at ≥✦)
+      if(cM>0){ const key=t.gk+"|"+t.b; sharedKeys.push(key); if(cM>=2) homoAt.add(key); } });   // ×2 = homozygous → passes 100%
+    return {c, score, shared:sharedKeys.length, sharedKeys, homoAt, sameBiome:!!(seedLoc && effLoc(c)===seedLoc), id:c.id}; });
+  cand.sort((a,b)=> b.score-a.score || b.shared-a.shared || (b.sameBiome?1:0)-(a.sameBiome?1:0) || a.id-b.id);
+  return (cand[0] && cand[0].shared>0) ? cand[0] : null;                  // nobody carries a notable allele → fall back to "any ♂"
 }
 /* SECTION 3 — concrete plan to fuse a group's lines onto ONE nicheling (then release the group).
    Sex-agnostic: chains carriers, bridging a same-sex seed through a neutral mate when the group is all
@@ -4607,7 +4612,7 @@ function mergePlan(pool, group, homoKeys){
     const mate=bestBridgeMate(pool, seed, group, worthy);
     const oppSym=opp(seed.sex)==="F"?"♀":"♂", loc=locOf(seed)?` in ${locOf(seed)}`:"";
     const rightLabel = mate ? `${mate.c.name} ${oppSym} (best match)` : `any ${oppSym}${loc}`;
-    if(mate) bridgeMate={ name:mate.c.name, sex:mate.c.sex, sameBiome:mate.sameBiome, loc:locOf(seed), shared:mate.sharedKeys.map(labelKey) };
+    if(mate) bridgeMate={ name:mate.c.name, sex:mate.c.sex, sameBiome:mate.sameBiome, loc:locOf(seed), shared:mate.sharedKeys.map(k=>labelKey(k)+(mate.homoAt.has(k)?" ×2":"")) };   // ×2 = mate is homozygous → passes that allele down 100%
     crosses.push({gen:1, kind:"bridge", leftCat:seed, leftLabel:`${seed.name}`, leftSex:seed.sex, rightLabel, rightCat:mate?mate.c:null, keepSex:opp(seed.sex),
       brings:seedBring.map(labelKey), have:[...seen].map(labelKey)});
   }
