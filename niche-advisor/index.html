@@ -4941,17 +4941,32 @@ function renderConsolidate(){
   }
   // Manual
   const sexed=pool.filter(c=>c.sex==="F"||c.sex==="M");
-  html+=`<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:600;font-size:12.5px">Manual merge <span class="muted" style="font-weight:400">— tick 2+ nichelings to plan fusing them</span></div>${consSel.size?`<button class="btn sm gray" id="consClearSel">Clear (${consSel.size})</button>`:""}</div>`;
+  html+=`<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:600;font-size:12.5px">Manual merge <span class="muted" style="font-weight:400">— tick <b>one</b> and the best partner is picked for you, or tick two+ to fuse an exact set</span></div>${consSel.size?`<button class="btn sm gray" id="consClearSel">Clear (${consSel.size})</button>`:""}</div>`;
   html+=`<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin:6px 0;font-size:12px">`+sexed.map(c=>`<label style="white-space:nowrap"><input type="checkbox" class="consPick" data-id="${c.id}" ${consSel.has(c.id)?"checked":""}> ${esc(c.name)} ${sx(c.sex)} <span class="muted">${esc(statusText(c))}</span></label>`).join("")+`</div>`;
-  if(consSel.size>=2){
-    const grp=sexed.filter(c=>consSel.has(c.id)), cid="manual";
+  const manualCard=(grp,intro)=>{ const cid="manual";
     const homoKeys=[...consHomo].filter(k=>k.indexOf(cid+"::")===0).map(k=>k.slice(cid.length+2));
     const plan=mergePlan(pool,grp,homoKeys);
     const gal=groupAlleles(grp,worthy); const homoOpts=[]; for(const gk in gal) for(const b in gal[gk]) homoOpts.push({gk,b,key:gk+"|"+b});
-    html+=`<div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px">${mergePlanHTML(plan)}`+
-      (plan.ok && !plan.trivial ? homoBox(cid,homoOpts,gal) : "")+
-      `</div>`;
-  } else if(consSel.size===1){ html+=`<p class="muted" style="font-size:12px">Pick at least one more to plan a merge.</p>`; }
+    return (intro||"")+`<div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px">${mergePlanHTML(plan)}`+
+      (plan.ok && !plan.trivial ? homoBox(cid,homoOpts,gal) : "")+`</div>`; };
+  if(consSel.size>=2){
+    html+=manualCard(sexed.filter(c=>consSel.has(c.id)));
+  } else if(consSel.size===1){
+    const S=sexed.find(c=>consSel.has(c.id));
+    // Best partner for this ONE nicheling — same easiest-first ranking as the auto suggestions, restricted to pairs that include it.
+    const partners=autos.filter(m=>m.group.some(c=>c.id===S.id)).map(m=>({other:m.group.find(c=>c.id!==S.id), m}));
+    if(partners.length){
+      const best=partners[0];
+      const intro=`<div class="muted" style="font-size:12px;margin:2px 0 5px">Best partner for <b>${esc(S.name)}</b>: <b>${esc(best.other.name)}</b> ${sx(best.other.sex)} <span style="opacity:.85">— ${best.m.shared} in common · ${best.m.diff} to breed across</span>. Tick a second nicheling to force a different pairing.</div>`;
+      html+=manualCard([S,best.other],intro);
+      if(partners.length>1){
+        const alts=partners.slice(1,6).map(p=>`<button class="btn sm gray consAddPartner" data-id="${p.other.id}">${esc(p.other.name)} ${sx(p.other.sex)} <span class="muted">(${p.m.shared}·${p.m.diff})</span></button>`).join(" ");
+        html+=`<div style="margin-top:6px;font-size:12px"><span class="muted">Other partners:</span> ${alts}</div>`;
+      }
+    } else {
+      html+=`<p class="muted" style="font-size:12px">No fusible partner for <b>${esc(S.name)}</b> — its beneficial alleles are already duplicated elsewhere (release the copy via roster Advice) or spread across genes that need separate studs (see Fewest studs). Tick a second nicheling to force a specific pairing.</p>`;
+    }
+  }
   html+=`</div></div>`;
 
   v.innerHTML=html;
@@ -4961,6 +4976,7 @@ function renderConsolidate(){
   $$("#view-consolidate .consPlanToggle").forEach(b=>b.onclick=()=>{ const cid=b.dataset.card; if(consOpen.has(cid)) consOpen.delete(cid); else consOpen.add(cid); re(); });
   $$("#view-consolidate .consHomo").forEach(cb=>cb.onchange=()=>{ const k=cb.dataset.card+"::"+cb.dataset.key; if(cb.checked) consHomo.add(k); else consHomo.delete(k); re(); });
   $$("#view-consolidate .consPick").forEach(cb=>cb.onchange=()=>{ const id=+cb.dataset.id; if(cb.checked) consSel.add(id); else consSel.delete(id); re(); });
+  $$("#view-consolidate .consAddPartner").forEach(b=>b.onclick=()=>{ consSel.add(+b.dataset.id); re(); });   // switch the single-select suggestion to a specific partner
   const cs=$("#consClearSel"); if(cs) cs.onclick=()=>{ consSel.clear(); re(); };
 }
 
