@@ -5021,7 +5021,11 @@ function renderConsolidate(){
         html+=`<div style="margin-top:6px;font-size:12px"><span class="muted">Other partners:</span> ${alts}</div>`;
       }
     } else {
-      html+=`<p class="muted" style="font-size:12px">No fusible partner for <b>${esc(S.name)}</b> — its beneficial alleles are already duplicated elsewhere (release the copy via roster Advice) or spread across genes that need separate studs (see Fewest studs). Tick a second nicheling to force a specific pairing.</p>`;
+      const adv=nichelingAdvice(S, pool);   // SAME verdict source as the roster Advice column → the two always agree
+      const gone=adv.action==="release"||adv.action==="retire";
+      html+= gone
+        ? `<p class="muted" style="font-size:12px">No fusible partner for <b>${esc(S.name)}</b> — everything it carries is already held elsewhere, so the roster marks it <b>${(ADV_META[adv.action]||{}).label||"Release"}</b>: ${esc(adv.reason)} Nothing to merge — just release it.</p>`
+        : `<p class="muted" style="font-size:12px">No fusible partner for <b>${esc(S.name)}</b>, but it's a <b>keeper</b> — ${esc(adv.reason)} Its alleles just can't share one body with another carrier in a single merge (that would overflow a gene's two slots), so keep it as its own stud (see <b>Fewest studs</b>). Tick a second nicheling to force a pairing anyway.</p>`;
     }
   }
   html+=`</div></div>`;
