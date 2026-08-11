@@ -2696,6 +2696,17 @@ function install(adapter){
 
   /* ================= RENDER ================= */
   function badge(on){ return on?`<span class="sk-badge sk-on">on</span>`:`<span class="sk-badge">off</span>`; }
+  // Explicit-direction sync controls, rendered inside whichever channel box is active.
+  function forceBlock(name){
+    const lab=esc(chanLabel(name));
+    return `<div class="sk-manual">
+        <div class="sk-row" style="gap:6px">
+          <button class="sk-btn" id="sk-force-up" title="Overwrite the ${lab} copy with this device's roster">⬆ Sync TO cloud</button>
+          <button class="sk-btn" id="sk-force-down" title="Overwrite this device's roster with the ${lab} copy">⬇ Sync FROM cloud</button>
+        </div>
+        <p class="sk-muted" style="font-size:12px;margin:4px 0 0"><b>TO</b> uploads this device → ${lab}. <b>FROM</b> downloads ${lab} → this device. Each replaces the other side — you'll confirm first.</p>
+      </div>`;
+  }
   function render(){
     const origin=(typeof location!=="undefined")?(location.origin+location.pathname):"";
     const gistOn=cfg.active==="gist", driveOn=cfg.active==="drive";
@@ -2704,13 +2715,6 @@ function install(adapter){
       <p class="sk-muted">Your roster lives only in this browser. Turn on a channel below to keep it in step across your devices. Everything is optional and off until you switch it on — the tool still works fully offline.</p>
       <label class="sk-row" style="gap:6px"><input type="checkbox" id="sk-auto" ${cfg.auto?"checked":""}> <span>Sync automatically (load newest on open, save on change)</span></label>
       <div id="sk-status" class="sk-status sk-muted"></div>
-      ${cfg.active?`<div class="sk-manual">
-        <div class="sk-row" style="gap:6px">
-          <button class="sk-btn" id="sk-force-up" title="Overwrite the ${esc(chanLabel(cfg.active))} copy with this device's roster">⬆ Sync TO cloud</button>
-          <button class="sk-btn" id="sk-force-down" title="Overwrite this device's roster with the ${esc(chanLabel(cfg.active))} copy">⬇ Sync FROM cloud</button>
-        </div>
-        <p class="sk-muted" style="font-size:12px;margin:4px 0 0"><b>TO</b> uploads this device → ${esc(chanLabel(cfg.active))}. <b>FROM</b> downloads ${esc(chanLabel(cfg.active))} → this device. Each replaces the other side — you'll confirm first.</p>
-      </div>`:""}
 
       <details class="sk-sect" id="sk-sec-gist" ${gistOn?"open":""}>
         <summary>🐙 GitHub Gist <span class="sk-muted" style="font-weight:500;font-size:12px">— best if you use GitHub</span> ${badge(gistOn)}</summary>
@@ -2725,6 +2729,7 @@ function install(adapter){
             <input type="password" id="sk-gist-token" placeholder="ghp_… (token with gist scope)" value="${esc(cfg.gist.token)}" autocomplete="off">
             <button class="sk-btn pri" id="sk-gist-connect">${cfg.gist.token&&gistOn?"Sync now":"Connect"}</button>
           </div>
+          ${gistOn?forceBlock("gist"):""}
           ${cfg.gist.id?`<p class="sk-muted" style="font-size:12px">Linked gist: <code>${esc(cfg.gist.id)}</code> ${gistOn?`· <a href="#" id="sk-gist-off">turn off</a>`:""}</p>`:""}
         </div>
       </details>
@@ -2742,6 +2747,7 @@ function install(adapter){
             <input type="text" id="sk-drive-client" placeholder="xx….apps.googleusercontent.com" value="${esc(cfg.drive.clientId)}" autocomplete="off">
             <button class="sk-btn pri" id="sk-drive-connect">${driveOn?"Sync now":"Connect &amp; sign in"}</button>
           </div>
+          ${driveOn?forceBlock("drive"):""}
           ${driveOn?`<p class="sk-muted" style="font-size:12px"><a href="#" id="sk-drive-off">turn off</a></p>`:""}
         </div>
       </details>
