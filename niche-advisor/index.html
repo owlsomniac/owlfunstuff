@@ -3384,16 +3384,18 @@ function holdLabel(key, levels){ const i=key.indexOf("|"), gk=key.slice(0,i), b=
    unique rare allele or a maxed line is never treated as disposable. */
 function retirementRanking(cats, opts){
   opts=opts||{}; const keys = opts.abilityOnly ? ABILITY_GENE_KEYS : GENES.map(g=>g.key);
+  const withH = cats.map(c=>({c, h:holdings(c.geno,keys,!opts.abilityOnly)}));
   const res=[];
   ["F","M"].forEach(sex=>{
-    const group = cats.filter(c=>c.sex===sex).map(c=>({c, h:holdings(c.geno,keys,!opts.abilityOnly)}));
-    group.forEach((A,i)=>{
-      const others=group.filter(x=>x!==A);
-      const keepers=others.filter(B=>holdCovers(B.h, A.h));           // single nichelings that fully cover A
+    const group = withH.filter(x=>x.c.sex===sex);   // per-sex, ONLY for the same-sex peer/survivor count (kept)
+    group.forEach((A)=>{
+      // Coverage/preservation is SEX-AGNOSTIC: an allele survives a release if ANY nicheling (either sex) still carries it.
+      const others = withH.filter(x=>x.c.id!==A.c.id);
+      const keepers=others.filter(B=>holdCovers(B.h, A.h));           // nichelings that fully cover A
       let redundant=false, keepNames=[];
       if(keepers.length){
         if(keepers.some(B=>!holdCovers(A.h, B.h))) redundant=true;    // a strictly-better duplicate exists
-        else if(keepers.some(B=>group.indexOf(B)<i)) redundant=true;  // all mutual duplicates → keep the earliest copy
+        else if(keepers.some(B=>B.c.id<A.c.id)) redundant=true;       // all mutual duplicates → keep the earliest id
         if(redundant) keepNames=keepers.map(k=>k.c.name);
       }
       const val=holdValue(A.h);
@@ -3403,7 +3405,11 @@ function retirementRanking(cats, opts){
           return {key:k, lvls, uniq}; })
         .sort((a,b)=> (b.uniq-a.uniq) || (b.lvls[0]-a.lvls[0]))
         .map(x=>holdLabel(x.key,x.lvls)+(x.uniq?" ★":""));
-      const safe = redundant || val===0;
+      // A spread combination whose parts ALL survive elsewhere loses nothing — keep it only if it uniquely CONCENTRATES
+      // scattered ✦ MUTATIONS (expensive to re-assemble in food); an un-mutated base combo is cheap to re-breed → free.
+      const mut=Object.keys(A.h).filter(k=>(A.h[k][0]||0)>=1);
+      const concentratesMut = mut.length>0 && !others.some(o=>mut.every(k=>holdKeyCovers(o.h[k], A.h[k])));
+      const safe = redundant || val===0 || (keepers.length===0 && uniqueCount===0 && !concentratesMut);
       res.push({ id:A.c.id, name:A.c.name, sex, status:A.c.status,
                  lossValue: safe ? 0 : (val + 1000*uniqueCount),   // sole-copy holders sort to the bottom (most valuable)
                  kept: group.length-1, keepNames, keepName:keepNames[0]||null, loses, uniqueCount });
@@ -3519,9 +3525,17 @@ function nichelingAdvice(cat, allCats /*, rrMap, abilityOnly (ignored: advice is
     if(cat.id===keepId) return {action:keepAct, reason:`Exact duplicate of ${names.slice(0,2).join(", ")}${names.length>2?", …":""} — keep this one, release the other${names.length>1?"s":""}.`};
     return {action:goneAct, reason:`Exact duplicate of ${keeper.c.name} — release this, keep ${keeper.c.name}.${homoNote()}`};
   }
-  // (3) no single nicheling covers it, but each allele exists elsewhere → sole holder of the COMBINATION (concentration) → keep
-  const combo=Object.keys(mine).map(k=>holdLabel(k, mine[k]));
-  return {action:keepAct, reason:`Only nicheling holding this combination: ${combo.slice(0,4).join(", ")}${combo.length>4?", …":""}${status==="sideline"?" — add it":""}.`};
+  // (3) no single nicheling covers ALL of it, but every allele exists elsewhere → releasing loses NOTHING from the
+  // tribe (each allele survives on another nicheling). Keeping it is only worth it when it uniquely CONCENTRATES
+  // scattered ✦ MUTATIONS (expensive to re-assemble in food) — a combination of plain ✦0 base alleles is cheap to
+  // re-breed from the individual holders, so it's redundant. (Fixes "keep for a unique combo of un-mutated traits".)
+  const mut=Object.keys(mine).filter(k=>(mine[k][0]||0)>=1);
+  const concentratesMut = mut.length>0 && !others.some(o=>mut.every(k=>holdKeyCovers(o.h[k], mine[k])));   // no single other already holds all its mutations
+  if(concentratesMut){
+    const lab=mut.map(k=>holdLabel(k, mine[k]));
+    return {action:keepAct, reason:`Only nicheling concentrating these ✦ mutations onto one body: ${lab.slice(0,4).join(", ")}${lab.length>4?", …":""}${status==="sideline"?" — add it":""}.`};
+  }
+  return {action:goneAct, reason:`Every allele it carries lives elsewhere too${mut.length?" and its ✦ mutations are already together on another nicheling":", and it's only un-mutated base alleles"} — nothing unique is lost, and the combination is cheap to re-breed.${homoNote()}`};
 }
 /* Consolidation guidance for the Advice column: the top-3 opposite-sex partners whose offspring can carry
    EVERYTHING both parents hold on ONE individual (copy-aware) — so all the scattered valuable alleles end up
