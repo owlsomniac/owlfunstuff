@@ -3433,6 +3433,19 @@ function holdValue(A){ let v=0; for(const k in A) A[k].forEach(l=>v+=1+l); retur
 function holdLabel(key, levels){ const i=key.indexOf("|"), gk=key.slice(0,i), b=key.slice(i+1), g=GENE_BY_KEY[gk];
   const lv=levels[0]||0, cnt=levels.length, al=g&&g.alleles.find(z=>z.k===b), ab=al&&Object.keys(al.eff)[0];
   return `${b}${lv?` ✦+${lv}`:""}${cnt>1?` ×${cnt}`:""}${ab?` (${AB_SHORT[ab]||ab})`:""}`; }
+/* Filter a holdings map down to PRESERVE-WORTHY alleles (using preserveWorthy's { geneKey: { base: roster-best ✦ } }).
+   An ability allele counts as "value" / "sole copy" only when it's Pareto-best for its gene+skill (so an inferior
+   Derp Snout drops the moment a better Perception snout exists) AND held at the roster-best ✦ (a below-best copy is
+   redundant — a better one lives elsewhere). Genes ABSENT from `worthy` (cosmetics in all-genes mode) are kept by
+   identity so a unique colour still counts. No `worthy` → pass through unchanged. */
+function worthyHoldings(h, worthy){
+  if(!worthy) return h;
+  const out={};
+  for(const key in h){ const i=key.indexOf("|"), gk=key.slice(0,i), b=key.slice(i+1);
+    if(worthy[gk]){ if(worthy[gk][b]!=null && (h[key][0]||0)>=worthy[gk][b]) out[key]=h[key]; }
+    else out[key]=h[key]; }
+  return out;
+}
 
 /* Ranked retirement/release suggestions (never a flat "nothing to retire").
    "Safe — loses nothing" = a single same-sex nicheling is a true DUPLICATE (covers every allele at ≥ level
@@ -3441,13 +3454,15 @@ function holdLabel(key, levels){ const i=key.indexOf("|"), gk=key.slice(0,i), b=
    unique rare allele or a maxed line is never treated as disposable. */
 function retirementRanking(cats, opts){
   opts=opts||{}; const keys = opts.abilityOnly ? ABILITY_GENE_KEYS : GENES.map(g=>g.key);
-  const withH = cats.map(c=>({c, h:holdings(c.geno,keys,!opts.abilityOnly)}));
+  const worthy = preserveWorthy(cats);   // an inferior/dominated allele (Derp Snout under a better Perception snout) is not "value" and never makes a nicheling a sole-copy keeper
+  const withH = cats.map(c=>({c, h:worthyHoldings(holdings(c.geno,keys,!opts.abilityOnly), worthy)}));
   const res=[];
   ["F","M"].forEach(sex=>{
-    const group = withH.filter(x=>x.c.sex===sex);   // per-sex, ONLY for the same-sex peer/survivor count (kept)
+    const group = withH.filter(x=>x.c.sex===sex);   // SAME-SEX peer set
     group.forEach((A)=>{
-      // Coverage/preservation is SEX-AGNOSTIC: an allele survives a release if ANY nicheling (either sex) still carries it.
-      const others = withH.filter(x=>x.c.id!==A.c.id);
+      // Coverage is SEX-AWARE: a beneficial allele is only preserved if a SAME-SEX nicheling still carries it — you need
+      // one ♀ AND one ♂ carrier to breed it back, so the sole ♀ (or sole ♂) holder of a worthy allele is always kept.
+      const others = group.filter(x=>x.c.id!==A.c.id);
       const keepers=others.filter(B=>holdCovers(B.h, A.h));           // nichelings that fully cover A
       let redundant=false, keepNames=[];
       if(keepers.length){
@@ -3526,7 +3541,8 @@ const holdingsFor=(geno, abilityOnly)=>holdings(geno, abilityOnly?ABILITY_GENE_K
 /* the valuable alleles a nicheling holds that NO OTHER nicheling carries at ≥ its ✦ level (its ★ sole copies).
    ✦-aware & sex-agnostic: a lower-✦ copy elsewhere does NOT make yours non-sole (yours is the better version). */
 function soleAlleleLabels(cat, allCats, abilityOnly){
-  const mine=holdingsFor(cat.geno, abilityOnly), others=allCats.filter(c=>c.id!==cat.id).map(c=>holdingsFor(c.geno, abilityOnly)), out=[];
+  const worthy=preserveWorthy(allCats);
+  const mine=worthyHoldings(holdingsFor(cat.geno, abilityOnly), worthy), others=allCats.filter(c=>c.id!==cat.id).map(c=>worthyHoldings(holdingsFor(c.geno, abilityOnly), worthy)), out=[];
   for(const k in mine){ if(!others.some(h=>holdKeyCovers(h[k], mine[k]))) out.push(holdLabel(k, mine[k])); }
   return out;
 }
@@ -3557,20 +3573,25 @@ function offspringConsolidatesProb(X, Y, abilityOnly){
    for active cats it reads a precomputed retirementRanking map (rrMap) to inherit lone-survivor + mutual-
    duplicate handling. */
 const ADVICE_RANK={release:0, retire:1, add:2, keep:3, setsex:4};
-function nichelingAdvice(cat, allCats /*, rrMap, abilityOnly (ignored: advice is always ability-only + sex-agnostic) */){
-  const mine=holdingsFor(cat.geno, true);                       // ability-only: beneficial alleles only (appearance ignored)
+function nichelingAdvice(cat, allCats, worthy /*, always ability-only + SEX-AWARE coverage */){
+  worthy = worthy || preserveWorthy(allCats);                   // roster-wide Pareto-best alleles (base dominance + roster-best ✦)
+  const mine=worthyHoldings(holdingsFor(cat.geno, true), worthy);   // ability-only + PRESERVE-WORTHY: an inferior copy (Derp Snout under a better Perception snout) isn't "value" and can't make it a keeper
   const status=cat.status||"active";
   const keepAct = status==="sideline" ? "add" : "keep";        // valuable sideline → promote to tribe; else keep
   const goneAct = status==="active" ? "retire" : "release";    // redundant active → retire; sideline/retired → release
-  if(!holdValue(mine)) return {action:goneAct, reason:"No beneficial alleles (only no-bonus/absence) — nothing to lose."};
-  const others=allCats.filter(c=>c.id!==cat.id).map(c=>({c, h:holdingsFor(c.geno, true)}));
+  if(!holdValue(mine)) return {action:goneAct, reason:"Nothing worth preserving — every allele it carries is an inferior, no-bonus, or absence copy (a better version lives elsewhere). Nothing is lost by releasing it."};
+  // Coverage is SEX-AWARE: only SAME-SEX nichelings can make yours redundant, because preserving a beneficial allele needs
+  // one ♀ AND one ♂ carrier. A sexless cat compares against everyone (until you set its sex). (Matches retirementRanking.)
+  const sexed = cat.sex==="F" || cat.sex==="M";
+  const sxsym = cat.sex==="F"?"♀ ":cat.sex==="M"?"♂ ":"";
+  const others=allCats.filter(c=>c.id!==cat.id && (!sexed || c.sex===cat.sex)).map(c=>({c, h:worthyHoldings(holdingsFor(c.geno, true), worthy)}));
   // ⚠ note when releasing a nicheling that is homozygous at TOP ✦ for something (losing the best doubled copy)
   const homoNote=()=>{ const hs=Object.keys(mine).filter(k=>{ const l=mine[k];
       return l.length>=2 && l[0]===l[1] && l[0]>=1 && !others.some(o=>((o.h[k]||[])[0]||-1)>l[0]); })   // mutated (✦≥1) homozygous at top ✦ only — skip trivial ✦0 defaults
       .map(k=>holdLabel(k, mine[k])); return hs.length?` ⚠ homozygous ${hs.slice(0,3).join(", ")}${hs.length>3?", …":""} — double-check before deleting`:""; };
-  // (1) sole holder of a beneficial allele (at ≥ its ✦) → keep
+  // (1) sole SAME-SEX holder of a beneficial allele (at ≥ its ✦) → keep (it's this sex's half of the breeding pair for that allele)
   const sole=Object.keys(mine).filter(k=>!others.some(o=>holdKeyCovers(o.h[k], mine[k]))).map(k=>holdLabel(k, mine[k]));
-  if(sole.length) return {action:keepAct, reason:`Only holder of ${sole.slice(0,3).join(", ")}${sole.length>3?", …":""}${status==="sideline"?" — add it":""}.`};
+  if(sole.length) return {action:keepAct, reason:`Only ${sxsym}holder of ${sole.slice(0,3).join(", ")}${sole.length>3?", …":""}${status==="sideline"?" — add it":""}.`};
   // every beneficial allele exists elsewhere at ≥ ✦. (2) does a SINGLE other nicheling cover all of it?
   const coverers=others.filter(o=>holdCovers(o.h, mine));
   if(coverers.length){
@@ -3592,7 +3613,12 @@ function nichelingAdvice(cat, allCats /*, rrMap, abilityOnly (ignored: advice is
     const lab=mut.map(k=>holdLabel(k, mine[k]));
     return {action:keepAct, reason:`Only nicheling concentrating these ✦ mutations onto one body: ${lab.slice(0,4).join(", ")}${lab.length>4?", …":""}${status==="sideline"?" — add it":""}.`};
   }
-  return {action:goneAct, reason:`Every allele it carries lives elsewhere too${mut.length?" and its ✦ mutations are already together on another nicheling":", and it's only un-mutated base alleles"} — nothing unique is lost, and the combination is cheap to re-breed.${homoNote()}`};
+  // We reach here only when a SINGLE other nicheling holds every ✦ mutation it carries (else concentratesMut kept it) — name that nicheling.
+  const mutHolders = mut.length ? others.filter(o=>mut.every(k=>holdKeyCovers(o.h[k], mine[k]))).map(o=>o.c.name) : [];
+  const mutNote = mut.length
+    ? (mutHolders.length ? ` and its ✦ mutations are already together on ${mutHolders.slice(0,2).join(" & ")}${mutHolders.length>2?", …":""}` : " and its ✦ mutations survive elsewhere too")
+    : ", and it's only un-mutated base alleles";
+  return {action:goneAct, reason:`Every allele it carries lives elsewhere too${mutNote} — nothing unique is lost, and the combination is cheap to re-breed.${homoNote()}`};
 }
 /* Consolidation guidance for the Advice column: the top-3 opposite-sex partners whose offspring can carry
    EVERYTHING both parents hold on ONE individual (copy-aware) — so all the scattered valuable alleles end up
@@ -3839,7 +3865,8 @@ function rosterTableHTML(active, sideline, retired){
   const allCats=active.concat(sideline, retired);
   const rrMap={}; retirementRanking(active,{abilityOnly}).forEach(r=>rrMap[r.id]=r);                 // active-tribe verdict (retire vs keep)
   const valueMap={}; retirementRanking(allCats,{abilityOnly}).forEach(r=>valueMap[r.id]=r);          // whole-roster "how much you'd lose" (0 = releasable)
-  const advMap={}; allCats.forEach(c=>{ advMap[c.id]=nichelingAdvice(c, allCats); });   // sex-agnostic, always ability-only
+  const advWorthy=preserveWorthy(allCats);                                              // compute once; every row's advice shares it
+  const advMap={}; allCats.forEach(c=>{ advMap[c.id]=nichelingAdvice(c, allCats, advWorthy); });   // sex-agnostic, always ability-only
   const sortVal=(c)=> rosterSort.key==="advice" ? (ADVICE_RANK[(advMap[c.id]||{}).action] ?? 9)
     : rosterSort.key==="value" ? ((valueMap[c.id]||{}).lossValue ?? 0)
     : rosterSortVal(c, rosterSort.key);
