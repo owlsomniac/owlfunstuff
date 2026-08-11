@@ -2680,6 +2680,7 @@ function install(adapter){
       .sk-btn.pri{background:#8a6d3b;border-color:#7a5f30;color:#fff}
       .sk-btn:disabled{opacity:.5;cursor:default}
       .sk-status{margin:8px 0;font-size:13px;min-height:1.2em}
+      .sk-manual{margin:2px 0 10px;padding:8px 10px;border:1px solid var(--line,#0002);border-radius:10px;background:var(--panel,#0001)}
       .sk-ok{color:#137a41}.sk-err{color:#b23b3b}.sk-busy{opacity:.8}
       .sk-steps{font-size:12.5px;line-height:1.6;margin:6px 0 6px 2px}
       .sk-steps code{background:var(--panel,#0001);border:1px solid var(--line,#0002);border-radius:5px;padding:0 5px;word-break:break-all}
@@ -2703,6 +2704,13 @@ function install(adapter){
       <p class="sk-muted">Your roster lives only in this browser. Turn on a channel below to keep it in step across your devices. Everything is optional and off until you switch it on — the tool still works fully offline.</p>
       <label class="sk-row" style="gap:6px"><input type="checkbox" id="sk-auto" ${cfg.auto?"checked":""}> <span>Sync automatically (load newest on open, save on change)</span></label>
       <div id="sk-status" class="sk-status sk-muted"></div>
+      ${cfg.active?`<div class="sk-manual">
+        <div class="sk-row" style="gap:6px">
+          <button class="sk-btn" id="sk-force-up" title="Overwrite the ${esc(chanLabel(cfg.active))} copy with this device's roster">⬆ Sync TO cloud</button>
+          <button class="sk-btn" id="sk-force-down" title="Overwrite this device's roster with the ${esc(chanLabel(cfg.active))} copy">⬇ Sync FROM cloud</button>
+        </div>
+        <p class="sk-muted" style="font-size:12px;margin:4px 0 0"><b>TO</b> uploads this device → ${esc(chanLabel(cfg.active))}. <b>FROM</b> downloads ${esc(chanLabel(cfg.active))} → this device. Each replaces the other side — you'll confirm first.</p>
+      </div>`:""}
 
       <details class="sk-sect" id="sk-sec-gist" ${gistOn?"open":""}>
         <summary>🐙 GitHub Gist <span class="sk-muted" style="font-weight:500;font-size:12px">— best if you use GitHub</span> ${badge(gistOn)}</summary>
@@ -2759,6 +2767,8 @@ function install(adapter){
 
     // wire
     el("sk-auto").onchange=e=>{ cfg.auto=e.target.checked; saveCfg(); };
+    if(el("sk-force-up")) el("sk-force-up").onclick=()=>forceDir("up");
+    if(el("sk-force-down")) el("sk-force-down").onclick=()=>forceDir("down");
     el("sk-gist-connect").onclick=gistConnect;
     if(el("sk-gist-off")) el("sk-gist-off").onclick=e=>{ e.preventDefault(); cfg.active=null; saveCfg(); render(); status("GitHub sync turned off (token kept).","muted"); };
     el("sk-drive-connect").onclick=driveConnect;
@@ -2935,6 +2945,45 @@ function install(adapter){
     el("sk-cf-local").onclick=async()=>{ box.innerHTML=""; try{ await pushLocal(localData, localHash, name); }catch(e){ status("Sync error: "+(e.message||e),"err"); } };
     el("sk-cf-cancel").onclick=()=>{ box.innerHTML=""; status("Sync paused — resolve it whenever you like.","muted"); };
     status("Waiting for you to resolve a sync conflict.","err");
+  }
+
+  /* Explicit one-direction sync — the user overrides the auto decision.
+     "up"   = this device overwrites the cloud (pushLocal).
+     "down" = the cloud overwrites this device (applyRemote).
+     Confirmed first, because each direction discards whatever was on the other side. */
+  function forceDir(dir){
+    const name=cfg.active; if(!name){ status("Turn on a sync channel first.","err"); return; }
+    const box=el("sk-incoming"); if(!box){ forceSync(dir); return; }
+    const lab=esc(chanLabel(name));
+    const body = dir==="up"
+      ? `<b>Sync TO ${lab} — upload this device?</b><p class="sk-muted" style="margin:6px 0">Replaces the ${lab} copy with the roster on <i>this</i> device. Anything that was only in ${lab} is overwritten.</p>`
+      : `<b>Sync FROM ${lab} — download onto this device?</b><p class="sk-muted" style="margin:6px 0">Replaces <i>this</i> device's roster with the ${lab} copy. Any unsynced changes on this device are overwritten.</p>`;
+    box.innerHTML=`<div class="sk-conflict">${body}
+      <div class="sk-row">
+        <button class="sk-btn pri" id="sk-force-go">${dir==="up"?"Upload to cloud":"Download from cloud"}</button>
+        <button class="sk-btn" id="sk-force-cancel">Cancel</button>
+      </div></div>`;
+    el("sk-force-go").onclick=async()=>{ box.innerHTML=""; try{ await forceSync(dir); }catch(e){ status("Sync error: "+(e.message||e),"err"); } };
+    el("sk-force-cancel").onclick=()=>{ box.innerHTML=""; status("Cancelled — nothing synced.","muted"); };
+  }
+  async function forceSync(dir){
+    const name=cfg.active; if(!name){ status("Turn on a sync channel first.","err"); return; }
+    if(syncing){ status("A sync is already running — try again in a moment.","busy"); return; }
+    syncing=true;
+    try{
+      status(dir==="up"?"Uploading to "+chanLabel(name)+"…":"Downloading from "+chanLabel(name)+"…","busy");
+      if(dir==="up"){
+        const data=localData();
+        await pushLocal(data, hashData(data), name);          // this device → cloud
+      } else {
+        const env=await pull(name);
+        if(!env){ status("Nothing saved in "+chanLabel(name)+" yet — nothing to download.","err"); return; }
+        await applyRemote(env, name);                          // cloud → this device
+      }
+    } finally {
+      syncing=false;
+      if(resyncPending){ resyncPending=false; setTimeout(()=>{ syncNow("resync").catch(()=>{}); }, 0); }
+    }
   }
 
   // debounced auto-push after local edits
@@ -3682,7 +3731,7 @@ let consSel=new Set(), consHomo=new Set(), consOpen=new Set(), consInvOpen=false
 const activeCats=()=>DB.cats.filter(c=>c.status==="active");
 const breedingPool=()=>DB.cats.filter(c=>["active","sideline","retired"].includes(c.status||"active"));   // always include everyone; status + location tags show real breedability
 
-const TABS=[["nichelings","🐾 My nichelings"],["breeding","💞 Breeding"],["consolidate","🧬 Consolidate"],["genes","📖 Gene reference"],["sync","☁︎ Sync"]];
+const TABS=[["nichelings","🐰 My nichelings"],["breeding","💞 Breeding"],["consolidate","🧬 Consolidate"],["genes","📖 Gene reference"],["sync","☁︎ Sync"]];
 function renderTabs(){
   $("#tabs").innerHTML=TABS.map(([k,l])=>`<button class="tab ${TAB===k?"on":""}" data-tab="${k}">${l}</button>`).join("");
   $$("#tabs .tab").forEach(b=>b.onclick=()=>{ TAB=b.dataset.tab; showTab(); saveUI(); });
@@ -3862,7 +3911,7 @@ function rosterTableHTML(active, sideline, retired){
   const toggle=`<div class="row" style="gap:14px;align-items:center;margin-top:8px;flex-wrap:wrap">`+
     searchBox+
     `<label class="row" style="gap:6px;font-size:12px;font-weight:600">Compare on: <select id="rCompare"><option value="all" ${!rosterAbilityOnly?"selected":""}>All genes</option><option value="ability" ${rosterAbilityOnly?"selected":""}>Ability &amp; resistance only</option></select></label>`+
-    `<label class="row" style="gap:6px;font-size:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="rIgnoreSec" ${rosterIgnoreSec?"checked":""}> Ignore sections (sort the whole roster as one list)</label>`+
+    `<label class="row" style="gap:6px;font-size:12px;font-weight:600;cursor:pointer;flex:0 0 100%;margin-top:2px"><input type="checkbox" id="rIgnoreSec" ${rosterIgnoreSec?"checked":""}> Ignore sections (sort the whole roster as one list)</label>`+
     `</div>`;
   return toggle+`<div class="rtbl"><table><thead><tr>${h1}</tr><tr>${h2}</tr></thead><tbody>${body}</tbody></table></div>`
     +`<p class="muted" style="font-size:11px;margin:6px 2px 0"><b>Advice</b> — Keep / Retire / Release / Add (sortable), each with a one-line reason. <b>Value</b> = how much you'd lose by releasing this nicheling: <b>free</b> means every beneficial allele it carries also lives elsewhere at an equal-or-better ✦ (safe to release); a <b>number</b> is the worth it concentrates (higher = more to lose); <b>★N</b> means it's the <em>only</em> holder (among same-sex nichelings) of N beneficial alleles — keep it. Sorted lowest-first, so the safest-to-release rise to the top. · Under each name: ✏️ edit in place · 🗑 delete · the location buttons (🌲 Evergreen · ☀️ Desert · ❄️ Frost · 🐾 Rogue · 💤 Retired) set where it lives. Click a group header to collapse/expand its columns; click any column or chip to sort. Gene cells stack the dominant allele on top, recessive below (〃 = homozygous).</p>`;
@@ -3893,7 +3942,7 @@ function renderNichelings(){
   const abLine=c=>{ const t=abilityTotals(c.geno);
     return ABILITIES.filter(a=>t[a]).sort((x,y)=>t[y]-t[x]).slice(0,4).map(a=>`${AB_SHORT[a]} +${t[a]}`).join(" · ")||"no ability bonuses"; };
   let html=`<div class="card"><div class="row" style="justify-content:space-between">
-      <h2 style="margin:0"><span class="em">🐾</span> My nichelings <span class="muted" style="font-weight:400;font-size:13px">(${active.length})</span></h2>
+      <h2 style="margin:0"><span class="em">🐰</span> My nichelings <span class="muted" style="font-weight:400;font-size:13px">(${active.length})</span></h2>
       <div class="row">
         <button class="btn sm" id="addCat">+ Add nicheling</button>
         <button class="btn sm gray" id="addSideline">+ Add rogue</button>
