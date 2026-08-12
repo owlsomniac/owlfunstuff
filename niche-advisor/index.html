@@ -4709,6 +4709,11 @@ function profilePlan(pool, profile){
   });
   return {profile, target:t, targets, bySex};
 }
+/* display name for a profile — drop a leading biome word so the biome chip + name don't read "Desert Desert Col/Str". */
+function profDispName(p){ let n=(p.name||"").trim(), b=(p.biome||"").trim();
+  if(!b) return n; if(n.toLowerCase()===b.toLowerCase()) return "";
+  if(n.toLowerCase().indexOf(b.toLowerCase()+" ")===0) return n.slice(b.length).replace(/^[\s·]+/,"").trim();
+  return n; }
 /* union of a group's beneficial alleles → { geneKey: { base: bestLevel } } (best ✦ across the group per base).
    When `worthy` (from preserveWorthy) is passed, an allele is dropped unless it's (a) a worthy base — no same-
    gene/same-skill allele beats it (so Deformed Paw goes when Nimble is owned) — AND (b) the group holds it at
@@ -5210,7 +5215,7 @@ function renderConsolidate(){
       `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">`+
       `<label style="white-space:nowrap;font-size:12px" title="Build this — include it in the pair suggestions below"><input type="checkbox" class="profBuild" data-id="${p.id}" ${p.build?"checked":""}> <b>Build</b></label>`+
       `<span class="stt" style="background:var(--brand-soft);border-color:var(--brand)">${esc(p.biome)}</span>`+
-      `<b style="font-size:13px">${esc(p.name)}</b> <span class="muted" style="font-size:12px">${statChips}${gap}</span>`+
+      (profDispName(p)?`<b style="font-size:13px">${esc(profDispName(p))}</b> `:"")+`<span class="muted" style="font-size:12px">${statChips}${gap}</span>`+
       `<span style="margin-left:auto;display:inline-flex;gap:4px"><button class="btn sm gray profExpand" data-id="${p.id}">${open?"Hide":"Alleles"}</button><button class="btn sm gray profEdit" data-id="${p.id}" title="Edit this profile">✏️</button><button class="btn sm gray profDel" data-id="${p.id}" title="Delete this profile">✕</button></span></div>`;
     if(open){
       const list=ABILITY_GENE_KEYS.filter(gk=>tg.geno[gk]).map(gk=>{ const a=tg.geno[gk];
@@ -5226,13 +5231,15 @@ function renderConsolidate(){
   html+=`<div class="card"><h3 style="margin:0 0 2px">Pair suggestions <span class="muted" style="font-weight:400;font-size:12px">— how to breed a ♀ and a ♂ for each ticked profile</span></h3>`;
   const buildProfiles=profiles.filter(p=>p.build);
   if(!buildProfiles.length){ html+=`<p class="muted" style="font-size:12px">Tick <b>Build</b> on a profile above to see how to breed a ♀ and ♂ for it.</p>`; }
-  else buildProfiles.forEach(p=>{ const pl=profilePlan(pool,p);
-    html+=`<div style="border-top:1px solid var(--line);padding:8px 0 4px"><div style="font-weight:700;font-size:12.5px"><span class="stt" style="background:var(--brand-soft);border-color:var(--brand)">${esc(p.biome)}</span> ${esc(p.name)}</div>`;
+  else buildProfiles.forEach(p=>{ const pl=profilePlan(pool,p), dn=profDispName(p);
+    html+=`<div style="border-top:1px solid var(--line);padding:8px 0 4px"><div style="font-weight:700;font-size:12.5px"><span class="stt" style="background:var(--brand-soft);border-color:var(--brand)">${esc(p.biome)}</span>${dn?` ${esc(dn)}`:""}</div>`;
     ["F","M"].forEach(sex=>{ const s=pl.bySex[sex], sym=sex==="F"?"♀":"♂";
       if(!s.seed){ html+=`<div style="font-size:12px;margin:3px 0 0 4px"><b>${sym}</b> <span class="muted">— no ${sym} in your pool yet; breed one toward this build.</span></div>`; return; }
-      if(s.complete){ html+=`<div style="font-size:12px;margin:3px 0 0 4px"><b>${sym} ${esc(s.seed.name)} ${sx(s.seed.sex)}</b> <span class="adv-keep">✅ already this build — keep it</span></div>`; return; }
+      const haveList=s.have.map(h=>`<li style="margin:1px 0"><span class="adv-keep">✓</span> ${esc(consAlleleLabel(h.gk,h.base,h.level))}</li>`).join("");
+      const haveBlock=haveList?`<div class="muted" style="margin:3px 0 0 6px">already carries (${s.have.length}):</div><ul style="margin:1px 0 0 18px;padding:0">${haveList}</ul>`:`<div class="muted" style="margin:3px 0 0 6px">carries none of this build's targets yet.</div>`;
+      if(s.complete){ html+=`<div style="font-size:12px;margin:4px 0 0 4px"><b>${sym} ${esc(s.seed.name)} ${sx(s.seed.sex)}</b> <span class="adv-keep">✅ already this build — keep it</span>${effLoc(s.seed)&&effLoc(s.seed)!==p.biome?` <span class="stt" style="color:var(--warn)">move to ${esc(p.biome)}</span>`:""}${haveBlock}</div>`; return; }
       const needList=s.need.map(n=>`<li style="margin:1px 0">${esc(consAlleleLabel(n.tg.gk,n.tg.base,n.tg.level))} ${n.src?`<span class="muted">← from <b>${esc(n.src.name)}</b> ${sx(n.src.sex)}${effLoc(n.src)&&effLoc(n.src)!==p.biome?` <span style="color:var(--warn)">(${esc(effLoc(n.src))})</span>`:""}</span>`:`<span class="stt" style="color:var(--warn)">⚠ nobody owns it — breed/find one</span>`}</li>`).join("");
-      html+=`<div style="font-size:12px;margin:4px 0 0 4px"><b>${sym} start from ${esc(s.seed.name)}</b> ${sx(s.seed.sex)}${effLoc(s.seed)&&effLoc(s.seed)!==p.biome?` <span class="stt" style="color:var(--warn)">move to ${esc(p.biome)}</span>`:""} <span class="muted">— has ${s.have.length}/${pl.targets.length}; breed in ${s.need.length}:</span><ul style="margin:2px 0 0 18px;padding:0">${needList}</ul></div>`;
+      html+=`<div style="font-size:12px;margin:4px 0 0 4px"><b>${sym} start from ${esc(s.seed.name)}</b> ${sx(s.seed.sex)}${effLoc(s.seed)&&effLoc(s.seed)!==p.biome?` <span class="stt" style="color:var(--warn)">move to ${esc(p.biome)}</span>`:""} <span class="muted">— has ${s.have.length}/${pl.targets.length} of the target build.</span>${haveBlock}<div class="muted" style="margin:3px 0 0 6px">breed in (${s.need.length}):</div><ul style="margin:1px 0 0 18px;padding:0">${needList}</ul></div>`;
     });
     html+=`</div>`; });
   html+=`</div>`;
@@ -5334,7 +5341,7 @@ if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILIT
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS,geneFeasible,targetPlan,mutInRange,targetBaseLabel,
   mutBonus,statTotal,sidelineAdvice,genePairParts,offspringBST,soleAlleleLabels,offspringConsolidatesProb,nichelingAdvice,consolidationAdvice,ADVICE_RANK,holdingsFor,statTargetPlan,
   beneficialAlleleInventory,minStudsPlan,mergeGroupFeasible,mergePlan,autoMerges,groupAlleles,consAlleleLabel,preserveWorthy,alleleAbilityOf,alleleBaseVal,bestLevelOwned,
-  DEFAULT_PROFILES,loadProfiles,saveProfiles,profileTarget,profileWorthy,profilePlan,concentrationVerdict,worthyHoldings};
+  DEFAULT_PROFILES,loadProfiles,saveProfiles,profileTarget,profileWorthy,profilePlan,profDispName,concentrationVerdict,worthyHoldings};
 
 /* ---- boot (only in a real browser) ---- */
 /* =========================================================================
