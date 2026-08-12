@@ -3798,7 +3798,7 @@ const amode=gk=>breedAlleleModeByGene[gk]||"all";   // breedMutMode: 'shown'|'ca
 /* Consolidate tab state: which nichelings are picked for a manual merge (ids), which alleles ("geneKey|base")
    the user asked to make homozygous on the merged stud, which auto/manual plan cards are expanded, and
    whether the (long) allele-inventory section is expanded. */
-let consSel=new Set(), consHomo=new Set(), consOpen=new Set(), consInvOpen=false, consExpanded=new Set(), consAddOpen=false;   // consExpanded: pills expanded to their allele list; consAddOpen: the Add-profile form is showing
+let consSel=new Set(), consHomo=new Set(), consOpen=new Set(), consInvOpen=false, consExpanded=new Set(), consAddOpen=false, consEditId=null;   // consExpanded: pills expanded to their allele list; consAddOpen: Add-profile form; consEditId: profile being edited
 /* A nicheling's status: "active" (in your tribe), "sideline" (not in the tribe yet but kept on the
    bench — available for breeding), or "retired" (archived — can be brought back). Active is always in
    the breeding pool; sideline is in by default (toggle on) and retired is out by default (toggle off). */
@@ -5183,20 +5183,23 @@ function renderConsolidate(){
   /* ---- §2 Target profiles: pills + Add profile ---- */
   const profiles=loadProfiles();
   const statName=s=>typeof s==="string"?s:s.stat;
+  const editing = consEditId ? profiles.find(p=>p.id===consEditId) : null, formOpen = consAddOpen || !!editing;
   html+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`+
     `<h3 style="margin:0">Target profiles <span class="muted" style="font-weight:400;font-size:12px">— builds to consolidate toward. Tick <b>Build</b> for pair suggestions below; <b>Alleles</b> to see the build.</span></h3>`+
-    `<button class="btn sm pri" id="consAddProf">${consAddOpen?"Cancel":"+ Add profile"}</button></div>`;
-  if(consAddOpen){
+    `<button class="btn sm pri" id="consAddProf">${formOpen?"Cancel":"+ Add profile"}</button></div>`;
+  if(formOpen){
+    const ed=editing, edStat=st=>ed?ed.stats.map(s=>typeof s==="string"?{stat:s}:s).find(s=>s.stat===st):null;
     html+=`<div style="border:1px solid var(--line);border-radius:9px;padding:9px 10px;margin:8px 0;font-size:12px">`+
+      `<div style="font-weight:600;margin-bottom:5px">${ed?"Edit profile":"New profile"}</div>`+
       `<div style="display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-bottom:6px">`+
-      `<label>Name <input id="npName" type="text" placeholder="e.g. Desert hunter" style="width:150px"></label>`+
-      `<label>Location <select id="npBiome">${["Evergreen","Desert","Frost"].map(b=>`<option>${esc(b)}</option>`).join("")}</select></label></div>`+
+      `<label>Name <input id="npName" type="text" placeholder="e.g. Desert hunter" style="width:150px" value="${ed?esc(ed.name):""}"></label>`+
+      `<label>Location <select id="npBiome">${["Evergreen","Desert","Frost"].map(b=>`<option ${ed&&ed.biome===b?"selected":""}>${esc(b)}</option>`).join("")}</select></label></div>`+
       `<div class="muted" style="margin:2px 0 4px">Stats this build needs — tick each, with optional min/max total:</div>`+
-      `<div style="display:flex;flex-direction:column;gap:3px">`+ABILITIES.map(s=>
-        `<label style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" class="npStat" data-stat="${esc(s)}"> <span style="min-width:120px">${esc(s)}</span>`+
-        `<input type="number" class="npMin" data-stat="${esc(s)}" placeholder="min" style="width:56px" min="0"> <input type="number" class="npMax" data-stat="${esc(s)}" placeholder="max" style="width:56px" min="0"></label>`
-      ).join("")+`</div>`+
-      `<div style="margin-top:8px"><button class="btn sm pri" id="npCreate">Create profile</button> <span id="npErr" class="stt" style="color:var(--warn)"></span></div></div>`;
+      `<div style="display:flex;flex-direction:column;gap:3px">`+ABILITIES.map(s=>{ const es=edStat(s);
+        return `<label style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" class="npStat" data-stat="${esc(s)}" ${es?"checked":""}> <span style="min-width:120px">${esc(s)}</span>`+
+        `<input type="number" class="npMin" data-stat="${esc(s)}" placeholder="min" style="width:56px" min="0" value="${es&&es.min!=null?es.min:""}"> <input type="number" class="npMax" data-stat="${esc(s)}" placeholder="max" style="width:56px" min="0" value="${es&&es.max!=null?es.max:""}"></label>`;
+      }).join("")+`</div>`+
+      `<div style="margin-top:8px"><button class="btn sm pri" id="npCreate">${ed?"Save changes":"Create profile"}</button> <span id="npErr" class="stt" style="color:var(--warn)"></span></div></div>`;
   }
   html+=`<div style="margin-top:8px">`+(profiles.length?profiles.map(p=>{
     const open=consExpanded.has(p.id), tg=profileTarget(pool,p);
@@ -5208,7 +5211,7 @@ function renderConsolidate(){
       `<label style="white-space:nowrap;font-size:12px" title="Build this — include it in the pair suggestions below"><input type="checkbox" class="profBuild" data-id="${p.id}" ${p.build?"checked":""}> <b>Build</b></label>`+
       `<span class="stt" style="background:var(--brand-soft);border-color:var(--brand)">${esc(p.biome)}</span>`+
       `<b style="font-size:13px">${esc(p.name)}</b> <span class="muted" style="font-size:12px">${statChips}${gap}</span>`+
-      `<span style="margin-left:auto;display:inline-flex;gap:4px"><button class="btn sm gray profExpand" data-id="${p.id}">${open?"Hide":"Alleles"}</button><button class="btn sm gray profDel" data-id="${p.id}" title="Delete this profile">✕</button></span></div>`;
+      `<span style="margin-left:auto;display:inline-flex;gap:4px"><button class="btn sm gray profExpand" data-id="${p.id}">${open?"Hide":"Alleles"}</button><button class="btn sm gray profEdit" data-id="${p.id}" title="Edit this profile">✏️</button><button class="btn sm gray profDel" data-id="${p.id}" title="Delete this profile">✕</button></span></div>`;
     if(open){
       const list=ABILITY_GENE_KEYS.filter(gk=>tg.geno[gk]).map(gk=>{ const a=tg.geno[gk];
         return `<li style="margin:1px 0"><span class="muted">${esc(GENE_BY_KEY[gk].label)}:</span> ${esc(consAlleleLabel(gk,a.base,a.level))} <b style="color:var(--brand-ink)">×2</b> <span class="muted" style="font-size:11px">(${esc(AB_SHORT[a.stat]||a.stat)})</span></li>`; }).join("");
@@ -5279,10 +5282,11 @@ function renderConsolidate(){
   $$("#view-consolidate .consHomo").forEach(cb=>cb.onchange=()=>{ const k=cb.dataset.card+"::"+cb.dataset.key; if(cb.checked) consHomo.add(k); else consHomo.delete(k); re(); });
   $$("#view-consolidate .consPick").forEach(cb=>cb.onchange=()=>{ const id=+cb.dataset.id; if(cb.checked) consSel.add(id); else consSel.delete(id); re(); });
   $$("#view-consolidate .consAddPartner").forEach(b=>b.onclick=()=>{ consSel.add(+b.dataset.id); re(); });   // switch the single-select suggestion to a specific partner
-  { const ap=$("#consAddProf"); if(ap) ap.onclick=()=>{ consAddOpen=!consAddOpen; re(); }; }
+  { const ap=$("#consAddProf"); if(ap) ap.onclick=()=>{ if(consAddOpen||consEditId){ consAddOpen=false; consEditId=null; } else consAddOpen=true; re(); }; }
   $$("#view-consolidate .profExpand").forEach(b=>b.onclick=()=>{ const id=b.dataset.id; if(consExpanded.has(id)) consExpanded.delete(id); else consExpanded.add(id); re(); });
+  $$("#view-consolidate .profEdit").forEach(b=>b.onclick=()=>{ consEditId=b.dataset.id; consAddOpen=false; re(); });
   $$("#view-consolidate .profBuild").forEach(cb=>cb.onchange=()=>{ const list=loadProfiles(), p=list.find(x=>x.id===cb.dataset.id); if(p){ p.build=cb.checked; saveProfiles(list); re(); } });
-  $$("#view-consolidate .profDel").forEach(b=>b.onclick=()=>{ const list=loadProfiles().filter(x=>x.id!==b.dataset.id); saveProfiles(list); consExpanded.delete(b.dataset.id); re(); });
+  $$("#view-consolidate .profDel").forEach(b=>b.onclick=()=>{ const list=loadProfiles().filter(x=>x.id!==b.dataset.id); saveProfiles(list); consExpanded.delete(b.dataset.id); if(consEditId===b.dataset.id) consEditId=null; re(); });
   { const c=$("#npCreate"); if(c) c.onclick=()=>{
       const name=($("#npName").value||"").trim(), biome=$("#npBiome").value, err=$("#npErr");
       const stats=[]; $$("#view-consolidate .npStat").forEach(cb=>{ if(!cb.checked) return; const st=cb.dataset.stat;
@@ -5290,8 +5294,10 @@ function renderConsolidate(){
         const o={stat:st}; if(mn&&mn.value!=="")o.min=+mn.value; if(mx&&mx.value!=="")o.max=+mx.value; stats.push(o); });
       if(!name){ if(err)err.textContent="Name it first."; return; }
       if(!stats.length){ if(err)err.textContent="Tick at least one stat."; return; }
-      const list=loadProfiles(); list.push({id:"p"+Date.now().toString(36), name, biome, stats, build:true}); saveProfiles(list);
-      consAddOpen=false; re(); }; }
+      const list=loadProfiles();
+      if(consEditId){ const p=list.find(x=>x.id===consEditId); if(p){ p.name=name; p.biome=biome; p.stats=stats; } consEditId=null; }
+      else { list.push({id:"p"+Date.now().toString(36), name, biome, stats, build:true}); consAddOpen=false; }
+      saveProfiles(list); re(); }; }
   const cs=$("#consClearSel"); if(cs) cs.onclick=()=>{ consSel.clear(); re(); };
 }
 
