@@ -3446,6 +3446,24 @@ function worthyHoldings(h, worthy){
     else out[key]=h[key]; }
   return out;
 }
+/* Mutation-concentration verdict for one nicheling, from its worthy holdings `mine`, its SAME-SEX peers
+   `others` ([{c,h}]) and its id. "keep" = it uniquely concentrates its scattered ✦ mutations onto one body,
+   OR it ties a mutually-covering peer for the only copy of that set and holds the earliest id — so a mutual
+   pair is NEVER both released (which would lose the concentrated line entirely). "redundant" = a peer already
+   holds every mutation it carries (an earlier-id equal, or one that concentrates strictly more). "none" = no ✦
+   mutations. `holders` names the peers already holding the full set (for the release reason). Shared by
+   nichelingAdvice (Do) and retirementRanking (Value) so the two columns can't disagree. */
+function concentrationVerdict(mine, others, catId){
+  const mut=Object.keys(mine).filter(k=>(mine[k][0]||0)>=1);
+  if(!mut.length) return {v:"none", mut, holders:[], tiedWith:[]};
+  const covMe=others.filter(o=>mut.every(k=>holdKeyCovers(o.h[k], mine[k])));            // peers holding ALL my mutations
+  if(!covMe.length) return {v:"keep", mut, holders:[], tiedWith:[]};                     // unique concentrator
+  const omut=o=>Object.keys(o.h).filter(k=>(o.h[k][0]||0)>=1);
+  const strictlyBetter=covMe.some(o=>!omut(o).every(k=>holdKeyCovers(mine[k], o.h[k])));  // a peer concentrates strictly MORE
+  if(!strictlyBetter && catId===Math.min(catId, ...covMe.map(o=>o.c.id)))
+    return {v:"keep", mut, holders:[], tiedWith:covMe.map(o=>o.c.name)};                 // mutual set, earliest id → keep one
+  return {v:"redundant", mut, holders:covMe.map(o=>o.c.name), tiedWith:[]};
+}
 
 /* Ranked retirement/release suggestions (never a flat "nothing to retire").
    "Safe — loses nothing" = a single same-sex nicheling is a true DUPLICATE (covers every allele at ≥ level
@@ -3479,9 +3497,9 @@ function retirementRanking(cats, opts){
         .map(x=>holdLabel(x.key,x.lvls)+(x.uniq?" ★":""));
       // A spread combination whose parts ALL survive elsewhere loses nothing — keep it only if it uniquely CONCENTRATES
       // scattered ✦ MUTATIONS (expensive to re-assemble in food); an un-mutated base combo is cheap to re-breed → free.
-      const mut=Object.keys(A.h).filter(k=>(A.h[k][0]||0)>=1);
-      const concentratesMut = mut.length>0 && !others.some(o=>mut.every(k=>holdKeyCovers(o.h[k], A.h[k])));
-      const safe = redundant || val===0 || (keepers.length===0 && uniqueCount===0 && !concentratesMut);
+      // Shared with nichelingAdvice so Do and Value agree — incl. the mutual-pair earliest-id keep (R4).
+      const keepsConcentration = concentrationVerdict(A.h, others, A.c.id).v==="keep";
+      const safe = redundant || val===0 || (keepers.length===0 && uniqueCount===0 && !keepsConcentration);
       res.push({ id:A.c.id, name:A.c.name, sex, status:A.c.status,
                  lossValue: safe ? 0 : (val + 1000*uniqueCount),   // sole-copy holders sort to the bottom (most valuable)
                  kept: group.length-1, keepNames, keepName:keepNames[0]||null, loses, uniqueCount });
@@ -3573,18 +3591,20 @@ function offspringConsolidatesProb(X, Y, abilityOnly){
    for active cats it reads a precomputed retirementRanking map (rrMap) to inherit lone-survivor + mutual-
    duplicate handling. */
 const ADVICE_RANK={release:0, retire:1, add:2, keep:3, setsex:4};
-function nichelingAdvice(cat, allCats, worthy /*, always ability-only + SEX-AWARE coverage */){
+function nichelingAdvice(cat, allCats, worthy, abilityOnly /* SEX-AWARE; abilityOnly follows the roster compare mode (default ability-only) */){
+  if(abilityOnly==null) abilityOnly=true;
+  // Coverage is SEX-AWARE (needs one ♀ AND one ♂ carrier), so a sexless nicheling can't be ranked — prompt to set its
+  // sex. retirementRanking likewise ranks only F/M, so Do and Value stay consistent (both defer on a sexless cat).
+  if(cat.sex!=="F" && cat.sex!=="M") return {action:"setsex", reason:"Set its sex (♀/♂) so it can be compared to your other nichelings."};
   worthy = worthy || preserveWorthy(allCats);                   // roster-wide Pareto-best alleles (base dominance + roster-best ✦)
-  const mine=worthyHoldings(holdingsFor(cat.geno, true), worthy);   // ability-only + PRESERVE-WORTHY: an inferior copy (Derp Snout under a better Perception snout) isn't "value" and can't make it a keeper
+  const mine=worthyHoldings(holdingsFor(cat.geno, abilityOnly), worthy);   // PRESERVE-WORTHY under the compare mode: an inferior copy (Derp Snout under a better Perception snout) isn't "value"
   const status=cat.status||"active";
   const keepAct = status==="sideline" ? "add" : "keep";        // valuable sideline → promote to tribe; else keep
   const goneAct = status==="active" ? "retire" : "release";    // redundant active → retire; sideline/retired → release
   if(!holdValue(mine)) return {action:goneAct, reason:"Nothing worth preserving — every allele it carries is an inferior, no-bonus, or absence copy (a better version lives elsewhere). Nothing is lost by releasing it."};
-  // Coverage is SEX-AWARE: only SAME-SEX nichelings can make yours redundant, because preserving a beneficial allele needs
-  // one ♀ AND one ♂ carrier. A sexless cat compares against everyone (until you set its sex). (Matches retirementRanking.)
-  const sexed = cat.sex==="F" || cat.sex==="M";
-  const sxsym = cat.sex==="F"?"♀ ":cat.sex==="M"?"♂ ":"";
-  const others=allCats.filter(c=>c.id!==cat.id && (!sexed || c.sex===cat.sex)).map(c=>({c, h:worthyHoldings(holdingsFor(c.geno, true), worthy)}));
+  const sxsym = cat.sex==="F"?"♀ ":"♂ ";
+  // Only SAME-SEX nichelings can make yours redundant — preserving a beneficial allele needs a ♀ and a ♂ carrier. (Matches retirementRanking.)
+  const others=allCats.filter(c=>c.id!==cat.id && c.sex===cat.sex).map(c=>({c, h:worthyHoldings(holdingsFor(c.geno, abilityOnly), worthy)}));
   // ⚠ note when releasing a nicheling that is homozygous at TOP ✦ for something (losing the best doubled copy)
   const homoNote=()=>{ const hs=Object.keys(mine).filter(k=>{ const l=mine[k];
       return l.length>=2 && l[0]===l[1] && l[0]>=1 && !others.some(o=>((o.h[k]||[])[0]||-1)>l[0]); })   // mutated (✦≥1) homozygous at top ✦ only — skip trivial ✦0 defaults
@@ -3607,16 +3627,15 @@ function nichelingAdvice(cat, allCats, worthy /*, always ability-only + SEX-AWAR
   // tribe (each allele survives on another nicheling). Keeping it is only worth it when it uniquely CONCENTRATES
   // scattered ✦ MUTATIONS (expensive to re-assemble in food) — a combination of plain ✦0 base alleles is cheap to
   // re-breed from the individual holders, so it's redundant. (Fixes "keep for a unique combo of un-mutated traits".)
-  const mut=Object.keys(mine).filter(k=>(mine[k][0]||0)>=1);
-  const concentratesMut = mut.length>0 && !others.some(o=>mut.every(k=>holdKeyCovers(o.h[k], mine[k])));   // no single other already holds all its mutations
-  if(concentratesMut){
-    const lab=mut.map(k=>holdLabel(k, mine[k]));
-    return {action:keepAct, reason:`Only nicheling concentrating these ✦ mutations onto one body: ${lab.slice(0,4).join(", ")}${lab.length>4?", …":""}${status==="sideline"?" — add it":""}.`};
+  // A mutual pair that together hold the ONLY copy of a ✦ set keeps the earliest id (else both release → line lost).
+  const cv=concentrationVerdict(mine, others, cat.id);
+  if(cv.v==="keep"){
+    const lab=cv.mut.map(k=>holdLabel(k, mine[k]));
+    const tie=(cv.tiedWith&&cv.tiedWith.length)?` — ties with ${cv.tiedWith.slice(0,2).join(", ")}${cv.tiedWith.length>2?", …":""}, keep one`:"";
+    return {action:keepAct, reason:`Only nicheling concentrating these ✦ mutations onto one body: ${lab.slice(0,4).join(", ")}${lab.length>4?", …":""}${tie}${status==="sideline"?" — add it":""}.`};
   }
-  // We reach here only when a SINGLE other nicheling holds every ✦ mutation it carries (else concentratesMut kept it) — name that nicheling.
-  const mutHolders = mut.length ? others.filter(o=>mut.every(k=>holdKeyCovers(o.h[k], mine[k]))).map(o=>o.c.name) : [];
-  const mutNote = mut.length
-    ? (mutHolders.length ? ` and its ✦ mutations are already together on ${mutHolders.slice(0,2).join(" & ")}${mutHolders.length>2?", …":""}` : " and its ✦ mutations survive elsewhere too")
+  const mutNote = cv.mut.length
+    ? (cv.holders.length ? ` and its ✦ mutations are already together on ${cv.holders.slice(0,2).join(" & ")}${cv.holders.length>2?", …":""}` : " and its ✦ mutations survive elsewhere too")
     : ", and it's only un-mutated base alleles";
   return {action:goneAct, reason:`Every allele it carries lives elsewhere too${mutNote} — nothing unique is lost, and the combination is cheap to re-breed.${homoNote()}`};
 }
@@ -3743,7 +3762,7 @@ const UIKEY="niche-ui-v1";
 function saveUI(){ try{ const rt=document.querySelector("#view-nichelings .rtbl");
   localStorage.setItem(UIKEY, JSON.stringify({ tab:TAB, y:(window.scrollY||window.pageYOffset||0), rt:(rt?rt.scrollTop:0) })); }catch(_){}}
 function loadUI(){ try{ return JSON.parse(localStorage.getItem(UIKEY))||{}; }catch(_){ return {}; } }
-let rosterSort={key:"name",dir:1}, rosterCollapsed=null, rosterSecCollapsed=null, rosterIgnoreSec=false, rosterAbilityOnly=false, rosterSearch="";   // roster table: sort col/dir + collapsed column-group keys + collapsed status-section keys + ignore-sections (flat list) + master compare mode + free-text search filter
+let rosterSort={key:"name",dir:1}, rosterCollapsed=null, rosterSecCollapsed=null, rosterIgnoreSec=false, rosterAbilityOnly=true, rosterSearch="";   // roster table: sort col/dir + collapsed column-group keys + collapsed status-section keys + ignore-sections (flat list) + master compare mode (default ability-only — keep/release is ability-focused, matching the consolidation engine; Do & Value share it) + free-text search filter
 /* unified breeding finder state — a query builder (persists across re-renders):
    breedConds: [{gene, base, mutMin:num|null, mutMax:num|null, inherit:'carry'|'show', zyg:'either'|'homo'|'hetero'}]
      one target condition per allele; each selected gene type gets its own section of these rows.
@@ -3866,7 +3885,7 @@ function rosterTableHTML(active, sideline, retired){
   const rrMap={}; retirementRanking(active,{abilityOnly}).forEach(r=>rrMap[r.id]=r);                 // active-tribe verdict (retire vs keep)
   const valueMap={}; retirementRanking(allCats,{abilityOnly}).forEach(r=>valueMap[r.id]=r);          // whole-roster "how much you'd lose" (0 = releasable)
   const advWorthy=preserveWorthy(allCats);                                              // compute once; every row's advice shares it
-  const advMap={}; allCats.forEach(c=>{ advMap[c.id]=nichelingAdvice(c, allCats, advWorthy); });   // sex-agnostic, always ability-only
+  const advMap={}; allCats.forEach(c=>{ advMap[c.id]=nichelingAdvice(c, allCats, advWorthy, abilityOnly); });   // SEX-AWARE; same compare mode as the Value column so Do and Value agree
   const sortVal=(c)=> rosterSort.key==="advice" ? (ADVICE_RANK[(advMap[c.id]||{}).action] ?? 9)
     : rosterSort.key==="value" ? ((valueMap[c.id]||{}).lossValue ?? 0)
     : rosterSortVal(c, rosterSort.key);
@@ -3914,7 +3933,7 @@ function rosterTableHTML(active, sideline, retired){
         } else if(col.kind==="qv"){ row+=`<td class="qv${gs}">${qvCell(c)}</td>`; }
         else if(col.kind==="advtype"){ const m=ADV_META[(advMap[c.id]||{}).action]||ADV_META.keep; row+=`<td class="advtype${gs}"><span class="${m.cls}">${m.label}</span></td>`; }
         else if(col.kind==="advwhy"){ row+=`<td class="advwhy${gs}">${esc((advMap[c.id]||{}).reason||"")}</td>`; }
-        else if(col.sortk==="value"){ const r=valueMap[c.id]||{}; row+=`<td class="num${gs}" title="${r.uniqueCount?esc(r.uniqueCount+" sole-copy allele(s) — irreplaceable"):"how much you'd lose if released"}">${valueCell(r)}</td>`; }
+        else if(col.sortk==="value"){ const sexless=c.sex!=="F"&&c.sex!=="M"; const r=valueMap[c.id]||{}; row+=`<td class="num${gs}" title="${sexless?"set its sex to rank it":(r.uniqueCount?esc(r.uniqueCount+" sole-copy allele(s) — irreplaceable"):"how much you'd lose if released")}">${sexless?'<span class="muted">— set sex</span>':valueCell(r)}</td>`; }
         else { const v=rosterSortVal(c, col.sortk); row+=`<td class="num${gs}">${v?esc(String(v)):"·"}</td>`; }
       });
     });
