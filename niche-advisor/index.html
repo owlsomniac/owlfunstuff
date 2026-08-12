@@ -2839,7 +2839,7 @@ function install(adapter){
     });
     return gisReady;
   }
-  let driveTok=null;
+  let driveTok=null, allowInteractive=false;   // allowInteractive: a USER-initiated sync may pop Google sign-in; background syncs stay silent
   function driveToken(clientId, interactive){
     return loadGIS().then(()=>new Promise((res,rej)=>{
       const tc=google.accounts.oauth2.initTokenClient({client_id:clientId, scope:DRIVE_SCOPE,
@@ -2868,9 +2868,12 @@ function install(adapter){
     const id=driveFindId(list, appId); if(id){ cfg.drive.fileId=id; saveCfg(); }
     return cfg.drive.fileId;
   }
-  async function driveCall(reqFn){                    // run, refreshing the token once on 401
+  async function driveCall(reqFn){                    // run, refreshing the token on 401 — silent first, then interactive if the user initiated this sync
     try{ return await reqFn(); }
-    catch(e){ if(e.status!==401) throw e; await driveToken(cfg.drive.clientId, false); return await reqFn(); }
+    catch(e){ if(e.status!==401) throw e;
+      try{ await driveToken(cfg.drive.clientId, false); }                       // try a silent refresh (needs a live Google session)
+      catch(silentErr){ if(!allowInteractive) throw silentErr; await driveToken(cfg.drive.clientId, true); }   // mobile often has no session → pop sign-in when the user asked for this
+      return await reqFn(); }
   }
   async function drivePull(){
     return driveCall(async()=>{
@@ -2937,6 +2940,7 @@ function install(adapter){
     status("Loaded the latest roster from "+chanLabel(name)+".","ok");
   }
   function chanLabel(n){ return n==="gist"?"GitHub":n==="drive"?"Google Drive":"the cloud"; }
+  function fmtTime(t){ try{ return new Date(t).toLocaleString(); }catch(e){ return "an unknown time"; } }
 
   function conflict(remoteEnv, localData, localHash, name){
     const box=el("sk-incoming"); if(!box) return;
@@ -2973,23 +2977,28 @@ function install(adapter){
       </div></div>`;
     el("sk-force-go").onclick=async()=>{ box.innerHTML=""; try{ await forceSync(dir); }catch(e){ status("Sync error: "+(e.message||e),"err"); } };
     el("sk-force-cancel").onclick=()=>{ box.innerHTML=""; status("Cancelled — nothing synced.","muted"); };
+    try{ box.scrollIntoView({behavior:"smooth", block:"center"}); }catch(e){}   // the confirm renders below the channel boxes — bring it into view (esp. on mobile)
   }
   async function forceSync(dir){
     const name=cfg.active; if(!name){ status("Turn on a sync channel first.","err"); return; }
     if(syncing){ status("A sync is already running — try again in a moment.","busy"); return; }
-    syncing=true;
+    syncing=true; allowInteractive=true;                       // this is a user tap → OK to pop Google sign-in if the token expired
     try{
-      status(dir==="up"?"Uploading to "+chanLabel(name)+"…":"Downloading from "+chanLabel(name)+"…","busy");
+      status(dir==="up"?"Uploading this device to "+chanLabel(name)+"…":"Downloading from "+chanLabel(name)+"…","busy");
       if(dir==="up"){
         const data=localData();
         await pushLocal(data, hashData(data), name);          // this device → cloud
+        status("✓ Uploaded this device to "+chanLabel(name)+". Now open the tool on your other device and tap “⬇ Sync FROM cloud”.","ok");
       } else {
         const env=await pull(name);
-        if(!env){ status("Nothing saved in "+chanLabel(name)+" yet — nothing to download.","err"); return; }
+        if(!env){ status("Nothing is saved in "+chanLabel(name)+" yet — upload from another device first with “⬆ Sync TO cloud”.","err"); return; }
+        const n=adapter.count?adapter.count(env.data):null;
         await applyRemote(env, name);                          // cloud → this device
+        status("✓ Downloaded "+(n!=null?n+" nichelings ":"")+"from "+chanLabel(name)+" — the copy saved "+fmtTime(env.savedAt)+".","ok");
       }
-    } finally {
-      syncing=false;
+    } catch(e){ status("Couldn't sync: "+(e.message||e)+" — open the "+chanLabel(name)+" section above and tap Sync now / Connect to re-authorize.","err"); }
+    finally {
+      allowInteractive=false; syncing=false;
       if(resyncPending){ resyncPending=false; setTimeout(()=>{ syncNow("resync").catch(()=>{}); }, 0); }
     }
   }
