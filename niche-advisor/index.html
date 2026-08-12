@@ -5172,32 +5172,30 @@ function renderConsolidate(){
     `<h3 style="margin:0">Allele inventory <span class="muted" style="font-weight:400;font-size:12px">— every beneficial allele you own &amp; who carries it (★ = one holder of the best copy)</span></h3>`+
     `<button class="btn sm gray" id="consInvToggle">${consInvOpen?"Hide":"Show"}</button></div>${invBody}</div>`;
 
-  /* ---- §2 Target profiles ---- */
+  /* ---- §2 Target profiles (expandable) ---- */
   if(!consProfiles) consProfiles=new Set(PROFILES.map(p=>p.id));
-  const biomes=[...new Set(PROFILES.map(p=>p.biome))];
   const shortLabel=p=>p.label.indexOf(p.biome+" · ")===0 ? p.label.slice((p.biome+" · ").length) : p.label;
-  html+=`<div class="card"><h3 style="margin:0 0 2px">Target profiles <span class="muted" style="font-weight:400;font-size:12px">— the balanced homozygous ♀+♂ builds to consolidate toward, per biome. Tick to show/hide.</span></h3>`+
-    `<div style="display:flex;flex-wrap:wrap;gap:4px 16px;margin:6px 0 0;font-size:12px">`+biomes.map(bi=>
-      `<span style="white-space:nowrap"><span class="muted" style="font-weight:700">${esc(bi)}</span> `+
-      PROFILES.filter(p=>p.biome===bi).map(p=>`<label style="white-space:nowrap;margin:0 4px"><input type="checkbox" class="consProf" data-id="${p.id}" ${consProfiles.has(p.id)?"checked":""}> ${esc(shortLabel(p))}</label>`).join("")+`</span>`
-    ).join("")+`</div></div>`;
-
-  PROFILES.filter(p=>consProfiles.has(p.id)).forEach(p=>{
-    const pl=profilePlan(pool,p), tg=pl.target;
-    const buildRows=ABILITY_GENE_KEYS.filter(gk=>tg.geno[gk]).map(gk=>{ const a=tg.geno[gk];
-      return `<span style="white-space:nowrap;margin-right:12px"><span class="muted">${esc(GENE_BY_KEY[gk].label)}:</span> ${esc(consAlleleLabel(gk,a.base,a.level))} <b style="color:var(--brand-ink)">×2</b></span>`; }).join("");
-    const totalsLine=p.stats.map(s=>`${esc(AB_SHORT[s]||s)} <b>+${tg.totals[s]||0}</b>`).join(" · ");
-    const gapLine=tg.gaps.length?` <span class="stt" style="color:var(--warn)">⚠ no ${tg.gaps.map(g=>esc(AB_SHORT[g.stat]||g.stat)).join(", ")} allele owned — breed/find one</span>`:"";
-    let card=`<div class="card"><h3 style="margin:0 0 1px">${esc(p.biome)} · ${esc(shortLabel(p))} <span class="muted" style="font-weight:400;font-size:12px">— ${totalsLine}${gapLine}</span></h3>`+
-      `<div style="font-size:11.5px;margin:2px 0 7px;line-height:1.7">${buildRows}</div>`;
-    ["F","M"].forEach(sex=>{ const s=pl.bySex[sex], sym=sex==="F"?"♀":"♂";
-      if(!s.seed){ card+=`<div style="font-size:12px;margin:3px 0"><b>${sym}</b> <span class="muted">— no ${sym} in your pool yet; breed one toward this build.</span></div>`; return; }
-      if(s.complete){ card+=`<div style="font-size:12px;margin:3px 0"><b>${sym} ${esc(s.seed.name)} ${sx(s.seed.sex)}</b> <span class="adv-keep">✅ already this build — keep it</span></div>`; return; }
-      const needList=s.need.map(n=>`<div style="font-size:11.5px;margin:1px 0 0 12px">+ ${esc(consAlleleLabel(n.tg.gk,n.tg.base,n.tg.level))} ${n.src?`<span class="muted">← from <b>${esc(n.src.name)}</b> ${sx(n.src.sex)}${effLoc(n.src)&&effLoc(n.src)!==p.biome?` <span style="color:var(--warn)">(${esc(effLoc(n.src))})</span>`:""}</span>`:`<span class="stt" style="color:var(--warn)">⚠ nobody owns it — breed/find one</span>`}</div>`).join("");
-      card+=`<div style="font-size:12px;margin:4px 0 0"><b>${sym} start from ${esc(s.seed.name)}</b> ${sx(s.seed.sex)}${effLoc(s.seed)&&effLoc(s.seed)!==p.biome?` <span class="stt" style="color:var(--warn)">move to ${esc(p.biome)}</span>`:""} <span class="muted">— has ${s.have.length}/${pl.targets.length}; breed in ${s.need.length}:</span>${needList}</div>`;
-    });
-    card+=`</div>`; html+=card;
-  });
+  html+=`<div class="card"><h3 style="margin:0 0 2px">Target profiles <span class="muted" style="font-weight:400;font-size:12px">— the balanced homozygous ♀+♂ builds to consolidate toward, per biome. Click one to expand its full build + ♀/♂ plans.</span></h3>`+
+    PROFILES.map(p=>{
+      const open=consProfiles.has(p.id), pl=profilePlan(pool,p), tg=pl.target;
+      const totalsLine=p.stats.map(s=>`${esc(AB_SHORT[s]||s)} <b>+${tg.totals[s]||0}</b>`).join(" · ");
+      const gapLine=tg.gaps.length?` <span class="stt" style="color:var(--warn)">⚠ no ${tg.gaps.map(g=>esc(AB_SHORT[g.stat]||g.stat)).join(", ")} owned</span>`:"";
+      let row=`<div style="border-top:1px solid var(--line);padding:7px 0 ${open?"10px":"7px"}">`+
+        `<div class="consProfHdr" data-id="${p.id}" style="cursor:pointer;font-weight:700;font-size:13px">`+
+        `<span style="display:inline-block;width:14px;color:var(--muted-ink,inherit)">${open?"▾":"▸"}</span>${esc(p.biome)} · ${esc(shortLabel(p))} <span class="muted" style="font-weight:400;font-size:12px">— ${totalsLine}${gapLine}</span></div>`;
+      if(open){
+        const buildRows=ABILITY_GENE_KEYS.filter(gk=>tg.geno[gk]).map(gk=>{ const a=tg.geno[gk];
+          return `<span style="white-space:nowrap"><span class="muted">${esc(GENE_BY_KEY[gk].label)}:</span> ${esc(consAlleleLabel(gk,a.base,a.level))} <b style="color:var(--brand-ink)">×2</b></span>`; }).join("");
+        row+=`<div style="display:flex;flex-wrap:wrap;gap:3px 14px;font-size:11.5px;margin:5px 0 6px 14px">${buildRows}</div>`;
+        ["F","M"].forEach(sex=>{ const s=pl.bySex[sex], sym=sex==="F"?"♀":"♂";
+          if(!s.seed){ row+=`<div style="font-size:12px;margin:3px 0 0 14px"><b>${sym}</b> <span class="muted">— no ${sym} in your pool yet; breed one toward this build.</span></div>`; return; }
+          if(s.complete){ row+=`<div style="font-size:12px;margin:3px 0 0 14px"><b>${sym} ${esc(s.seed.name)} ${sx(s.seed.sex)}</b> <span class="adv-keep">✅ already this build — keep it</span></div>`; return; }
+          const needList=s.need.map(n=>`<div style="font-size:11.5px;margin:1px 0 0 26px">+ ${esc(consAlleleLabel(n.tg.gk,n.tg.base,n.tg.level))} ${n.src?`<span class="muted">← from <b>${esc(n.src.name)}</b> ${sx(n.src.sex)}${effLoc(n.src)&&effLoc(n.src)!==p.biome?` <span style="color:var(--warn)">(${esc(effLoc(n.src))})</span>`:""}</span>`:`<span class="stt" style="color:var(--warn)">⚠ nobody owns it — breed/find one</span>`}</div>`).join("");
+          row+=`<div style="font-size:12px;margin:4px 0 0 14px"><b>${sym} start from ${esc(s.seed.name)}</b> ${sx(s.seed.sex)}${effLoc(s.seed)&&effLoc(s.seed)!==p.biome?` <span class="stt" style="color:var(--warn)">move to ${esc(p.biome)}</span>`:""} <span class="muted">— has ${s.have.length}/${pl.targets.length}; breed in ${s.need.length}:</span>${needList}</div>`;
+        });
+      }
+      return row+`</div>`;
+    }).join("")+`</div>`;
 
   /* ---- §3 Price a specific pairing (manual) ---- */
   const autos=autoMerges(pool);
@@ -5244,7 +5242,7 @@ function renderConsolidate(){
   $$("#view-consolidate .consHomo").forEach(cb=>cb.onchange=()=>{ const k=cb.dataset.card+"::"+cb.dataset.key; if(cb.checked) consHomo.add(k); else consHomo.delete(k); re(); });
   $$("#view-consolidate .consPick").forEach(cb=>cb.onchange=()=>{ const id=+cb.dataset.id; if(cb.checked) consSel.add(id); else consSel.delete(id); re(); });
   $$("#view-consolidate .consAddPartner").forEach(b=>b.onclick=()=>{ consSel.add(+b.dataset.id); re(); });   // switch the single-select suggestion to a specific partner
-  $$("#view-consolidate .consProf").forEach(cb=>cb.onchange=()=>{ const id=cb.dataset.id; if(cb.checked) consProfiles.add(id); else consProfiles.delete(id); re(); });
+  $$("#view-consolidate .consProfHdr").forEach(h=>h.onclick=()=>{ const id=h.dataset.id; if(consProfiles.has(id)) consProfiles.delete(id); else consProfiles.add(id); re(); });
   const cs=$("#consClearSel"); if(cs) cs.onclick=()=>{ consSel.clear(); re(); };
 }
 
