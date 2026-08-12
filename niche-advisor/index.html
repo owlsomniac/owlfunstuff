@@ -2662,6 +2662,9 @@ function install(adapter){
   /* ---- status line ---- */
   let pendingImport=null;                                   // env awaiting the user's OK (from a #s= link)
   function status(msg,type){ const s=el("sk-status"); if(s){ s.textContent=msg; s.className="sk-status sk-"+(type||"muted"); } }
+  /* status for the explicit Sync TO/FROM controls — renders right beside those buttons (sk-force-msg), not in the
+     top status line, so the confirm and its result land where the user tapped. Falls back to the top status. */
+  function fstatus(msg,type){ const b=el("sk-force-msg"); if(!b) return status(msg,type); b.textContent=msg; b.className="sk-fmsg sk-"+(type||"muted"); }
 
   /* ---- one style block, once per page ---- */
   if(!el("sk-style")){
@@ -2682,6 +2685,8 @@ function install(adapter){
       .sk-btn.pri{background:#8a6d3b;border-color:#7a5f30;color:#fff}
       .sk-btn:disabled{opacity:.5;cursor:default}
       .sk-status{margin:8px 0;font-size:13px;min-height:1.2em}
+      .sk-fmsg{font-size:13px;line-height:1.4}
+      .sk-fmsg:not(:empty){margin-top:8px}
       .sk-manual{margin:2px 0 10px;padding:8px 10px;border:1px solid var(--line,#0002);border-radius:10px;background:var(--panel,#0001)}
       .sk-ok{color:#137a41}.sk-err{color:#b23b3b}.sk-busy{opacity:.8}
       .sk-steps{font-size:12.5px;line-height:1.6;margin:6px 0 6px 2px}
@@ -2706,6 +2711,7 @@ function install(adapter){
           <button class="sk-btn" id="sk-force-up" title="Overwrite the ${lab} copy with this device's roster">⬆ Sync TO cloud</button>
           <button class="sk-btn" id="sk-force-down" title="Overwrite this device's roster with the ${lab} copy">⬇ Sync FROM cloud</button>
         </div>
+        <div id="sk-force-msg" class="sk-fmsg" aria-live="polite"></div>
         <p class="sk-muted" style="font-size:12px;margin:4px 0 0"><b>TO</b> uploads this device → ${lab}. <b>FROM</b> downloads ${lab} → this device. Each replaces the other side — you'll confirm first.</p>
       </div>`;
   }
@@ -2965,38 +2971,40 @@ function install(adapter){
      Confirmed first, because each direction discards whatever was on the other side. */
   function forceDir(dir){
     const name=cfg.active; if(!name){ status("Turn on a sync channel first.","err"); return; }
-    const box=el("sk-incoming"); if(!box){ forceSync(dir); return; }
+    const box=el("sk-force-msg") || el("sk-incoming"); if(!box){ forceSync(dir); return; }   // render right beside the buttons that were tapped
     const lab=esc(chanLabel(name));
     const body = dir==="up"
       ? `<b>Sync TO ${lab} — upload this device?</b><p class="sk-muted" style="margin:6px 0">Replaces the ${lab} copy with the roster on <i>this</i> device. Anything that was only in ${lab} is overwritten.</p>`
       : `<b>Sync FROM ${lab} — download onto this device?</b><p class="sk-muted" style="margin:6px 0">Replaces <i>this</i> device's roster with the ${lab} copy. Any unsynced changes on this device are overwritten.</p>`;
-    box.innerHTML=`<div class="sk-conflict">${body}
+    box.className="sk-fmsg";
+    box.innerHTML=`<div class="sk-conflict" style="margin:0">${body}
       <div class="sk-row">
         <button class="sk-btn pri" id="sk-force-go">${dir==="up"?"Upload to cloud":"Download from cloud"}</button>
         <button class="sk-btn" id="sk-force-cancel">Cancel</button>
       </div></div>`;
-    el("sk-force-go").onclick=async()=>{ box.innerHTML=""; try{ await forceSync(dir); }catch(e){ status("Sync error: "+(e.message||e),"err"); } };
-    el("sk-force-cancel").onclick=()=>{ box.innerHTML=""; status("Cancelled — nothing synced.","muted"); };
-    try{ box.scrollIntoView({behavior:"smooth", block:"center"}); }catch(e){}   // the confirm renders below the channel boxes — bring it into view (esp. on mobile)
+    const clear=()=>{ box.innerHTML=""; box.className="sk-fmsg"; };
+    el("sk-force-go").onclick=async()=>{ clear(); try{ await forceSync(dir); }catch(e){ fstatus("Sync error: "+(e.message||e),"err"); } };
+    el("sk-force-cancel").onclick=()=>{ clear(); fstatus("Cancelled — nothing synced.","muted"); };
+    try{ box.scrollIntoView({behavior:"smooth", block:"center"}); }catch(e){}
   }
   async function forceSync(dir){
-    const name=cfg.active; if(!name){ status("Turn on a sync channel first.","err"); return; }
-    if(syncing){ status("A sync is already running — try again in a moment.","busy"); return; }
+    const name=cfg.active; if(!name){ fstatus("Turn on a sync channel first.","err"); return; }
+    if(syncing){ fstatus("A sync is already running — try again in a moment.","busy"); return; }
     syncing=true; allowInteractive=true;                       // this is a user tap → OK to pop Google sign-in if the token expired
     try{
-      status(dir==="up"?"Uploading this device to "+chanLabel(name)+"…":"Downloading from "+chanLabel(name)+"…","busy");
+      fstatus(dir==="up"?"Uploading this device to "+chanLabel(name)+"…":"Downloading from "+chanLabel(name)+"…","busy");
       if(dir==="up"){
         const data=localData();
         await pushLocal(data, hashData(data), name);          // this device → cloud
-        status("✓ Uploaded this device to "+chanLabel(name)+". Now open the tool on your other device and tap “⬇ Sync FROM cloud”.","ok");
+        fstatus("✓ Uploaded this device to "+chanLabel(name)+". Now open the tool on your other device and tap “⬇ Sync FROM cloud”.","ok");
       } else {
         const env=await pull(name);
-        if(!env){ status("Nothing is saved in "+chanLabel(name)+" yet — upload from another device first with “⬆ Sync TO cloud”.","err"); return; }
+        if(!env){ fstatus("Nothing is saved in "+chanLabel(name)+" yet — upload from another device first with “⬆ Sync TO cloud”.","err"); return; }
         const n=adapter.count?adapter.count(env.data):null;
         await applyRemote(env, name);                          // cloud → this device
-        status("✓ Downloaded "+(n!=null?n+" nichelings ":"")+"from "+chanLabel(name)+" — the copy saved "+fmtTime(env.savedAt)+".","ok");
+        fstatus("✓ Downloaded "+(n!=null?n+" nichelings ":"")+"from "+chanLabel(name)+" — the copy saved "+fmtTime(env.savedAt)+".","ok");
       }
-    } catch(e){ status("Couldn't sync: "+(e.message||e)+" — open the "+chanLabel(name)+" section above and tap Sync now / Connect to re-authorize.","err"); }
+    } catch(e){ fstatus("Couldn't sync: "+(e.message||e)+" — open the "+chanLabel(name)+" section above and tap Sync now / Connect to re-authorize.","err"); }
     finally {
       allowInteractive=false; syncing=false;
       if(resyncPending){ resyncPending=false; setTimeout(()=>{ syncNow("resync").catch(()=>{}); }, 0); }
