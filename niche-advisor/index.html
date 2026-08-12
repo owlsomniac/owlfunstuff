@@ -3493,7 +3493,7 @@ function concentrationVerdict(mine, others, catId){
    unique rare allele or a maxed line is never treated as disposable. */
 function retirementRanking(cats, opts){
   opts=opts||{}; const keys = opts.abilityOnly ? ABILITY_GENE_KEYS : GENES.map(g=>g.key);
-  const worthy = preserveWorthy(cats);   // an inferior/dominated allele (Derp Snout under a better Perception snout) is not "value" and never makes a nicheling a sole-copy keeper
+  const worthy = profileWorthy(cats);   // an inferior/dominated allele (Derp Snout under a better Perception snout) is not "value" and never makes a nicheling a sole-copy keeper
   const withH = cats.map(c=>({c, h:worthyHoldings(holdings(c.geno,keys,!opts.abilityOnly), worthy)}));
   const res=[];
   ["F","M"].forEach(sex=>{
@@ -3580,7 +3580,7 @@ const holdingsFor=(geno, abilityOnly)=>holdings(geno, abilityOnly?ABILITY_GENE_K
 /* the valuable alleles a nicheling holds that NO OTHER nicheling carries at ≥ its ✦ level (its ★ sole copies).
    ✦-aware & sex-agnostic: a lower-✦ copy elsewhere does NOT make yours non-sole (yours is the better version). */
 function soleAlleleLabels(cat, allCats, abilityOnly){
-  const worthy=preserveWorthy(allCats);
+  const worthy=profileWorthy(allCats);
   const mine=worthyHoldings(holdingsFor(cat.geno, abilityOnly), worthy), others=allCats.filter(c=>c.id!==cat.id).map(c=>worthyHoldings(holdingsFor(c.geno, abilityOnly), worthy)), out=[];
   for(const k in mine){ if(!others.some(h=>holdKeyCovers(h[k], mine[k]))) out.push(holdLabel(k, mine[k])); }
   return out;
@@ -3617,7 +3617,7 @@ function nichelingAdvice(cat, allCats, worthy, abilityOnly /* SEX-AWARE; ability
   // Coverage is SEX-AWARE (needs one ♀ AND one ♂ carrier), so a sexless nicheling can't be ranked — prompt to set its
   // sex. retirementRanking likewise ranks only F/M, so Do and Value stay consistent (both defer on a sexless cat).
   if(cat.sex!=="F" && cat.sex!=="M") return {action:"setsex", reason:"Set its sex (♀/♂) so it can be compared to your other nichelings."};
-  worthy = worthy || preserveWorthy(allCats);                   // roster-wide Pareto-best alleles (base dominance + roster-best ✦)
+  worthy = worthy || profileWorthy(allCats);                   // roster-wide Pareto-best alleles (base dominance + roster-best ✦)
   const mine=worthyHoldings(holdingsFor(cat.geno, abilityOnly), worthy);   // PRESERVE-WORTHY under the compare mode: an inferior copy (Derp Snout under a better Perception snout) isn't "value"
   const status=cat.status||"active";
   const keepAct = status==="sideline" ? "add" : "keep";        // valuable sideline → promote to tribe; else keep
@@ -3798,7 +3798,7 @@ const amode=gk=>breedAlleleModeByGene[gk]||"all";   // breedMutMode: 'shown'|'ca
 /* Consolidate tab state: which nichelings are picked for a manual merge (ids), which alleles ("geneKey|base")
    the user asked to make homozygous on the merged stud, which auto/manual plan cards are expanded, and
    whether the (long) allele-inventory section is expanded. */
-let consSel=new Set(), consHomo=new Set(), consOpen=new Set(), consInvOpen=false;
+let consSel=new Set(), consHomo=new Set(), consOpen=new Set(), consInvOpen=false, consProfiles=null;   // consProfiles: which target profiles are shown (null → lazy-init to all on)
 /* A nicheling's status: "active" (in your tribe), "sideline" (not in the tribe yet but kept on the
    bench — available for breeding), or "retired" (archived — can be brought back). Active is always in
    the breeding pool; sideline is in by default (toggle on) and retired is out by default (toggle off). */
@@ -3905,7 +3905,7 @@ function rosterTableHTML(active, sideline, retired){
   const allCats=active.concat(sideline, retired);
   const rrMap={}; retirementRanking(active,{abilityOnly}).forEach(r=>rrMap[r.id]=r);                 // active-tribe verdict (retire vs keep)
   const valueMap={}; retirementRanking(allCats,{abilityOnly}).forEach(r=>valueMap[r.id]=r);          // whole-roster "how much you'd lose" (0 = releasable)
-  const advWorthy=preserveWorthy(allCats);                                              // compute once; every row's advice shares it
+  const advWorthy=profileWorthy(allCats);                                              // compute once; every row's advice shares it
   const advMap={}; allCats.forEach(c=>{ advMap[c.id]=nichelingAdvice(c, allCats, advWorthy, abilityOnly); });   // SEX-AWARE; same compare mode as the Value column so Do and Value agree
   const sortVal=(c)=> rosterSort.key==="advice" ? (ADVICE_RANK[(advMap[c.id]||{}).action] ?? 9)
     : rosterSort.key==="value" ? ((valueMap[c.id]||{}).lossValue ?? 0)
@@ -4624,6 +4624,83 @@ function preserveWorthy(pool){
     const m={}; keep.forEach(x=>{ m[x.b]=Math.max(0, bestLevelOwned(pool,gk,x.b)); }); out[gk]=m; }
   return out;
 }
+/* =========================================================================
+   PROFILES — the target BUILDS the roster is consolidated toward. Each profile lives in a biome
+   and requires 3 skills; a build is HOMOZYGOUS (only the dominant allele's ✦ is expressed) and
+   BALANCED across its 3 skills. The roster's keep/release and the merge plans both target these,
+   so "useful" = a best-owned allele some profile needs; everything else (Swimming, Poison, inferior
+   copies) is releasable. Built-in for now.
+   ========================================================================= */
+const PROFILES = [
+  {id:"ever",   biome:"Evergreen", label:"Evergreen",        stats:["Perception","Collecting","Strength"]},
+  {id:"des-cs", biome:"Desert",    label:"Desert · Col/Str", stats:["Heat Resistance","Collecting","Strength"], res:"Heat Resistance"},
+  {id:"des-ps", biome:"Desert",    label:"Desert · Per/Str", stats:["Heat Resistance","Strength","Perception"], res:"Heat Resistance"},
+  {id:"fro-pc", biome:"Frost",     label:"Frost · Per/Col",  stats:["Cold Resistance","Perception","Collecting"], res:"Cold Resistance"},
+  {id:"fro-fs", biome:"Frost",     label:"Frost · Fish/Str", stats:["Cold Resistance","Fishing","Strength"],      res:"Cold Resistance"},
+];
+/* The best-owned, balanced, homozygous build for one profile from what the roster owns.
+   Each ability gene slot is assigned to one of the profile's stats and filled with the best-owned
+   allele for it (score = base + roster-best ✦). The resistance is guaranteed a slot first; the rest
+   are balanced across the stats by maximize-the-weakest. Slots with nothing owned for any stat are
+   left open. Returns { geno:{gk:{base,level,stat}}, totals:{stat:score}, gaps:[{stat,missing}] }. */
+function profileTarget(pool, profile){
+  const stats=profile.stats;
+  // best-owned allele per (slot, stat): cand[gk][stat] = {b, level, base, score}
+  const cand={};
+  ABILITY_GENE_KEYS.forEach(gk=>{ const g=GENE_BY_KEY[gk]; if(!g) return; cand[gk]={};
+    g.alleles.forEach(a=>{ const sk=alleleAbilityOf(gk,a.k); if(!sk || stats.indexOf(sk)<0) return;
+      const lvl=bestLevelOwned(pool,gk,a.k); if(lvl<0) return;                 // roster doesn't own it
+      const base=alleleBaseVal(gk,a.k), score=base+lvl, cur=cand[gk][sk];
+      if(!cur || score>cur.score || (score===cur.score && lvl>cur.level)) cand[gk][sk]={b:a.k, level:lvl, base, score}; }); });
+  const assigned={}, used=new Set(), totals={}, gaps=[];
+  stats.forEach(s=>totals[s]=0);
+  const bestSlotFor=st=>{ let pick=null; ABILITY_GENE_KEYS.forEach(gk=>{ if(used.has(gk)) return; const c=cand[gk][st];
+      if(c && (!pick || c.score>pick.c.score)) pick={gk,c}; }); return pick; };
+  const place=(gk,c,st)=>{ assigned[gk]={base:c.b, level:c.level, base_:c.base, stat:st}; used.add(gk); totals[st]+=c.score; };
+  // 1) resistance gets a slot first (so a high-Perception ear can't crowd out Heat/Cold)
+  if(profile.res){ const p=bestSlotFor(profile.res); if(p) place(p.gk,p.c,profile.res); else gaps.push({stat:profile.res, missing:true}); }
+  // 2) balance the rest: repeatedly give the weakest stat its best remaining slot
+  for(;;){ const order=stats.slice().sort((a,b)=>totals[a]-totals[b]); let placed=false;
+    for(const st of order){ const p=bestSlotFor(st); if(p){ place(p.gk,p.c,st); placed=true; break; } }
+    if(!placed) break; }
+  // 3) any required stat still empty and unbuildable from the roster → a gap to breed/find
+  stats.forEach(s=>{ if(totals[s]===0 && !gaps.some(g=>g.stat===s)) gaps.push({stat:s, missing:true}); });
+  const geno={}; for(const gk in assigned) geno[gk]={base:assigned[gk].base, level:assigned[gk].level, stat:assigned[gk].stat};
+  return {geno, totals, gaps, profile};
+}
+/* Union of the five profile builds → { geneKey:{ base: roster-best ✦ } } — the SAME shape as
+   preserveWorthy, but restricted to alleles a profile actually targets. This is the roster +
+   consolidation source of truth: an allele is "worthy" only if some profile's balanced build uses it. */
+function profileWorthy(pool, profiles){
+  const list=profiles||PROFILES, out={};
+  list.forEach(p=>{ const t=profileTarget(pool,p);
+    for(const gk in t.geno){ const {base,level}=t.geno[gk]; (out[gk]||(out[gk]={}));
+      if(out[gk][base]==null || level>out[gk][base]) out[gk][base]=level; } });
+  return out;
+}
+/* Per-profile build plan for a ♀ AND a ♂. For each sex we pick the SEED — the nicheling of that sex that already
+   carries the most target alleles (tie → in-biome, then higher ✦, then id) — and list the target alleles it still
+   NEEDS, each with the best source to breed it in from (prefers a homozygous, in-biome holder). No fabricated FP:
+   crosses = alleles to breed in; use the manual picker for an exact FP on a specific pair. `complete` = the seed
+   already IS the build. Returns { profile, target, targets:[…], bySex:{F:{…},M:{…}} }. */
+function profilePlan(pool, profile){
+  const t=profileTarget(pool, profile);
+  const targets=[]; for(const gk in t.geno){ const a=t.geno[gk]; targets.push({gk, base:a.base, level:a.level, stat:a.stat, key:gk+"|"+a.base}); }
+  const holds=(c,tg)=>(c.geno[tg.gk]||[]).some(a=>baseK(a)===tg.base && mutLevel(a)>=tg.level);
+  const homoHas=(c,tg)=>(c.geno[tg.gk]||[]).filter(a=>baseK(a)===tg.base && mutLevel(a)>=tg.level).length>=2;
+  const inBiome=c=>effLoc(c)===profile.biome;
+  const holdersOf=tg=>pool.filter(c=>holds(c,tg)).sort((a,b)=> (homoHas(b,tg)-homoHas(a,tg)) || (inBiome(b)-inBiome(a)) || a.id-b.id);
+  const bySex={};
+  ["F","M"].forEach(sex=>{
+    const cand=pool.filter(c=>c.sex===sex).map(c=>({c, have:targets.filter(tg=>holds(c,tg))}))
+      .sort((a,b)=> b.have.length-a.have.length || (inBiome(b.c)-inBiome(a.c)) || a.c.id-b.c.id);
+    const seed=cand[0]||null, haveKeys=seed?new Set(seed.have.map(x=>x.key)):new Set();
+    const need=targets.filter(tg=>!haveKeys.has(tg.key)).map(tg=>{
+      const src=holdersOf(tg).find(c=>!seed || c.id!==seed.c.id) || null; return {tg, src}; });
+    bySex[sex]={ seed:seed?seed.c:null, have:seed?seed.have:[], need, complete:seed&&need.length===0 };
+  });
+  return {profile, target:t, targets, bySex};
+}
 /* union of a group's beneficial alleles → { geneKey: { base: bestLevel } } (best ✦ across the group per base).
    When `worthy` (from preserveWorthy) is passed, an allele is dropped unless it's (a) a worthy base — no same-
    gene/same-skill allele beats it (so Deformed Paw goes when Nimble is owned) — AND (b) the group holds it at
@@ -4638,7 +4715,7 @@ function groupAlleles(cats, worthy){ const u={};
    `sole` = only ONE nicheling holds it at the best level (releasing that one loses the best copy). Each
    carrier records its own top ✦, copies (homozygous = 2 copies of that base), and status/location. */
 function beneficialAlleleInventory(pool){
-  const genes=[], worthy=preserveWorthy(pool);
+  const genes=[], worthy=profileWorthy(pool);
   ABILITY_GENE_KEYS.forEach(gk=>{ const g=GENE_BY_KEY[gk], byBase={};
     pool.forEach(c=>{ const h=holdingsFor(c.geno,true);
       for(const key in h){ const i=key.indexOf("|"); if(key.slice(0,i)!==gk) continue;
@@ -4690,7 +4767,7 @@ function mergeGroupFeasible(cats, worthy){ const u=groupAlleles(cats, worthy), o
    LOWER-LEVEL (fewer stray ✦, cheaper + less junk into the line) mate wins. Ranks by that expected FP, then pass-down,
    then same-biome, then id. Returns null when nobody carries a notable allele → "any ♂". */
 function bestBridgeMate(pool, seed, group, worthy){
-  worthy=worthy||preserveWorthy(pool);
+  worthy=worthy||profileWorthy(pool);
   const sw=groupAlleles([seed], worthy), notable=[];
   for(const gk in sw) for(const b in sw[gk]) if(GENE_BY_KEY[gk].alleles[0].k!==b || sw[gk][b]>0) notable.push({gk, b, L:sw[gk][b]});   // non-default base OR a mutated default (✦>0)
   if(!notable.length) return null;                                        // seed carries only ✦0 baseline defaults → any mate is equally fine
@@ -4713,7 +4790,7 @@ function bestBridgeMate(pool, seed, group, worthy){
    alleles — one extra cross of two carriers. Returns a structured plan the renderer turns into steps. */
 function mergePlan(pool, group, homoKeys, worthyArg){
   const homo=new Set(homoKeys||[]);
-  const worthy=worthyArg||preserveWorthy(pool);
+  const worthy=worthyArg||profileWorthy(pool);
   const u=groupAlleles(group, worthy);   // only preserve the best of each same-gene/same-skill allele
   const labelKey=k=>{ const i=k.indexOf("|"); return consAlleleLabel(k.slice(0,i), k.slice(i+1), u[k.slice(0,i)][k.slice(i+1)]); };
   const allKeys=[]; for(const gk in u) for(const b in u[gk]) allKeys.push(gk+"|"+b);
@@ -4828,7 +4905,7 @@ function autoMerges(pool){
   // ticks, picks) don't change the roster, so recompute only when a nicheling's genotype/sex/location actually changes.
   const sig=pool.map(c=>c.id+":"+c.sex+":"+(c.location||"")+":"+(c.status||"")+":"+genoToCode(c.geno)).join("|");
   if(sig===_amSig) return _amRes;
-  const worthy=preserveWorthy(pool);
+  const worthy=profileWorthy(pool);
   const wa=c=>groupAlleles([c], worthy);                                 // one cat's worthy alleles → {gk:{base:lvl}}
   const wkeys=w=>{ const s=[]; for(const gk in w) for(const b in w[gk]) s.push(gk+"|"+b); return s; };
   const covers=(w1,w2)=>wkeys(w2).every(k=>{ const i=k.indexOf("|"),gk=k.slice(0,i),b=k.slice(i+1); return w1[gk]&&w1[gk][b]!=null && w1[gk][b]>=w2[gk][b]; });   // w1 ⊇ w2 (≥ level)
@@ -5029,7 +5106,7 @@ function mergePlanHTML(plan){
       const worst=Math.max(...plan.overflow.map(o=>Math.ceil(o.bases.length/2)));
       return `<p class="muted" style="color:var(--warn);font-size:12px">⚠ These can't all sit on one nicheling — `+
         plan.overflow.map(o=>`<b>${esc(o.gene.label)}</b> has ${o.bases.length} distinct alleles (${o.bases.map(esc).join(", ")})`).join("; ")+
-        `. A gene has only two slots, so keep them across <b>${worst}</b> nichelings instead — see <b>Fewest studs</b> above.</p>`;
+        `. A gene has only two slots, so keep them across <b>${worst}</b> separate nichelings instead.</p>`;
     }
     if(plan.homoClash&&plan.homoClash.length)
       return `<p class="muted" style="color:var(--warn);font-size:12px">⚠ Can't make ${plan.homoClash.map(o=>`<b>${esc(o.homo.join(", "))}</b> homozygous while also carrying <b>${esc((o.other||[]).join(", "))}</b> at ${esc(o.gene.label)}`).join("; ")} — a homozygous allele uses both of that gene's slots. Untick one.</p>`;
@@ -5069,7 +5146,7 @@ function mergePlanHTML(plan){
 function renderConsolidate(){
   const v=$("#view-consolidate"); if(!v) return;
   const pool=breedingPool();
-  const worthy=preserveWorthy(pool);   // roster-wide worth-preserving alleles (base dominance + roster-best ✦), for the merge homozygous lists
+  const worthy=profileWorthy(pool);   // roster-wide worth-preserving alleles (base dominance + roster-best ✦), for the merge homozygous lists
   // the optional "make homozygous" upgrade box for a merge plan — explains what ticking does; only worth-preserving alleles listed
   const homoBox=(cid,opts,gal)=> !opts.length ? "" :
     `<div style="margin-top:7px;font-size:11.5px;border-top:1px dashed var(--line);padding-top:6px">`+
@@ -5095,46 +5172,36 @@ function renderConsolidate(){
     `<h3 style="margin:0">Allele inventory <span class="muted" style="font-weight:400;font-size:12px">— every beneficial allele you own &amp; who carries it (★ = one holder of the best copy)</span></h3>`+
     `<button class="btn sm gray" id="consInvToggle">${consInvOpen?"Hide":"Show"}</button></div>${invBody}</div>`;
 
-  /* ---- §2 Fewest studs ---- */
-  const ms=minStudsPlan(pool);
-  let msBody="";
-  if(ms.N){
-    const bott = ms.bottleneck.map(b=>`<b>${esc(b.gene.label)}</b> (${b.K} distinct → needs ${b.need})`).join(", ");
-    msBody=`<p style="margin:2px 0 6px;font-size:13px">All <b>${ms.totalAlleles}</b> of your beneficial alleles fit on <b>${ms.N}</b> nicheling${ms.N>1?"s":""}.`+
-      (ms.N>1?` <span class="muted">Bounded by ${bott} — a gene has only two allele slots.</span>`:` <span class="muted">Everything fits on a single nicheling.</span>`)+`</p>`+
-      `<div style="display:flex;flex-wrap:wrap;gap:8px">`+ms.studs.map((s,i)=>{
-        const lines=Object.keys(s.genes).map(gk=>`<div style="font-size:11.5px"><span class="muted">${esc(GENE_BY_KEY[gk].label)}:</span> ${s.genes[gk].map(a=>esc(consAlleleLabel(gk,a.base,a.level))+(a.homo?` <b style="color:var(--brand-ink)">×2</b>`:"")).join(", ")}</div>`).join("");
-        return `<div style="flex:1 1 220px;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:7px 9px"><div style="font-weight:600;font-size:12.5px;margin-bottom:3px">Stud ${i+1}</div>${lines||'<span class="muted">—</span>'}</div>`;
-      }).join("")+`</div>`+
-      `<p class="muted" style="font-size:11.5px;margin:6px 0 0">These are targets, not existing nichelings — the merge plans below build them from what you own. <b>×2</b> = double it up homozygous: when only one worthy allele lands on a gene's two slots, breeding it to two copies makes it show and pass down 100%. Two different alleles share a gene's slots (one each).</p>`;
-  } else msBody=`<p class="muted">Nothing to condense.</p>`;
-  html+=`<div class="card"><h3 style="margin:0 0 2px">Fewest studs <span class="muted" style="font-weight:400;font-size:12px">— the smallest set that still preserves every allele</span></h3>${msBody}</div>`;
+  /* ---- §2 Target profiles ---- */
+  if(!consProfiles) consProfiles=new Set(PROFILES.map(p=>p.id));
+  const biomes=[...new Set(PROFILES.map(p=>p.biome))];
+  const shortLabel=p=>p.label.indexOf(p.biome+" · ")===0 ? p.label.slice((p.biome+" · ").length) : p.label;
+  html+=`<div class="card"><h3 style="margin:0 0 2px">Target profiles <span class="muted" style="font-weight:400;font-size:12px">— the balanced homozygous ♀+♂ builds to consolidate toward, per biome. Tick to show/hide.</span></h3>`+
+    `<div style="display:flex;flex-wrap:wrap;gap:4px 16px;margin:6px 0 0;font-size:12px">`+biomes.map(bi=>
+      `<span style="white-space:nowrap"><span class="muted" style="font-weight:700">${esc(bi)}</span> `+
+      PROFILES.filter(p=>p.biome===bi).map(p=>`<label style="white-space:nowrap;margin:0 4px"><input type="checkbox" class="consProf" data-id="${p.id}" ${consProfiles.has(p.id)?"checked":""}> ${esc(shortLabel(p))}</label>`).join("")+`</span>`
+    ).join("")+`</div></div>`;
 
-  /* ---- §3 Merge recommendations ---- */
-  html+=`<div class="card"><h3 style="margin:0 0 2px">Merge plans <span class="muted" style="font-weight:400;font-size:12px">— fuse two lines onto one pup, then release both</span></h3>`;
-  // Auto
-  const autos=autoMerges(pool);
-  const AUTO_MAX=8;
-  if(!autos.length){
-    html+=`<p class="muted" style="font-size:12.5px">No two nichelings both add something and still fit on one body — your good alleles are already either duplicated (see roster Advice to release the copies) or spread across genes that need separate studs (above).</p>`;
-  } else {
-    html+=`<div class="muted" style="font-size:12px;margin:2px 0 5px">Cheapest first — ranked by <b>💰 expected food (FP)</b>. A breeding costs <b>70 + 3× the two parents' levels</b> (level = total ✦ mutation points), and you re-breed until the right pup drops — so this folds in everything: <b>most alleles in common</b> + <b>highest pass-down</b> (a homozygous carrier passes 100%) mean fewer re-breeds, <b>fewer differences</b> mean fewer crosses, and <b>lower-mutation parents</b> are cheaper each. The order is stable — adding nichelings won't reshuffle it.</div>`;
-    autos.slice(0,AUTO_MAX).forEach(m=>{
-      const [A,B]=m.group, cid="a"+Math.min(A.id,B.id)+"_"+Math.max(A.id,B.id), open=consOpen.has(cid);
-      const homoKeys=[...consHomo].filter(k=>k.indexOf(cid+"::")===0).map(k=>k.slice(cid.length+2));
-      const plan=open?mergePlan(pool,[A,B],homoKeys):null;
-      html+=`<div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin:0 0 6px">`+
-        `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`+
-        `<div style="font-size:12.5px"><b>${esc(A.name)}</b> ${sx(A.sex)} <span class="muted">+</span> <b>${esc(B.name)}</b> ${sx(B.sex)} <span class="muted">— ${m.shared} in common · ${m.diff} to breed across · 💰 ${fmtFP(m.expFP)}</span>${m.sameSex?` <span class="stt muted" title="Same sex — the plan bridges through a neutral mate">bridge</span>`:""}${m.crossLoc?` <span class="stt" style="color:var(--warn)">⚠ diff. location</span>`:""}</div>`+
-        `<button class="btn sm gray consPlanToggle" data-card="${cid}">${open?"Hide plan":"Show plan"}</button></div>`;
-      if(open){
-        const gal=groupAlleles([A,B],worthy); const homoOpts=[]; for(const gk in gal) for(const b in gal[gk]) homoOpts.push({gk,b,key:gk+"|"+b});
-        html+=`<div style="margin-top:6px">${mergePlanHTML(plan)}</div>`+homoBox(cid,homoOpts,gal);
-      }
-      html+=`</div>`;
+  PROFILES.filter(p=>consProfiles.has(p.id)).forEach(p=>{
+    const pl=profilePlan(pool,p), tg=pl.target;
+    const buildRows=ABILITY_GENE_KEYS.filter(gk=>tg.geno[gk]).map(gk=>{ const a=tg.geno[gk];
+      return `<span style="white-space:nowrap;margin-right:12px"><span class="muted">${esc(GENE_BY_KEY[gk].label)}:</span> ${esc(consAlleleLabel(gk,a.base,a.level))} <b style="color:var(--brand-ink)">×2</b></span>`; }).join("");
+    const totalsLine=p.stats.map(s=>`${esc(AB_SHORT[s]||s)} <b>+${tg.totals[s]||0}</b>`).join(" · ");
+    const gapLine=tg.gaps.length?` <span class="stt" style="color:var(--warn)">⚠ no ${tg.gaps.map(g=>esc(AB_SHORT[g.stat]||g.stat)).join(", ")} allele owned — breed/find one</span>`:"";
+    let card=`<div class="card"><h3 style="margin:0 0 1px">${esc(p.biome)} · ${esc(shortLabel(p))} <span class="muted" style="font-weight:400;font-size:12px">— ${totalsLine}${gapLine}</span></h3>`+
+      `<div style="font-size:11.5px;margin:2px 0 7px;line-height:1.7">${buildRows}</div>`;
+    ["F","M"].forEach(sex=>{ const s=pl.bySex[sex], sym=sex==="F"?"♀":"♂";
+      if(!s.seed){ card+=`<div style="font-size:12px;margin:3px 0"><b>${sym}</b> <span class="muted">— no ${sym} in your pool yet; breed one toward this build.</span></div>`; return; }
+      if(s.complete){ card+=`<div style="font-size:12px;margin:3px 0"><b>${sym} ${esc(s.seed.name)} ${sx(s.seed.sex)}</b> <span class="adv-keep">✅ already this build — keep it</span></div>`; return; }
+      const needList=s.need.map(n=>`<div style="font-size:11.5px;margin:1px 0 0 12px">+ ${esc(consAlleleLabel(n.tg.gk,n.tg.base,n.tg.level))} ${n.src?`<span class="muted">← from <b>${esc(n.src.name)}</b> ${sx(n.src.sex)}${effLoc(n.src)&&effLoc(n.src)!==p.biome?` <span style="color:var(--warn)">(${esc(effLoc(n.src))})</span>`:""}</span>`:`<span class="stt" style="color:var(--warn)">⚠ nobody owns it — breed/find one</span>`}</div>`).join("");
+      card+=`<div style="font-size:12px;margin:4px 0 0"><b>${sym} start from ${esc(s.seed.name)}</b> ${sx(s.seed.sex)}${effLoc(s.seed)&&effLoc(s.seed)!==p.biome?` <span class="stt" style="color:var(--warn)">move to ${esc(p.biome)}</span>`:""} <span class="muted">— has ${s.have.length}/${pl.targets.length}; breed in ${s.need.length}:</span>${needList}</div>`;
     });
-    if(autos.length>AUTO_MAX) html+=`<div class="muted" style="font-size:11.5px">…and ${autos.length-AUTO_MAX} more fusible pair${autos.length-AUTO_MAX>1?"s":""}. Use the manual picker for any combination.</div>`;
-  }
+    card+=`</div>`; html+=card;
+  });
+
+  /* ---- §3 Price a specific pairing (manual) ---- */
+  const autos=autoMerges(pool);
+  html+=`<div class="card"><h3 style="margin:0 0 2px">Price a specific pairing <span class="muted" style="font-weight:400;font-size:12px">— tick a nicheling for its best partner, or two+ for an exact merge (💰 FP cost)</span></h3>`;
   // Manual
   const sexed=pool.filter(c=>c.sex==="F"||c.sex==="M");
   html+=`<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:600;font-size:12.5px">Manual merge <span class="muted" style="font-weight:400">— tick <b>one</b> and the best partner is picked for you, or tick two+ to fuse an exact set</span></div>${consSel.size?`<button class="btn sm gray" id="consClearSel">Clear (${consSel.size})</button>`:""}</div>`;
@@ -5164,7 +5231,7 @@ function renderConsolidate(){
       const gone=adv.action==="release"||adv.action==="retire";
       html+= gone
         ? `<p class="muted" style="font-size:12px">No fusible partner for <b>${esc(S.name)}</b> — everything it carries is already held elsewhere, so the roster marks it <b>${(ADV_META[adv.action]||{}).label||"Release"}</b>: ${esc(adv.reason)} Nothing to merge — just release it.</p>`
-        : `<p class="muted" style="font-size:12px">No fusible partner for <b>${esc(S.name)}</b>, but it's a <b>keeper</b> — ${esc(adv.reason)} Its alleles just can't share one body with another carrier in a single merge (that would overflow a gene's two slots), so keep it as its own stud (see <b>Fewest studs</b>). Tick a second nicheling to force a pairing anyway.</p>`;
+        : `<p class="muted" style="font-size:12px">No fusible partner for <b>${esc(S.name)}</b>, but it's a <b>keeper</b> — ${esc(adv.reason)} Its alleles just can't share one body with another carrier in a single merge (that would overflow a gene's two slots), so keep it as its own build. Tick a second nicheling to force a pairing anyway.</p>`;
     }
   }
   html+=`</div></div>`;
@@ -5177,6 +5244,7 @@ function renderConsolidate(){
   $$("#view-consolidate .consHomo").forEach(cb=>cb.onchange=()=>{ const k=cb.dataset.card+"::"+cb.dataset.key; if(cb.checked) consHomo.add(k); else consHomo.delete(k); re(); });
   $$("#view-consolidate .consPick").forEach(cb=>cb.onchange=()=>{ const id=+cb.dataset.id; if(cb.checked) consSel.add(id); else consSel.delete(id); re(); });
   $$("#view-consolidate .consAddPartner").forEach(b=>b.onclick=()=>{ consSel.add(+b.dataset.id); re(); });   // switch the single-select suggestion to a specific partner
+  $$("#view-consolidate .consProf").forEach(cb=>cb.onchange=()=>{ const id=cb.dataset.id; if(cb.checked) consProfiles.add(id); else consProfiles.delete(id); re(); });
   const cs=$("#consClearSel"); if(cs) cs.onclick=()=>{ consSel.clear(); re(); };
 }
 
@@ -5212,7 +5280,8 @@ if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILIT
   holdings,holdCovers,holdKeyCovers,holdValue,holdLabel,UNDESIRABLE,
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS,geneFeasible,targetPlan,mutInRange,targetBaseLabel,
   mutBonus,statTotal,sidelineAdvice,genePairParts,offspringBST,soleAlleleLabels,offspringConsolidatesProb,nichelingAdvice,consolidationAdvice,ADVICE_RANK,holdingsFor,statTargetPlan,
-  beneficialAlleleInventory,minStudsPlan,mergeGroupFeasible,mergePlan,autoMerges,groupAlleles,consAlleleLabel,preserveWorthy,alleleAbilityOf,alleleBaseVal,bestLevelOwned};
+  beneficialAlleleInventory,minStudsPlan,mergeGroupFeasible,mergePlan,autoMerges,groupAlleles,consAlleleLabel,preserveWorthy,alleleAbilityOf,alleleBaseVal,bestLevelOwned,
+  PROFILES,profileTarget,profileWorthy,profilePlan,concentrationVerdict,worthyHoldings};
 
 /* ---- boot (only in a real browser) ---- */
 /* =========================================================================
