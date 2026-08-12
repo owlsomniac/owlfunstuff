@@ -3798,7 +3798,7 @@ const amode=gk=>breedAlleleModeByGene[gk]||"all";   // breedMutMode: 'shown'|'ca
 /* Consolidate tab state: which nichelings are picked for a manual merge (ids), which alleles ("geneKey|base")
    the user asked to make homozygous on the merged stud, which auto/manual plan cards are expanded, and
    whether the (long) allele-inventory section is expanded. */
-let consSel=new Set(), consHomo=new Set(), consOpen=new Set(), consInvOpen=false, consProfiles=null;   // consProfiles: which target profiles are shown (null → lazy-init to all on)
+let consSel=new Set(), consHomo=new Set(), consOpen=new Set(), consInvOpen=false, consExpanded=new Set(), consAddOpen=false;   // consExpanded: pills expanded to their allele list; consAddOpen: the Add-profile form is showing
 /* A nicheling's status: "active" (in your tribe), "sideline" (not in the tribe yet but kept on the
    bench — available for breeding), or "retired" (archived — can be brought back). Active is always in
    the breeding pool; sideline is in by default (toggle on) and retired is out by default (toggle off). */
@@ -4631,40 +4631,48 @@ function preserveWorthy(pool){
    so "useful" = a best-owned allele some profile needs; everything else (Swimming, Poison, inferior
    copies) is releasable. Built-in for now.
    ========================================================================= */
-const PROFILES = [
-  {id:"ever",   biome:"Evergreen", label:"Evergreen",        stats:["Perception","Collecting","Strength"]},
-  {id:"des-cs", biome:"Desert",    label:"Desert · Col/Str", stats:["Heat Resistance","Collecting","Strength"], res:"Heat Resistance"},
-  {id:"des-ps", biome:"Desert",    label:"Desert · Per/Str", stats:["Heat Resistance","Strength","Perception"], res:"Heat Resistance"},
-  {id:"fro-pc", biome:"Frost",     label:"Frost · Per/Col",  stats:["Cold Resistance","Perception","Collecting"], res:"Cold Resistance"},
-  {id:"fro-fs", biome:"Frost",     label:"Frost · Fish/Str", stats:["Cold Resistance","Fishing","Strength"],      res:"Cold Resistance"},
+/* Editable & persisted. Each profile: { id, name, biome, stats:[{stat,min?,max?}], build }. min = the build must
+   reach at least this stat total; max = stop allocating once reached. Resistances default to min 1 so they're
+   never crowded out. `build` = include it in the pair suggestions. Seeded from these defaults on first use. */
+const DEFAULT_PROFILES = [
+  {id:"ever",   name:"Evergreen",      biome:"Evergreen", stats:[{stat:"Perception"},{stat:"Collecting"},{stat:"Strength"}], build:true},
+  {id:"des-cs", name:"Desert Col/Str", biome:"Desert",    stats:[{stat:"Heat Resistance",min:2},{stat:"Collecting"},{stat:"Strength"}], build:true},
+  {id:"des-ps", name:"Desert Per/Str", biome:"Desert",    stats:[{stat:"Heat Resistance",min:2},{stat:"Strength"},{stat:"Perception"}], build:true},
+  {id:"fro-pc", name:"Frost Per/Col",  biome:"Frost",     stats:[{stat:"Cold Resistance",min:2},{stat:"Perception"},{stat:"Collecting"}], build:true},
+  {id:"fro-fs", name:"Frost Fish/Str", biome:"Frost",     stats:[{stat:"Cold Resistance",min:2},{stat:"Fishing"},{stat:"Strength"}], build:true},
 ];
-/* The best-owned, balanced, homozygous build for one profile from what the roster owns.
-   Each ability gene slot is assigned to one of the profile's stats and filled with the best-owned
-   allele for it (score = base + roster-best ✦). The resistance is guaranteed a slot first; the rest
-   are balanced across the stats by maximize-the-weakest. Slots with nothing owned for any stat are
-   left open. Returns { geno:{gk:{base,level,stat}}, totals:{stat:score}, gaps:[{stat,missing}] }. */
+const PROFILES_KEY="niche-profiles-v1", RES_RE=/Resistance$/;
+function loadProfiles(){ try{ const p=JSON.parse(localStorage.getItem(PROFILES_KEY)); if(Array.isArray(p)) return p; }catch(e){}
+  return DEFAULT_PROFILES.map(p=>({...p, stats:p.stats.map(s=>({...s}))})); }
+function saveProfiles(list){ try{ localStorage.setItem(PROFILES_KEY, JSON.stringify(list)); }catch(e){} }
+/* The best-owned, homozygous build for one profile from what the roster owns, honouring each stat's min/max.
+   Each ability gene slot is assigned to a stat and filled with the best-owned allele for it (score = base +
+   roster-best ✦). Phase 1 satisfies every stat's min (resistances default to min 1 → never crowded out);
+   phase 2 balances the remaining slots across stats below their max by maximize-the-weakest. Slots with nothing
+   owned are left open. Returns { geno:{gk:{base,level,stat}}, totals:{stat:score}, gaps:[{stat,missing,min}] }. */
 function profileTarget(pool, profile){
-  const stats=profile.stats;
-  // best-owned allele per (slot, stat): cand[gk][stat] = {b, level, base, score}
+  const stats=(profile.stats||[]).map(s=>typeof s==="string"?{stat:s}:s), names=stats.map(s=>s.stat), cfg={};
+  stats.forEach(s=>{ cfg[s.stat]={min: s.min!=null?s.min:(RES_RE.test(s.stat)?1:0), max: s.max!=null?s.max:Infinity}; });
   const cand={};
   ABILITY_GENE_KEYS.forEach(gk=>{ const g=GENE_BY_KEY[gk]; if(!g) return; cand[gk]={};
-    g.alleles.forEach(a=>{ const sk=alleleAbilityOf(gk,a.k); if(!sk || stats.indexOf(sk)<0) return;
+    g.alleles.forEach(a=>{ const sk=alleleAbilityOf(gk,a.k); if(!sk || names.indexOf(sk)<0) return;
       const lvl=bestLevelOwned(pool,gk,a.k); if(lvl<0) return;                 // roster doesn't own it
       const base=alleleBaseVal(gk,a.k), score=base+lvl, cur=cand[gk][sk];
       if(!cur || score>cur.score || (score===cur.score && lvl>cur.level)) cand[gk][sk]={b:a.k, level:lvl, base, score}; }); });
   const assigned={}, used=new Set(), totals={}, gaps=[];
-  stats.forEach(s=>totals[s]=0);
+  names.forEach(s=>totals[s]=0);
   const bestSlotFor=st=>{ let pick=null; ABILITY_GENE_KEYS.forEach(gk=>{ if(used.has(gk)) return; const c=cand[gk][st];
       if(c && (!pick || c.score>pick.c.score)) pick={gk,c}; }); return pick; };
-  const place=(gk,c,st)=>{ assigned[gk]={base:c.b, level:c.level, base_:c.base, stat:st}; used.add(gk); totals[st]+=c.score; };
-  // 1) resistance gets a slot first (so a high-Perception ear can't crowd out Heat/Cold)
-  if(profile.res){ const p=bestSlotFor(profile.res); if(p) place(p.gk,p.c,profile.res); else gaps.push({stat:profile.res, missing:true}); }
-  // 2) balance the rest: repeatedly give the weakest stat its best remaining slot
-  for(;;){ const order=stats.slice().sort((a,b)=>totals[a]-totals[b]); let placed=false;
-    for(const st of order){ const p=bestSlotFor(st); if(p){ place(p.gk,p.c,st); placed=true; break; } }
-    if(!placed) break; }
-  // 3) any required stat still empty and unbuildable from the roster → a gap to breed/find
-  stats.forEach(s=>{ if(totals[s]===0 && !gaps.some(g=>g.stat===s)) gaps.push({stat:s, missing:true}); });
+  const place=(gk,c,st)=>{ assigned[gk]={base:c.b, level:c.level, stat:st}; used.add(gk); totals[st]+=c.score; };
+  // 1) satisfy mins — furthest below its min first
+  for(;;){ const need=names.filter(s=>totals[s]<cfg[s].min); if(!need.length) break;
+    need.sort((a,b)=>(totals[a]-cfg[a].min)-(totals[b]-cfg[b].min)); let placed=false;
+    for(const st of need){ const p=bestSlotFor(st); if(p){ place(p.gk,p.c,st); placed=true; break; } } if(!placed) break; }
+  // 2) balance the rest across stats still below their max: weakest first
+  for(;;){ const open=names.filter(s=>totals[s]<cfg[s].max); open.sort((a,b)=>totals[a]-totals[b]); let placed=false;
+    for(const st of open){ const p=bestSlotFor(st); if(p){ place(p.gk,p.c,st); placed=true; break; } } if(!placed) break; }
+  // 3) gaps: a required stat whose min can't be met (or nothing owned at all)
+  names.forEach(s=>{ if(totals[s]<cfg[s].min || totals[s]===0) gaps.push({stat:s, missing:true, min:cfg[s].min}); });
   const geno={}; for(const gk in assigned) geno[gk]={base:assigned[gk].base, level:assigned[gk].level, stat:assigned[gk].stat};
   return {geno, totals, gaps, profile};
 }
@@ -4672,7 +4680,7 @@ function profileTarget(pool, profile){
    preserveWorthy, but restricted to alleles a profile actually targets. This is the roster +
    consolidation source of truth: an allele is "worthy" only if some profile's balanced build uses it. */
 function profileWorthy(pool, profiles){
-  const list=profiles||PROFILES, out={};
+  const list=profiles||loadProfiles(), out={};
   list.forEach(p=>{ const t=profileTarget(pool,p);
     for(const gk in t.geno){ const {base,level}=t.geno[gk]; (out[gk]||(out[gk]={}));
       if(out[gk][base]==null || level>out[gk][base]) out[gk][base]=level; } });
@@ -5172,30 +5180,59 @@ function renderConsolidate(){
     `<h3 style="margin:0">Allele inventory <span class="muted" style="font-weight:400;font-size:12px">— every beneficial allele you own &amp; who carries it (★ = one holder of the best copy)</span></h3>`+
     `<button class="btn sm gray" id="consInvToggle">${consInvOpen?"Hide":"Show"}</button></div>${invBody}</div>`;
 
-  /* ---- §2 Target profiles (expandable) ---- */
-  if(!consProfiles) consProfiles=new Set(PROFILES.map(p=>p.id));
-  const shortLabel=p=>p.label.indexOf(p.biome+" · ")===0 ? p.label.slice((p.biome+" · ").length) : p.label;
-  html+=`<div class="card"><h3 style="margin:0 0 2px">Target profiles <span class="muted" style="font-weight:400;font-size:12px">— the balanced homozygous ♀+♂ builds to consolidate toward, per biome. Click one to expand its full build + ♀/♂ plans.</span></h3>`+
-    PROFILES.map(p=>{
-      const open=consProfiles.has(p.id), pl=profilePlan(pool,p), tg=pl.target;
-      const totalsLine=p.stats.map(s=>`${esc(AB_SHORT[s]||s)} <b>+${tg.totals[s]||0}</b>`).join(" · ");
-      const gapLine=tg.gaps.length?` <span class="stt" style="color:var(--warn)">⚠ no ${tg.gaps.map(g=>esc(AB_SHORT[g.stat]||g.stat)).join(", ")} owned</span>`:"";
-      let row=`<div style="border-top:1px solid var(--line);padding:7px 0 ${open?"10px":"7px"}">`+
-        `<div class="consProfHdr" data-id="${p.id}" style="cursor:pointer;font-weight:700;font-size:13px">`+
-        `<span style="display:inline-block;width:14px;color:var(--muted-ink,inherit)">${open?"▾":"▸"}</span>${esc(p.biome)} · ${esc(shortLabel(p))} <span class="muted" style="font-weight:400;font-size:12px">— ${totalsLine}${gapLine}</span></div>`;
-      if(open){
-        const buildRows=ABILITY_GENE_KEYS.filter(gk=>tg.geno[gk]).map(gk=>{ const a=tg.geno[gk];
-          return `<span style="white-space:nowrap"><span class="muted">${esc(GENE_BY_KEY[gk].label)}:</span> ${esc(consAlleleLabel(gk,a.base,a.level))} <b style="color:var(--brand-ink)">×2</b></span>`; }).join("");
-        row+=`<div style="display:flex;flex-wrap:wrap;gap:3px 14px;font-size:11.5px;margin:5px 0 6px 14px">${buildRows}</div>`;
-        ["F","M"].forEach(sex=>{ const s=pl.bySex[sex], sym=sex==="F"?"♀":"♂";
-          if(!s.seed){ row+=`<div style="font-size:12px;margin:3px 0 0 14px"><b>${sym}</b> <span class="muted">— no ${sym} in your pool yet; breed one toward this build.</span></div>`; return; }
-          if(s.complete){ row+=`<div style="font-size:12px;margin:3px 0 0 14px"><b>${sym} ${esc(s.seed.name)} ${sx(s.seed.sex)}</b> <span class="adv-keep">✅ already this build — keep it</span></div>`; return; }
-          const needList=s.need.map(n=>`<div style="font-size:11.5px;margin:1px 0 0 26px">+ ${esc(consAlleleLabel(n.tg.gk,n.tg.base,n.tg.level))} ${n.src?`<span class="muted">← from <b>${esc(n.src.name)}</b> ${sx(n.src.sex)}${effLoc(n.src)&&effLoc(n.src)!==p.biome?` <span style="color:var(--warn)">(${esc(effLoc(n.src))})</span>`:""}</span>`:`<span class="stt" style="color:var(--warn)">⚠ nobody owns it — breed/find one</span>`}</div>`).join("");
-          row+=`<div style="font-size:12px;margin:4px 0 0 14px"><b>${sym} start from ${esc(s.seed.name)}</b> ${sx(s.seed.sex)}${effLoc(s.seed)&&effLoc(s.seed)!==p.biome?` <span class="stt" style="color:var(--warn)">move to ${esc(p.biome)}</span>`:""} <span class="muted">— has ${s.have.length}/${pl.targets.length}; breed in ${s.need.length}:</span>${needList}</div>`;
-        });
-      }
-      return row+`</div>`;
-    }).join("")+`</div>`;
+  /* ---- §2 Target profiles: pills + Add profile ---- */
+  const profiles=loadProfiles();
+  const statName=s=>typeof s==="string"?s:s.stat;
+  html+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`+
+    `<h3 style="margin:0">Target profiles <span class="muted" style="font-weight:400;font-size:12px">— builds to consolidate toward. Tick <b>Build</b> for pair suggestions below; <b>Alleles</b> to see the build.</span></h3>`+
+    `<button class="btn sm pri" id="consAddProf">${consAddOpen?"Cancel":"+ Add profile"}</button></div>`;
+  if(consAddOpen){
+    html+=`<div style="border:1px solid var(--line);border-radius:9px;padding:9px 10px;margin:8px 0;font-size:12px">`+
+      `<div style="display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-bottom:6px">`+
+      `<label>Name <input id="npName" type="text" placeholder="e.g. Desert hunter" style="width:150px"></label>`+
+      `<label>Location <select id="npBiome">${["Evergreen","Desert","Frost"].map(b=>`<option>${esc(b)}</option>`).join("")}</select></label></div>`+
+      `<div class="muted" style="margin:2px 0 4px">Stats this build needs — tick each, with optional min/max total:</div>`+
+      `<div style="display:flex;flex-direction:column;gap:3px">`+ABILITIES.map(s=>
+        `<label style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" class="npStat" data-stat="${esc(s)}"> <span style="min-width:120px">${esc(s)}</span>`+
+        `<input type="number" class="npMin" data-stat="${esc(s)}" placeholder="min" style="width:56px" min="0"> <input type="number" class="npMax" data-stat="${esc(s)}" placeholder="max" style="width:56px" min="0"></label>`
+      ).join("")+`</div>`+
+      `<div style="margin-top:8px"><button class="btn sm pri" id="npCreate">Create profile</button> <span id="npErr" class="stt" style="color:var(--warn)"></span></div></div>`;
+  }
+  html+=`<div style="margin-top:8px">`+(profiles.length?profiles.map(p=>{
+    const open=consExpanded.has(p.id), tg=profileTarget(pool,p);
+    const statChips=(p.stats||[]).map(s=>{ const st=statName(s), mm=[]; if(s&&s.min!=null)mm.push("≥"+s.min); if(s&&s.max!=null)mm.push("≤"+s.max);
+      return `${esc(AB_SHORT[st]||st)}${mm.length?" "+mm.join("/"):""}`; }).join(", ");
+    const gap=tg.gaps.length?` <span class="stt" style="color:var(--warn)">⚠ gaps</span>`:"";
+    let pill=`<div style="border:1px solid var(--line);border-radius:9px;padding:6px 9px;margin:0 0 6px">`+
+      `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">`+
+      `<label style="white-space:nowrap;font-size:12px" title="Build this — include it in the pair suggestions below"><input type="checkbox" class="profBuild" data-id="${p.id}" ${p.build?"checked":""}> <b>Build</b></label>`+
+      `<span class="stt" style="background:var(--brand-soft);border-color:var(--brand)">${esc(p.biome)}</span>`+
+      `<b style="font-size:13px">${esc(p.name)}</b> <span class="muted" style="font-size:12px">${statChips}${gap}</span>`+
+      `<span style="margin-left:auto;display:inline-flex;gap:4px"><button class="btn sm gray profExpand" data-id="${p.id}">${open?"Hide":"Alleles"}</button><button class="btn sm gray profDel" data-id="${p.id}" title="Delete this profile">✕</button></span></div>`;
+    if(open){
+      const list=ABILITY_GENE_KEYS.filter(gk=>tg.geno[gk]).map(gk=>{ const a=tg.geno[gk];
+        return `<li style="margin:1px 0"><span class="muted">${esc(GENE_BY_KEY[gk].label)}:</span> ${esc(consAlleleLabel(gk,a.base,a.level))} <b style="color:var(--brand-ink)">×2</b> <span class="muted" style="font-size:11px">(${esc(AB_SHORT[a.stat]||a.stat)})</span></li>`; }).join("");
+      const totalsLine=(p.stats||[]).map(s=>{ const st=statName(s); return `${esc(AB_SHORT[st]||st)} <b>+${tg.totals[st]||0}</b>`; }).join(" · ");
+      const gapList=tg.gaps.length?`<div class="stt" style="color:var(--warn);margin:4px 0 0 2px">⚠ can't reach ${tg.gaps.map(g=>esc(AB_SHORT[g.stat]||g.stat)+(g.min?" (min "+g.min+")":"")).join(", ")} from what you own — breed/find an allele</div>`:"";
+      pill+=`<div style="margin:6px 0 2px 2px;font-size:11.5px"><div class="muted" style="margin-bottom:2px">Best owned build (homozygous) — ${totalsLine}:</div><ul style="margin:2px 0 0 16px;padding:0">${list||'<li class="muted">nothing owned for these stats yet</li>'}</ul>${gapList}</div>`;
+    }
+    return pill+`</div>`;
+  }).join(""):`<p class="muted" style="font-size:12px">No profiles yet — <b>+ Add profile</b> to create one.</p>`)+`</div></div>`;
+
+  /* ---- §3 Pair suggestions (grouped by build-checked profile) ---- */
+  html+=`<div class="card"><h3 style="margin:0 0 2px">Pair suggestions <span class="muted" style="font-weight:400;font-size:12px">— how to breed a ♀ and a ♂ for each ticked profile</span></h3>`;
+  const buildProfiles=profiles.filter(p=>p.build);
+  if(!buildProfiles.length){ html+=`<p class="muted" style="font-size:12px">Tick <b>Build</b> on a profile above to see how to breed a ♀ and ♂ for it.</p>`; }
+  else buildProfiles.forEach(p=>{ const pl=profilePlan(pool,p);
+    html+=`<div style="border-top:1px solid var(--line);padding:8px 0 4px"><div style="font-weight:700;font-size:12.5px"><span class="stt" style="background:var(--brand-soft);border-color:var(--brand)">${esc(p.biome)}</span> ${esc(p.name)}</div>`;
+    ["F","M"].forEach(sex=>{ const s=pl.bySex[sex], sym=sex==="F"?"♀":"♂";
+      if(!s.seed){ html+=`<div style="font-size:12px;margin:3px 0 0 4px"><b>${sym}</b> <span class="muted">— no ${sym} in your pool yet; breed one toward this build.</span></div>`; return; }
+      if(s.complete){ html+=`<div style="font-size:12px;margin:3px 0 0 4px"><b>${sym} ${esc(s.seed.name)} ${sx(s.seed.sex)}</b> <span class="adv-keep">✅ already this build — keep it</span></div>`; return; }
+      const needList=s.need.map(n=>`<li style="margin:1px 0">${esc(consAlleleLabel(n.tg.gk,n.tg.base,n.tg.level))} ${n.src?`<span class="muted">← from <b>${esc(n.src.name)}</b> ${sx(n.src.sex)}${effLoc(n.src)&&effLoc(n.src)!==p.biome?` <span style="color:var(--warn)">(${esc(effLoc(n.src))})</span>`:""}</span>`:`<span class="stt" style="color:var(--warn)">⚠ nobody owns it — breed/find one</span>`}</li>`).join("");
+      html+=`<div style="font-size:12px;margin:4px 0 0 4px"><b>${sym} start from ${esc(s.seed.name)}</b> ${sx(s.seed.sex)}${effLoc(s.seed)&&effLoc(s.seed)!==p.biome?` <span class="stt" style="color:var(--warn)">move to ${esc(p.biome)}</span>`:""} <span class="muted">— has ${s.have.length}/${pl.targets.length}; breed in ${s.need.length}:</span><ul style="margin:2px 0 0 18px;padding:0">${needList}</ul></div>`;
+    });
+    html+=`</div>`; });
+  html+=`</div>`;
 
   /* ---- §3 Price a specific pairing (manual) ---- */
   const autos=autoMerges(pool);
@@ -5242,7 +5279,19 @@ function renderConsolidate(){
   $$("#view-consolidate .consHomo").forEach(cb=>cb.onchange=()=>{ const k=cb.dataset.card+"::"+cb.dataset.key; if(cb.checked) consHomo.add(k); else consHomo.delete(k); re(); });
   $$("#view-consolidate .consPick").forEach(cb=>cb.onchange=()=>{ const id=+cb.dataset.id; if(cb.checked) consSel.add(id); else consSel.delete(id); re(); });
   $$("#view-consolidate .consAddPartner").forEach(b=>b.onclick=()=>{ consSel.add(+b.dataset.id); re(); });   // switch the single-select suggestion to a specific partner
-  $$("#view-consolidate .consProfHdr").forEach(h=>h.onclick=()=>{ const id=h.dataset.id; if(consProfiles.has(id)) consProfiles.delete(id); else consProfiles.add(id); re(); });
+  { const ap=$("#consAddProf"); if(ap) ap.onclick=()=>{ consAddOpen=!consAddOpen; re(); }; }
+  $$("#view-consolidate .profExpand").forEach(b=>b.onclick=()=>{ const id=b.dataset.id; if(consExpanded.has(id)) consExpanded.delete(id); else consExpanded.add(id); re(); });
+  $$("#view-consolidate .profBuild").forEach(cb=>cb.onchange=()=>{ const list=loadProfiles(), p=list.find(x=>x.id===cb.dataset.id); if(p){ p.build=cb.checked; saveProfiles(list); re(); } });
+  $$("#view-consolidate .profDel").forEach(b=>b.onclick=()=>{ const list=loadProfiles().filter(x=>x.id!==b.dataset.id); saveProfiles(list); consExpanded.delete(b.dataset.id); re(); });
+  { const c=$("#npCreate"); if(c) c.onclick=()=>{
+      const name=($("#npName").value||"").trim(), biome=$("#npBiome").value, err=$("#npErr");
+      const stats=[]; $$("#view-consolidate .npStat").forEach(cb=>{ if(!cb.checked) return; const st=cb.dataset.stat;
+        const mn=$(`#view-consolidate .npMin[data-stat="${st}"]`), mx=$(`#view-consolidate .npMax[data-stat="${st}"]`);
+        const o={stat:st}; if(mn&&mn.value!=="")o.min=+mn.value; if(mx&&mx.value!=="")o.max=+mx.value; stats.push(o); });
+      if(!name){ if(err)err.textContent="Name it first."; return; }
+      if(!stats.length){ if(err)err.textContent="Tick at least one stat."; return; }
+      const list=loadProfiles(); list.push({id:"p"+Date.now().toString(36), name, biome, stats, build:true}); saveProfiles(list);
+      consAddOpen=false; re(); }; }
   const cs=$("#consClearSel"); if(cs) cs.onclick=()=>{ consSel.clear(); re(); };
 }
 
@@ -5279,7 +5328,7 @@ if(typeof globalThis!=="undefined") globalThis.__NICHE={GENES,GENE_BY_KEY,ABILIT
   geneMaxLevels,mutationScore,mutationPlan,ABILITY_GENE_KEYS,geneFeasible,targetPlan,mutInRange,targetBaseLabel,
   mutBonus,statTotal,sidelineAdvice,genePairParts,offspringBST,soleAlleleLabels,offspringConsolidatesProb,nichelingAdvice,consolidationAdvice,ADVICE_RANK,holdingsFor,statTargetPlan,
   beneficialAlleleInventory,minStudsPlan,mergeGroupFeasible,mergePlan,autoMerges,groupAlleles,consAlleleLabel,preserveWorthy,alleleAbilityOf,alleleBaseVal,bestLevelOwned,
-  PROFILES,profileTarget,profileWorthy,profilePlan,concentrationVerdict,worthyHoldings};
+  DEFAULT_PROFILES,loadProfiles,saveProfiles,profileTarget,profileWorthy,profilePlan,concentrationVerdict,worthyHoldings};
 
 /* ---- boot (only in a real browser) ---- */
 /* =========================================================================
