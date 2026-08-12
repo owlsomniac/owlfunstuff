@@ -3448,8 +3448,12 @@ function holdCovers(B, A){ return Object.keys(A).every(k=>holdKeyCovers(B[k], A[
 /* intrinsic worth = Σ (1+level) over every non-undesirable allele copy — rewards concentration + mutation */
 function holdValue(A){ let v=0; for(const k in A) A[k].forEach(l=>v+=1+l); return v; }
 function holdLabel(key, levels){ const i=key.indexOf("|"), gk=key.slice(0,i), b=key.slice(i+1), g=GENE_BY_KEY[gk];
-  const lv=levels[0]||0, cnt=levels.length, al=g&&g.alleles.find(z=>z.k===b), ab=al&&Object.keys(al.eff)[0];
-  return `${b}${lv?` ✦+${lv}`:""}${cnt>1?` ×${cnt}`:""}${ab?` (${AB_SHORT[ab]||ab})`:""}`; }
+  const al=g&&g.alleles.find(z=>z.k===b), ab=al&&Object.keys(al.eff)[0], abs=ab?` (${AB_SHORT[ab]||ab})`:"";
+  const cnt=levels.length, top=levels[0]||0, homo=cnt>1 && levels.every(x=>x===levels[0]);
+  // ×N means N copies at the SAME ✦ (true homozygous). Two copies at DIFFERENT ✦ (Goat Horns ✦+2 and Goat Horns ✦0)
+  // are NOT homozygous — show each copy's ✦ instead so "×2" can't imply the top ✦ on both.
+  if(cnt>1 && !homo) return `${b} ${levels.map(x=>x?"✦+"+x:"✦0").join("/")}${abs}`;
+  return `${b}${top?` ✦+${top}`:""}${cnt>1?` ×${cnt}`:""}${abs}`; }
 /* Filter a holdings map down to PRESERVE-WORTHY alleles (using preserveWorthy's { geneKey: { base: roster-best ✦ } }).
    An ability allele counts as "value" / "sole copy" only when it's Pareto-best for its gene+skill (so an inferior
    Derp Snout drops the moment a better Perception snout exists) AND held at the roster-best ✦ (a below-best copy is
@@ -4834,6 +4838,7 @@ function autoMerges(pool){
     if(covers(A.w,B.w) || covers(B.w,A.w)) continue;                     // one already has every worthy allele the other does → plain release
     const u=groupAlleles([A.c,B.c], worthy);
     let ok=true; for(const gk in u){ if(Object.keys(u[gk]).length>2){ ok=false; break; } } if(!ok) continue;   // can't fit both on one body
+    if(cand.some(x=>x.c.id!==A.c.id && x.c.id!==B.c.id && covers(x.w, u))) continue;   // this whole concentration ALREADY lives on another nicheling (e.g. Rara/Ela) → don't propose re-breeding what you already have
     let distinct=0, val=0; for(const gk in u) for(const b in u[gk]){ distinct++; val+=1+u[gk][b]; }
     let shared=0; A.keys.forEach(k=>{ if(B.keys.has(k)) shared++; });     // worthy alleles BOTH already carry (at the best ✦) — pass to the pup almost for free
     const diff=distinct-shared;                                          // alleles only ONE carries → the pup must inherit these to complete the merge
